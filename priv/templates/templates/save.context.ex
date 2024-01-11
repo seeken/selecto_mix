@@ -3,7 +3,6 @@ defmodule <%= inspect savecontext.module %> do
 
   @behaviour SelectoComponents.SavedViews
 
-  ### TODO - fix agg filter appluy for film ratings
   import Ecto.Query
 
   def get_view(name, context) do
