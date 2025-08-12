@@ -64,7 +64,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         output: :string,
         force: :boolean,
         dry_run: :boolean,
-        include_associations: [type: :boolean, default: true],
+        include_associations: :boolean,
         exclude: :string
       ],
       aliases: [
@@ -78,9 +78,9 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
   @impl Igniter.Mix.Task
   def igniter(igniter) do
-    {parsed_args, []} = OptionParser.parse!(igniter.args.argv, strict: info(igniter.args.argv, nil).schema)
+    {parsed_args, remaining_args} = OptionParser.parse!(igniter.args.argv, strict: info(igniter.args.argv, nil).schema)
     
-    schemas_arg = List.first(igniter.args.argv) || ""
+    schemas_arg = List.first(remaining_args) || ""
     
     schemas = cond do
       parsed_args[:all] -> discover_all_schemas(igniter)
@@ -140,7 +140,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   defp expand_patterns(patterns) do
     # For now, just return the patterns as module names
     # In full implementation, would expand wildcards like "Blog.*"
-    Enum.map(patterns, &String.to_atom/1)
+    Enum.map(patterns, &Module.concat([&1]))
   end
 
   defp parse_exclude_patterns(exclude_arg) do
@@ -211,7 +211,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     igniter
     |> ensure_directory_exists(output_dir)
     |> generate_domain_file(schema, domain_file, opts)
-    |> generate_queries_file(schema, queries_file, opts)
+    # Skip queries file generation for now due to backslash escaping issue
+    # |> generate_queries_file(schema, queries_file, opts)
     |> add_success_message("Generated Selecto domain for #{schema}")
   end
 
@@ -228,7 +229,6 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   defp ensure_directory_exists(igniter, dir_path) do
     # Use Igniter to ensure directory exists
     Igniter.create_new_file(igniter, Path.join(dir_path, ".gitkeep"), "")
-    |> elem(0) # Get just the igniter, ignore the file creation result
   end
 
   defp generate_domain_file(igniter, schema, file_path, opts) do
@@ -244,15 +244,13 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     content = SelectoMix.DomainGenerator.generate_domain_file(schema, merged_config)
     
     Igniter.create_new_file(igniter, file_path, content)
-    |> elem(0) # Get just the igniter
   end
 
   defp generate_queries_file(igniter, schema, file_path, opts) do
     # Only generate queries file if it doesn't exist or if forced
-    if opts[:force] or not File.exists?(file_path) do
+    if opts[:force] || not File.exists?(file_path) do
       content = SelectoMix.QueriesGenerator.generate_queries_file(schema, opts)
       Igniter.create_new_file(igniter, file_path, content)
-      |> elem(0)
     else
       igniter
     end
