@@ -118,10 +118,11 @@ defmodule SelectoMix.DomainGenerator do
     "%{\n        source_table: \"#{table_name}\",\n" <>
     "        primary_key: #{inspect(primary_key)},\n        \n" <>
     "        # Available fields from schema\n" <>
+    "        # NOTE: This is redundant with columns - consider using Map.keys(columns) instead\n" <>
     "        fields: #{inspect(fields)},\n        \n" <>
     "        # Fields to exclude from queries#{redacted_line}\n" <>
     "        redact_fields: [],\n        \n" <>
-    "        # Field type definitions\n" <>
+    "        # Field type definitions (contains the same info as fields above)\n" <>
     "        columns: #{generate_columns_config(fields, field_types)},\n        \n" <>
     "        # Schema associations\n" <>
     "        associations: #{generate_source_associations(config)}\n      }"
@@ -345,6 +346,11 @@ defmodule SelectoMix.DomainGenerator do
       "",
       "@doc \"Get the schema module this domain represents.\"",
       "def schema_module, do: #{inspect(schema_module)}",
+      "",
+      "@doc \"Get available fields (derived from columns to avoid duplication).\"",
+      "def available_fields do",
+      "  domain().source.columns |> Map.keys()",
+      "end",
       "",
       "@doc \"Common query: get all records with default selection.\"",
       "def all(repo, opts \\\\ []) do",
