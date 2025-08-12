@@ -77,10 +77,10 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   end
 
   @impl Igniter.Mix.Task
-  def igniter(igniter, argv) do
-    {parsed_args, []} = OptionParser.parse!(argv, strict: info(argv, nil).schema)
+  def igniter(igniter) do
+    {parsed_args, []} = OptionParser.parse!(igniter.args.argv, strict: info(igniter.args.argv, nil).schema)
     
-    schemas_arg = List.first(argv) || ""
+    schemas_arg = List.first(igniter.args.argv) || ""
     
     schemas = cond do
       parsed_args[:all] -> discover_all_schemas(igniter)
@@ -115,17 +115,17 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   end
 
   defp module_uses_ecto_schema?(igniter, module_name) do
-    case Igniter.Project.Module.module_exists?(igniter, module_name) do
-      true ->
+    case Igniter.Project.Module.module_exists(igniter, module_name) do
+      {_igniter, true} ->
         # Check if the module uses Ecto.Schema
-        case Igniter.Code.Module.find_module(igniter, module_name) do
+        case Igniter.Project.Module.find_module(igniter, module_name) do
           {_igniter, {:ok, {_zipper, _module_zipper}}} ->
             # This is simplified - in real implementation would parse AST
             # to check for `use Ecto.Schema`
             true
           _ -> false
         end
-      false -> false
+      {_igniter, false} -> false
     end
   end
 

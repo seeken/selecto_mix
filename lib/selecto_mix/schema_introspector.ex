@@ -251,7 +251,7 @@ defmodule SelectoMix.SchemaIntrospector do
   end
 
   defp generate_filter_config(field, field_type) do
-    field_str = to_string(field)
+    _field_str = to_string(field)
     
     base_config = %{
       "name" => humanize_field_name(field),
