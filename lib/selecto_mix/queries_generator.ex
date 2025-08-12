@@ -263,7 +263,9 @@ defmodule SelectoMix.QueriesGenerator do
 
   defp get_domain_module_name(schema_module) do
     base_name = Module.split(schema_module) |> List.last()
-    app_name = Application.get_env(:selecto_mix, :app_name, "MyApp")
+    app_name = Application.get_env(:selecto_mix, :app_name) || 
+               detect_app_name() || 
+               "MyApp"
     
     "#{app_name}.SelectoDomains.#{base_name}Domain"
   end
@@ -344,5 +346,21 @@ defmodule SelectoMix.QueriesGenerator do
     "              count: count,\n              average: avg,\n" <>
     "              minimum: min,\n              maximum: max,\n" <>
     "              field: field\n            }}\n          error -> error\n        end\n      end"
+  end
+
+  defp detect_app_name do
+    # Try to detect the app name from the current Mix project
+    case Mix.Project.get() do
+      nil -> nil
+      project -> 
+        app_name = project.project()[:app]
+        if app_name do
+          app_name
+          |> to_string()
+          |> Macro.camelize()
+        else
+          nil
+        end
+    end
   end
 end

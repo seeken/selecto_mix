@@ -100,7 +100,9 @@ defmodule SelectoMix.DomainGenerator do
     context_name = config[:metadata][:context_name] || "Domains"
     
     # Generate appropriate module name
-    app_name = Application.get_env(:selecto_mix, :app_name, "MyApp")
+    app_name = Application.get_env(:selecto_mix, :app_name) || 
+               detect_app_name() || 
+               "MyApp"
     "#{app_name}.SelectoDomains.#{base_name}Domain"
   end
 
@@ -399,5 +401,21 @@ defmodule SelectoMix.DomainGenerator do
     |> String.split()
     |> Enum.map(&String.capitalize/1)
     |> Enum.join(" ")
+  end
+
+  defp detect_app_name do
+    # Try to detect the app name from the current Mix project
+    case Mix.Project.get() do
+      nil -> nil
+      project -> 
+        app_name = project.project()[:app]
+        if app_name do
+          app_name
+          |> to_string()
+          |> Macro.camelize()
+        else
+          nil
+        end
+    end
   end
 end
