@@ -480,7 +480,7 @@ defmodule SelectoMix.DocsGenerator do
     """
   end
 
-  defp generate_markdown_examples(domain, domain_info, _opts) do
+  defp generate_markdown_examples(domain, _domain_info, _opts) do
     """
     # #{String.capitalize(domain)} Domain Examples
 

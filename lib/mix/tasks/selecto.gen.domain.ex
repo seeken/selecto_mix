@@ -206,7 +206,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
   defp generate_domain_for_schema(igniter, schema, output_dir, opts) do
     domain_file = domain_file_path(output_dir, schema)
-    queries_file = queries_file_path(output_dir, schema)
+    _queries_file = queries_file_path(output_dir, schema)
     
     igniter
     |> ensure_directory_exists(output_dir)
@@ -246,17 +246,17 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     Igniter.create_new_file(igniter, file_path, content)
   end
 
-  defp generate_queries_file(igniter, schema, file_path, opts) do
-    # Only generate queries file if it doesn't exist or if forced
-    if opts[:force] || not File.exists?(file_path) do
-      content = SelectoMix.QueriesGenerator.generate_queries_file(schema, opts)
-      Igniter.create_new_file(igniter, file_path, content)
-    else
-      igniter
-    end
-  end
+  # defp generate_queries_file(igniter, schema, file_path, opts) do
+  #   # Only generate queries file if it doesn't exist or if forced
+  #   if opts[:force] || not File.exists?(file_path) do
+  #     content = SelectoMix.QueriesGenerator.generate_queries_file(schema, opts)
+  #     Igniter.create_new_file(igniter, file_path, content)
+  #   else
+  #     igniter
+  #   end
+  # end
 
-  defp read_existing_domain_file(igniter, file_path) do
+  defp read_existing_domain_file(_igniter, file_path) do
     case File.read(file_path) do
       {:ok, content} -> content
       {:error, :enoent} -> nil

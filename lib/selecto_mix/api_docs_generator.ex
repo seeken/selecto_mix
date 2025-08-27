@@ -54,7 +54,7 @@ defmodule SelectoMix.ApiDocsGenerator do
         function_docs
         |> Enum.filter(fn {kind, _, _, _, _, _} -> kind == :function end)
         |> Enum.filter(fn {_, name_arity, _, _, _, _} -> 
-          {name, arity} = name_arity
+          {name, _arity} = name_arity
           include_private or not String.starts_with?(to_string(name), "_")
         end)
         |> Enum.map(&extract_function_info/1)
@@ -363,7 +363,7 @@ defmodule SelectoMix.ApiDocsGenerator do
     end
   end
 
-  defp generate_function_doc(func_info, opts) do
+  defp generate_function_doc(func_info, _opts) do
     signatures = format_function_signatures(func_info.signatures)
     
     example_section = if func_info.examples do

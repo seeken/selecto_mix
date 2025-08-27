@@ -97,7 +97,7 @@ defmodule SelectoMix.DomainGenerator do
     base_name = config[:metadata][:module_name] || 
                 Module.split(schema_module) |> List.last()
     
-    context_name = config[:metadata][:context_name] || "Domains"
+    _context_name = config[:metadata][:context_name] || "Domains"
     
     # Generate appropriate module name
     app_name = Application.get_env(:selecto_mix, :app_name) || 
@@ -193,7 +193,7 @@ defmodule SelectoMix.DomainGenerator do
     schema_configs = 
       associations
       |> Enum.reject(fn {_name, assoc} -> assoc[:is_through] end)
-      |> Enum.map(fn {assoc_name, assoc_config} ->
+      |> Enum.map(fn {_assoc_name, assoc_config} ->
         schema_name = get_queryable_name(assoc_config)
         table_name = guess_table_name(assoc_config[:related_schema])
         related_schema = inspect(assoc_config[:related_schema])

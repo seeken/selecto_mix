@@ -150,7 +150,7 @@ defmodule SelectoMix.ConfigMerger do
   defp extract_custom_filters(content) do
     # Extract custom filter definitions
     # Look for filter blocks that have custom markers
-    custom_filters = %{}
+    _custom_filters = %{}
     
     # Find filters marked as custom
     filter_matches = Regex.scan(~r/"([^"]+)"\s*=>\s*%\{[^}]*# CUSTOM/, content)
@@ -277,7 +277,7 @@ defmodule SelectoMix.ConfigMerger do
     Enum.reject(new_field_atoms, &(&1 in existing_field_atoms))
   end
 
-  defp merge_fields_aggressively(new_fields, existing_fields, custom_fields) do
+  defp merge_fields_aggressively(new_fields, _existing_fields, custom_fields) do
     # Update with new fields but preserve custom ones
     custom_field_atoms = Enum.map(custom_fields, &parse_custom_field/1)
     new_field_atoms = Enum.map(new_fields, &ensure_atom/1)

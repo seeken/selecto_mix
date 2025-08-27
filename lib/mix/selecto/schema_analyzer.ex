@@ -58,7 +58,7 @@ defmodule Mix.Selecto.SchemaAnalyzer do
 
         # Handle different association types
         case assoc_info do
-          %{relationship: :child, through: _} = through_assoc ->
+          %{relationship: :child, through: _} = _through_assoc ->
             # Has many through association - skip for now
             nil
 
@@ -78,8 +78,8 @@ defmodule Mix.Selecto.SchemaAnalyzer do
               foreign_key: belongs_to.owner_key  # BelongsTo uses owner_key
             }
 
-          _other ->
-            IO.inspect(_other, label: "Unknown association type for #{assoc}")
+          other ->
+            IO.inspect(other, label: "Unknown association type for #{assoc}")
             nil
         end
       end)
