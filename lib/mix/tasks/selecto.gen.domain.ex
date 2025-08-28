@@ -24,6 +24,9 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       # Force regenerate (overwrites customizations)
       mix selecto.gen.domain Blog.Post --force
 
+      # Expand associated schemas with full columns/associations  
+      mix selecto.gen.domain Blog.Post --expand-schemas categories,tags,authors
+
   ## Options
 
     * `--all` - Generate domains for all discovered Ecto schemas
@@ -34,6 +37,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     * `--exclude` - Comma-separated list of schemas to exclude
     * `--live` - Generate LiveView files for the domain
     * `--saved-views` - Generate saved views implementation (requires --live)
+    * `--expand-schemas` - Comma-separated list of associated schemas to fully expand with columns and associations
 
   ## File Generation
 
@@ -67,7 +71,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   def info(_argv, _composing_task) do
     %Igniter.Mix.Task.Info{
       group: :selecto,
-      example: "mix selecto.gen.domain Blog.Post --include-associations",
+      example: "mix selecto.gen.domain Blog.Post --include-associations --expand-schemas categories",
       positional: [:schemas],
       schema: [
         all: :boolean,
@@ -77,7 +81,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         include_associations: :boolean,
         exclude: :string,
         live: :boolean,
-        saved_views: :boolean
+        saved_views: :boolean,
+        expand_schemas: :string
       ],
       aliases: [
         a: :all,
@@ -85,7 +90,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         f: :force,
         d: :dry_run,
         l: :live,
-        s: :saved_views
+        s: :saved_views,
+        e: :expand_schemas
       ]
     }
   end
@@ -104,6 +110,9 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
     exclude_patterns = parse_exclude_patterns(parsed_args[:exclude] || "")
     schemas = Enum.reject(schemas, &schema_matches_exclude?(&1, exclude_patterns))
+    
+    # Parse expand-schemas parameter
+    expand_schemas = parse_expand_schemas(parsed_args[:expand_schemas] || "")
 
     # Validate flags
     validated_igniter = validate_flags(igniter, parsed_args)
@@ -116,7 +125,9 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         mix selecto.gen.domain --all
       """)
     else
-      process_schemas(validated_igniter, schemas, parsed_args)
+      # Add expand_schemas to parsed_args
+      updated_args = Map.put(parsed_args, :expand_schemas_list, expand_schemas)
+      process_schemas(validated_igniter, schemas, updated_args)
     end
   end
 
@@ -171,6 +182,13 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
   defp parse_exclude_patterns(exclude_arg) do
     exclude_arg
+    |> String.split(",")
+    |> Enum.map(&String.trim/1)
+    |> Enum.filter(&(&1 != ""))
+  end
+
+  defp parse_expand_schemas(expand_arg) do
+    expand_arg
     |> String.split(",")
     |> Enum.map(&String.trim/1)
     |> Enum.filter(&(&1 != ""))

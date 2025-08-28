@@ -56,7 +56,27 @@ defmodule SelectoMix.DomainGenerator do
       
           mix selecto.gen.domain #{inspect(schema_module)}
           
-      Your customizations will be preserved during regeneration.
+      Additional options:
+      
+          # Force regenerate (overwrites customizations)
+          mix selecto.gen.domain #{inspect(schema_module)} --force
+          
+          # Preview changes without writing files
+          mix selecto.gen.domain #{inspect(schema_module)} --dry-run
+          
+          # Include associations as joins
+          mix selecto.gen.domain #{inspect(schema_module)} --include-associations
+          
+          # Generate with LiveView files
+          mix selecto.gen.domain #{inspect(schema_module)} --live
+          
+          # Generate with saved views support
+          mix selecto.gen.domain #{inspect(schema_module)} --live --saved-views
+          
+          # Expand specific associated schemas with full columns/associations
+          mix selecto.gen.domain #{inspect(schema_module)} --expand-schemas categories,tags
+          
+      Your customizations will be preserved during regeneration (unless --force is used).
       \"\"\"
 
       @doc \"\"\"
@@ -188,6 +208,7 @@ defmodule SelectoMix.DomainGenerator do
 
   defp generate_schemas_config(config) do
     associations = config[:associations] || %{}
+    expand_schemas_list = config[:expand_schemas_list] || []
     
     # Generate schema configurations for associations
     schema_configs = 
@@ -196,19 +217,17 @@ defmodule SelectoMix.DomainGenerator do
       |> Enum.map(fn {_assoc_name, assoc_config} ->
         schema_name = get_queryable_name(assoc_config)
         table_name = guess_table_name(assoc_config[:related_schema])
-        related_schema = inspect(assoc_config[:related_schema])
+        related_schema = assoc_config[:related_schema]
+        related_schema_string = inspect(related_schema)
         
-        "#{inspect(schema_name)} => %{\n" <>
-        "            # TODO: Add proper schema configuration for #{related_schema}\n" <>
-        "            # This will be auto-generated when you run:\n" <>
-        "            # mix selecto.gen.domain #{related_schema}\n" <>
-        "            source_table: \"#{table_name}\",\n" <>
-        "            primary_key: :id,\n" <>
-        "            fields: [], # Add fields for #{related_schema}\n" <>
-        "            redact_fields: [],\n" <>
-        "            columns: %{},\n" <>
-        "            associations: %{}\n" <>
-        "          }"
+        # Check if this schema should be expanded
+        should_expand = should_expand_schema?(schema_name, related_schema, expand_schemas_list)
+        
+        if should_expand do
+          generate_expanded_schema_config(schema_name, related_schema, table_name)
+        else
+          generate_placeholder_schema_config(schema_name, related_schema_string, table_name)
+        end
       end)
       |> Enum.join(",\n      ")
     
@@ -216,6 +235,160 @@ defmodule SelectoMix.DomainGenerator do
       "%{}"
     else
       "%{\n      #{schema_configs}\n    }"
+    end
+  end
+
+  defp should_expand_schema?(schema_name, related_schema, expand_schemas_list) do
+    schema_name_str = to_string(schema_name)
+    related_schema_str = to_string(related_schema)
+    
+    Enum.any?(expand_schemas_list, fn expand_name ->
+      String.contains?(schema_name_str, expand_name) or
+      String.contains?(related_schema_str, expand_name)
+    end)
+  end
+  
+  defp generate_placeholder_schema_config(schema_name, related_schema_string, table_name) do
+    "#{inspect(schema_name)} => %{\n" <>
+    "            # TODO: Add proper schema configuration for #{related_schema_string}\n" <>
+    "            # This will be auto-generated when you run:\n" <>
+    "            # mix selecto.gen.domain #{related_schema_string}\n" <>
+    "            # Or use --expand-schemas #{schema_name} to expand automatically\n" <>
+    "            source_table: \"#{table_name}\",\n" <>
+    "            primary_key: :id,\n" <>
+    "            fields: [], # Add fields for #{related_schema_string}\n" <>
+    "            redact_fields: [],\n" <>
+    "            columns: %{},\n" <>
+    "            associations: %{}\n" <>
+    "          }"
+  end
+  
+  defp generate_expanded_schema_config(schema_name, related_schema, table_name) do
+    # Attempt to introspect the related schema
+    case introspect_related_schema(related_schema) do
+      {:ok, schema_config} ->
+        fields = schema_config[:fields] || []
+        field_types = schema_config[:field_types] || %{}
+        primary_key = schema_config[:primary_key] || :id
+        associations = schema_config[:associations] || %{}
+        
+        columns_config = generate_columns_config(fields, field_types)
+        associations_config = generate_nested_associations_config(associations)
+        
+        "#{inspect(schema_name)} => %{\n" <>
+        "            # Expanded schema configuration for #{inspect(related_schema)}\n" <>
+        "            source_table: \"#{table_name}\",\n" <>
+        "            primary_key: #{inspect(primary_key)},\n" <>
+        "            fields: #{inspect(fields)},\n" <>
+        "            redact_fields: [],\n" <>
+        "            columns: #{columns_config},\n" <>
+        "            associations: #{associations_config}\n" <>
+        "          }"
+      {:error, _reason} ->
+        # Fallback to placeholder if introspection fails
+        generate_placeholder_schema_config(schema_name, inspect(related_schema), table_name)
+    end
+  end
+  
+  defp introspect_related_schema(schema_module) do
+    try do
+      # Try to load the module and introspect it
+      Code.ensure_loaded(schema_module)
+      
+      if function_exported?(schema_module, :__schema__, 1) do
+        fields = schema_module.__schema__(:fields)
+        types = schema_module.__schema__(:types)
+        primary_key = schema_module.__schema__(:primary_key) |> List.first() || :id
+        
+        # Convert types to simplified format
+        field_types = 
+          fields
+          |> Enum.into(%{}, fn field ->
+            type = Map.get(types, field, :string)
+            simplified_type = simplify_ecto_type(type)
+            {field, simplified_type}
+          end)
+        
+        # Basic association discovery (simplified)
+        associations = discover_basic_associations(schema_module)
+        
+        {:ok, %{
+          fields: fields,
+          field_types: field_types,
+          primary_key: primary_key,
+          associations: associations
+        }}
+      else
+        {:error, :not_ecto_schema}
+      end
+    rescue
+      _ -> {:error, :introspection_failed}
+    end
+  end
+  
+  defp simplify_ecto_type({:parameterized, Ecto.Enum, _}), do: :string
+  defp simplify_ecto_type({:array, inner_type}), do: {:array, simplify_ecto_type(inner_type)}
+  defp simplify_ecto_type(:id), do: :integer
+  defp simplify_ecto_type(:binary_id), do: :string
+  defp simplify_ecto_type(:naive_datetime), do: :naive_datetime
+  defp simplify_ecto_type(:utc_datetime), do: :utc_datetime
+  defp simplify_ecto_type(type) when is_atom(type), do: type
+  defp simplify_ecto_type(_), do: :string
+  
+  defp discover_basic_associations(schema_module) do
+    try do
+      # This is a simplified version - in a full implementation, 
+      # we would introspect associations from the schema
+      associations = schema_module.__schema__(:associations)
+      
+      Enum.into(associations, %{}, fn assoc_name ->
+        assoc = schema_module.__schema__(:association, assoc_name)
+        
+        {assoc_name, %{
+          queryable: get_association_queryable(assoc),
+          field: assoc_name,
+          owner_key: assoc.owner_key,
+          related_key: assoc.related_key
+        }}
+      end)
+    rescue
+      _ -> %{}
+    end
+  end
+  
+  defp get_association_queryable(assoc) do
+    case assoc.queryable do
+      module when is_atom(module) ->
+        module
+        |> Module.split()
+        |> List.last()
+        |> Macro.underscore()
+        |> String.to_atom()
+      other -> other
+    end
+  end
+  
+  defp generate_nested_associations_config(associations) do
+    if Enum.empty?(associations) do
+      "%{}"
+    else
+      formatted_assocs = 
+        associations
+        |> Enum.map(fn {assoc_name, assoc_config} ->
+          queryable_name = inspect(assoc_config[:queryable])
+          owner_key = inspect(assoc_config[:owner_key])
+          related_key = inspect(assoc_config[:related_key])
+          
+          "#{inspect(assoc_name)} => %{\n" <>
+          "                queryable: #{queryable_name},\n" <>
+          "                field: #{inspect(assoc_name)},\n" <>
+          "                owner_key: #{owner_key},\n" <>
+          "                related_key: #{related_key}\n" <>
+          "              }"
+        end)
+        |> Enum.join(",\n          ")
+      
+      "%{\n          #{formatted_assocs}\n        }"
     end
   end
 
