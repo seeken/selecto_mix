@@ -38,6 +38,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     * `--live` - Generate LiveView files for the domain
     * `--saved-views` - Generate saved views implementation (requires --live)
     * `--expand-schemas` - Comma-separated list of associated schemas to fully expand with columns and associations
+    * `--parameterized-joins` - Generate example parameterized join configurations
 
   ## File Generation
 
@@ -82,7 +83,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         exclude: :string,
         live: :boolean,
         saved_views: :boolean,
-        expand_schemas: :string
+        expand_schemas: :string,
+        parameterized_joins: :boolean
       ],
       aliases: [
         a: :all,
@@ -91,7 +93,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         d: :dry_run,
         l: :live,
         s: :saved_views,
-        e: :expand_schemas
+        e: :expand_schemas,
+        p: :parameterized_joins
       ]
     }
   end

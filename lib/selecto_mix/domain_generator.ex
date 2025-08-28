@@ -45,10 +45,36 @@ defmodule SelectoMix.DomainGenerator do
       - Adding custom fields to the fields list
       - Modifying default selections and filters
       - Adjusting join configurations
+      - Adding parameterized joins with dynamic parameters
       - Adding custom domain metadata
       
       Fields, filters, and joins marked with "# CUSTOM" comments will be
       preserved when this file is regenerated.
+      
+      ## Parameterized Joins
+      
+      This domain supports parameterized joins that accept runtime parameters:
+      
+      ```elixir
+      joins: %{
+        products: %{
+          type: :left,
+          name: "Products",
+          parameters: [
+            %{name: :category, type: :string, required: true},
+            %{name: :active, type: :boolean, required: false, default: true}
+          ],
+          fields: %{
+            name: %{type: :string},
+            price: %{type: :decimal}
+          }
+        }
+      }
+      ```
+      
+      Use dot notation to reference parameterized fields:
+      - `products:electronics.name` - Products in electronics category
+      - `products:electronics:true.price` - Active products in electronics
       
       ## Regeneration
       
@@ -470,22 +496,21 @@ defmodule SelectoMix.DomainGenerator do
 
   defp generate_joins_config(config) do
     associations = config[:associations] || %{}
+    parameterized_joins = config[:parameterized_joins] || %{}
     
-    if Enum.empty?(associations) do
+    # Combine regular associations and parameterized joins
+    all_joins = Map.merge(
+      generate_association_joins(associations),
+      parameterized_joins
+    )
+    
+    if Enum.empty?(all_joins) do
       "%{}"
     else
       formatted_joins = 
-        associations
-        |> Enum.reject(fn {_name, assoc} -> assoc[:is_through] end)
-        |> Enum.map(fn {assoc_name, assoc_config} ->
-          is_custom = assoc_config[:is_custom] == true
-          custom_marker = if is_custom, do: " # CUSTOM JOIN", else: ""
-          join_type = inspect(assoc_config[:join_type] || :left)
-          
-          "#{inspect(assoc_name)} => %{\n" <>
-          "              name: \"#{humanize_name(assoc_name)}\",\n" <>
-          "              type: #{join_type}\n" <>
-          "            }#{custom_marker}"
+        all_joins
+        |> Enum.map(fn {join_name, join_config} ->
+          format_single_join(join_name, join_config)
         end)
         |> Enum.join(",\n      ")
       
@@ -572,6 +597,113 @@ defmodule SelectoMix.DomainGenerator do
     
     filter_queries
   end
+
+  # Helper functions for join generation
+  
+  defp generate_association_joins(associations) do
+    associations
+    |> Enum.reject(fn {_name, assoc} -> assoc[:is_through] end)
+    |> Enum.into(%{}, fn {assoc_name, assoc_config} ->
+      join_config = %{
+        name: humanize_name(assoc_name),
+        type: assoc_config[:join_type] || :left,
+        is_custom: assoc_config[:is_custom] == true
+      }
+      {assoc_name, join_config}
+    end)
+  end
+  
+  defp format_single_join(join_name, join_config) do
+    is_custom = Map.get(join_config, :is_custom, false)
+    is_parameterized = Map.has_key?(join_config, :parameters)
+    
+    custom_marker = cond do
+      is_custom and is_parameterized -> " # CUSTOM PARAMETERIZED JOIN"
+      is_custom -> " # CUSTOM JOIN"
+      is_parameterized -> " # PARAMETERIZED JOIN"
+      true -> ""
+    end
+    
+    join_type = inspect(Map.get(join_config, :type, :left))
+    join_name_str = Map.get(join_config, :name, humanize_name(join_name))
+    
+    base_config = "#{inspect(join_name)} => %{\n" <>
+                  "              name: \"#{join_name_str}\",\n" <>
+                  "              type: #{join_type}"
+    
+    # Add parameterized join specific configurations
+    parameterized_config = if is_parameterized do
+      parameters_config = format_parameters_config(join_config[:parameters])
+      source_table = inspect(Map.get(join_config, :source_table, to_string(join_name)))
+      fields_config = format_join_fields_config(Map.get(join_config, :fields, %{}))
+      
+      ",\n              \n              # Parameterized join configuration\n" <>
+      "              source_table: #{source_table},\n" <>
+      "              parameters: #{parameters_config},\n" <>
+      "              fields: #{fields_config}"
+    else
+      ""
+    end
+    
+    join_condition_config = case Map.get(join_config, :join_condition) do
+      nil -> ""
+      condition -> ",\n              join_condition: #{inspect(condition)}"
+    end
+    
+    base_config <> parameterized_config <> join_condition_config <> "\n            }#{custom_marker}"
+  end
+  
+  defp format_parameters_config(parameters) when is_list(parameters) do
+    if Enum.empty?(parameters) do
+      "[]"
+    else
+      formatted_params = 
+        parameters
+        |> Enum.map(fn param ->
+          param_config = param
+          |> Map.take([:name, :type, :required, :default, :description])
+          |> Map.to_list()
+          |> Enum.map(fn {key, value} -> "#{key}: #{inspect(value)}" end)
+          |> Enum.join(", ")
+          
+          "              %{#{param_config}}"
+        end)
+        |> Enum.join(",\n")
+      
+      "[\n#{formatted_params}\n            ]"
+    end
+  end
+  
+  defp format_parameters_config(_), do: "[]"
+  
+  defp format_join_fields_config(fields) when is_map(fields) do
+    if Enum.empty?(fields) do
+      "%{}"
+    else
+      formatted_fields = 
+        fields
+        |> Enum.map(fn {field_name, field_config} ->
+          config_str = case field_config do
+            %{} -> 
+              config_pairs = 
+                field_config
+                |> Map.to_list()
+                |> Enum.map(fn {key, value} -> "#{key}: #{inspect(value)}" end)
+                |> Enum.join(", ")
+              "%{#{config_pairs}}"
+            _ -> 
+              inspect(field_config)
+          end
+          
+          "              #{inspect(field_name)} => #{config_str}"
+        end)
+        |> Enum.join(",\n")
+      
+      "%{\n#{formatted_fields}\n            }"
+    end
+  end
+  
+  defp format_join_fields_config(_), do: "%{}"
 
   defp humanize_name(atom) when is_atom(atom) do
     atom
