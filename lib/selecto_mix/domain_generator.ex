@@ -46,6 +46,10 @@ defmodule SelectoMix.DomainGenerator do
       - Modifying default selections and filters
       - Adjusting join configurations
       - Adding parameterized joins with dynamic parameters
+      - Configuring subfilters for relationship-based filtering (Selecto 0.3.0+)
+      - Setting up window functions for advanced analytics (Selecto 0.3.0+)
+      - Defining pivot table configurations (Selecto 0.3.0+)
+      - Customizing pagination settings with LIMIT/OFFSET support
       - Adding custom domain metadata
       
       Fields, filters, and joins marked with "# CUSTOM" comments will be
@@ -133,6 +137,14 @@ defmodule SelectoMix.DomainGenerator do
     "      default_selected: #{generate_default_selected(config)},\n      \n" <>
     "      # Suggested filters (add/remove as needed)\n" <>
     "      filters: #{generate_filters_config(config)},\n      \n" <>
+    "      # Subfilters for relationship-based filtering (Selecto 0.3.0+)\n" <>
+    "      subfilters: #{generate_subfilters_config(config)},\n      \n" <>
+    "      # Window functions configuration (Selecto 0.3.0+)\n" <>
+    "      window_functions: #{generate_window_functions_config(config)},\n      \n" <>
+    "      # Query pagination settings\n" <>
+    "      pagination: #{generate_pagination_config(config)},\n      \n" <>
+    "      # Pivot table configuration (Selecto 0.3.0+)\n" <>
+    "      pivot: #{generate_pivot_config(config)},\n      \n" <>
     "      # Join configurations\n" <>
     "      joins: #{generate_joins_config(config)}#{custom_metadata}\n    }"
   end
@@ -518,6 +530,96 @@ defmodule SelectoMix.DomainGenerator do
     end
   end
 
+  defp generate_subfilters_config(config) do
+    # Generate subfilter examples based on associations
+    associations = config[:associations] || %{}
+    
+    if Enum.empty?(associations) do
+      "%{}\n      # Example subfilters:\n" <>
+      "      # \"has_active_items\" => %{\n" <>
+      "      #   path: \"items\",\n" <>
+      "      #   filter: %{\"active\" => true},\n" <>
+      "      #   strategy: :exists\n" <>
+      "      # },\n" <>
+      "      # \"high_value_orders\" => %{\n" <>
+      "      #   path: \"orders\",\n" <>
+      "      #   filter: {:aggregation, :sum, \"total\", \">\", 1000},\n" <>
+      "      #   strategy: :aggregation\n" <>
+      "      # }"
+    else
+      # Generate example subfilters based on actual associations
+      examples = associations
+        |> Enum.take(2)
+        |> Enum.map(fn {assoc_name, _assoc_config} ->
+          "      # \"has_#{assoc_name}\" => %{\n" <>
+          "      #   path: \"#{assoc_name}\",\n" <>
+          "      #   filter: {:count, \">\", 0},\n" <>
+          "      #   strategy: :exists\n" <>
+          "      # }"
+        end)
+        |> Enum.join(",\n")
+      
+      "%{}\n#{examples}"
+    end
+  end
+
+  defp generate_window_functions_config(_config) do
+    "%{}\n      # Example window functions:\n" <>
+    "      # \"rank_by_created\" => %{\n" <>
+    "      #   function: :row_number,\n" <>
+    "      #   partition_by: [],\n" <>
+    "      #   order_by: [{\"created_at\", :desc}]\n" <>
+    "      # },\n" <>
+    "      # \"percentile_by_amount\" => %{\n" <>
+    "      #   function: :percent_rank,\n" <>
+    "      #   partition_by: [\"category_id\"],\n" <>
+    "      #   order_by: [{\"amount\", :asc}]\n" <>
+    "      # },\n" <>
+    "      # \"running_total\" => %{\n" <>
+    "      #   function: {:sum, \"amount\"},\n" <>
+    "      #   partition_by: [\"user_id\"],\n" <>
+    "      #   order_by: [{\"created_at\", :asc}],\n" <>
+    "      #   frame: {:rows, :unbounded_preceding, :current_row}\n" <>
+    "      # }"
+  end
+
+  defp generate_pagination_config(_config) do
+    "%{\n" <>
+    "        # Default pagination settings\n" <>
+    "        default_limit: 50,\n" <>
+    "        max_limit: 1000,\n" <>
+    "        \n" <>
+    "        # Cursor-based pagination support\n" <>
+    "        cursor_fields: [:id],\n" <>
+    "        \n" <>
+    "        # Enable/disable pagination features\n" <>
+    "        allow_offset: true,\n" <>
+    "        require_limit: false\n" <>
+    "      }"
+  end
+
+  defp generate_pivot_config(config) do
+    # Get field types to suggest numeric fields for pivot values
+    field_types = config[:field_types] || %{}
+    numeric_fields = field_types
+      |> Enum.filter(fn {_field, type} ->
+        type in [:integer, :decimal, :float]
+      end)
+      |> Enum.map(fn {field, _type} -> field end)
+      |> Enum.take(2)
+    
+    value_field = List.first(numeric_fields, :amount)
+    
+    "%{}\n      # Example pivot configuration:\n" <>
+    "      # %{\n" <>
+    "      #   row_key: \"category_id\",\n" <>
+    "      #   column_key: \"month\",\n" <>
+    "      #   value_field: \"#{value_field}\",\n" <>
+    "      #   aggregation: :sum,\n" <>
+    "      #   fill_value: 0\n" <>
+    "      # }"
+  end
+
   defp generate_custom_metadata(config) do
     custom_metadata = get_in(config, [:preserved_customizations, :custom_metadata]) || %{}
     
@@ -534,12 +636,34 @@ defmodule SelectoMix.DomainGenerator do
     [
       "@doc \"Create a new Selecto instance configured with this domain.\"",
       "def new(repo, opts \\\\ []) do",
+      "  # Enable validation by default in development and test environments",
+      "  validate = Keyword.get(opts, :validate, Mix.env() in [:dev, :test])",
+      "  opts = Keyword.put(opts, :validate, validate)",
+      "  ",
       "  Selecto.configure(domain(), repo, opts)",
       "end",
       "",
       "@doc \"Create a Selecto instance using Ecto integration.\"",
       "def from_ecto(repo, opts \\\\ []) do",
       "  Selecto.from_ecto(repo, #{inspect(schema_module)}, opts)",
+      "end",
+      "",
+      "@doc \"Validate the domain configuration (Selecto 0.3.0+).\"",
+      "def validate_domain! do",
+      "  case Selecto.DomainValidator.validate_domain(domain()) do",
+      "    :ok -> ",
+      "      :ok",
+      "    {:error, errors} ->",
+      "      raise Selecto.DomainValidator.ValidationError, errors: errors",
+      "  end",
+      "end",
+      "",
+      "@doc \"Check if the domain configuration is valid.\"",
+      "def valid_domain? do",
+      "  case Selecto.DomainValidator.validate_domain(domain()) do",
+      "    :ok -> true",
+      "    {:error, _} -> false",
+      "  end",
       "end",
       "",
       "@doc \"Get the schema module this domain represents.\"",
@@ -727,6 +851,117 @@ defmodule SelectoMix.DomainGenerator do
         else
           nil
         end
+    end
+  end
+
+  # New helper functions for advanced Selecto features
+
+  defp generate_window_functions_config(config) do
+    # Generate window function configurations based on schema
+    # This can be enhanced to detect common patterns
+    if config[:generate_window_functions] do
+      "%{
+        # Example window functions - customize as needed
+        # row_number: %{
+        #   partition_by: [\"category\"],
+        #   order_by: [\"created_at\"]
+        # },
+        # running_total: %{
+        #   function: :sum,
+        #   column: \"amount\",
+        #   partition_by: [\"user_id\"],
+        #   order_by: [\"date\"],
+        #   frame: {:rows, :unbounded_preceding, :current_row}
+        # }
+      }"
+    else
+      ""
+    end
+  end
+
+  defp generate_ctes_config(config) do
+    # Generate CTE configurations
+    if config[:generate_ctes] do
+      "%{
+        # Example CTEs - define reusable query expressions
+        # recent_records: %{
+        #   query: fn selecto ->
+        #     selecto
+        #     |> Selecto.filter({{\"created_at\", \">=\"}, Date.add(Date.utc_today(), -30)})
+        #   end
+        # }
+      }"
+    else
+      ""
+    end
+  end
+
+  defp generate_subfilters_config(config) do
+    # Generate subfilter configurations with temporal/range support
+    if config[:generate_subfilters] do
+      "%{
+        # Example subfilters with temporal/range support
+        # recent_activity: %{
+        #   field: \"last_update\",
+        #   filter: {:within_days, 7},
+        #   strategy: :exists
+        # },
+        # price_range: %{
+        #   field: \"amount\",
+        #   filter: {\"between\", 10.0, 100.0},
+        #   strategy: :in
+        # }
+      }"
+    else
+      ""
+    end
+  end
+
+  defp generate_values_clauses_config(config) do
+    # Generate VALUES clause configurations
+    if config[:generate_values_clauses] do
+      "%{
+        # Example VALUES clauses for inline data
+        # rating_lookup: %{
+        #   data: [
+        #     %{code: \"PG\", description: \"Family Friendly\"},
+        #     %{code: \"PG-13\", description: \"Teen\"},
+        #     %{code: \"R\", description: \"Adult\"}
+        #   ]
+        # }
+      }"
+    else
+      ""
+    end
+  end
+
+  defp generate_window_function_helpers(config) do
+    if config[:generate_window_functions] do
+      "\n\n    @doc \"Apply configured window functions to the query.\"\n" <>
+      "    def with_window_functions(selecto, function_names \\\\ :all) do\n" <>
+      "      window_configs = domain()[:window_functions] || %{}\n" <>
+      "      \n" <>
+      "      functions_to_apply = case function_names do\n" <>
+      "        :all -> Map.keys(window_configs)\n" <>
+      "        names when is_list(names) -> names\n" <>
+      "        name -> [name]\n" <>
+      "      end\n" <>
+      "      \n" <>
+      "      Enum.reduce(functions_to_apply, selecto, fn function_name, acc ->\n" <>
+      "        case Map.get(window_configs, function_name) do\n" <>
+      "          nil -> acc\n" <>
+      "          config ->\n" <>
+      "            function = Map.get(config, :function, function_name)\n" <>
+      "            column = Map.get(config, :column)\n" <>
+      "            over_opts = Map.take(config, [:partition_by, :order_by, :frame])\n" <>
+      "            \n" <>
+      "            args = if column, do: [column], else: []\n" <>
+      "            Selecto.window_function(acc, function, args, over: over_opts, as: to_string(function_name))\n" <>
+      "        end\n" <>
+      "      end)\n" <>
+      "    end"
+    else
+      ""
     end
   end
 end
