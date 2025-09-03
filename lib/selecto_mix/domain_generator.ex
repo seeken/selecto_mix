@@ -879,22 +879,23 @@ defmodule SelectoMix.DomainGenerator do
     end
   end
 
-  defp generate_ctes_config(config) do
-    # Generate CTE configurations
-    if config[:generate_ctes] do
-      "%{
-        # Example CTEs - define reusable query expressions
-        # recent_records: %{
-        #   query: fn selecto ->
-        #     selecto
-        #     |> Selecto.filter({{\"created_at\", \">=\"}, Date.add(Date.utc_today(), -30)})
-        #   end
-        # }
-      }"
-    else
-      ""
-    end
-  end
+  # Unused - kept for future CTE support
+  # defp generate_ctes_config(config) do
+  #   # Generate CTE configurations
+  #   if config[:generate_ctes] do
+  #     "%{
+  #       # Example CTEs - define reusable query expressions
+  #       # recent_records: %{
+  #       #   query: fn selecto ->
+  #       #     selecto
+  #       #     |> Selecto.filter({{\"created_at\", \">=\"}, Date.add(Date.utc_today(), -30)})
+  #       #   end
+  #       # }
+  #     }"
+  #   else
+  #     ""
+  #   end
+  # end
 
   defp generate_subfilters_config(config) do
     # Generate subfilter configurations with temporal/range support
@@ -917,51 +918,13 @@ defmodule SelectoMix.DomainGenerator do
     end
   end
 
-  defp generate_values_clauses_config(config) do
-    # Generate VALUES clause configurations
-    if config[:generate_values_clauses] do
-      "%{
-        # Example VALUES clauses for inline data
-        # rating_lookup: %{
-        #   data: [
-        #     %{code: \"PG\", description: \"Family Friendly\"},
-        #     %{code: \"PG-13\", description: \"Teen\"},
-        #     %{code: \"R\", description: \"Adult\"}
-        #   ]
-        # }
-      }"
-    else
-      ""
-    end
+  # Unused - kept for future VALUES clause support
+  defp generate_values_clauses_config(_config) do
+    ""
   end
 
-  defp generate_window_function_helpers(config) do
-    if config[:generate_window_functions] do
-      "\n\n    @doc \"Apply configured window functions to the query.\"\n" <>
-      "    def with_window_functions(selecto, function_names \\\\ :all) do\n" <>
-      "      window_configs = domain()[:window_functions] || %{}\n" <>
-      "      \n" <>
-      "      functions_to_apply = case function_names do\n" <>
-      "        :all -> Map.keys(window_configs)\n" <>
-      "        names when is_list(names) -> names\n" <>
-      "        name -> [name]\n" <>
-      "      end\n" <>
-      "      \n" <>
-      "      Enum.reduce(functions_to_apply, selecto, fn function_name, acc ->\n" <>
-      "        case Map.get(window_configs, function_name) do\n" <>
-      "          nil -> acc\n" <>
-      "          config ->\n" <>
-      "            function = Map.get(config, :function, function_name)\n" <>
-      "            column = Map.get(config, :column)\n" <>
-      "            over_opts = Map.take(config, [:partition_by, :order_by, :frame])\n" <>
-      "            \n" <>
-      "            args = if column, do: [column], else: []\n" <>
-      "            Selecto.window_function(acc, function, args, over: over_opts, as: to_string(function_name))\n" <>
-      "        end\n" <>
-      "      end)\n" <>
-      "    end"
-    else
-      ""
-    end
+  # Unused helper - kept for future use
+  defp generate_window_function_helpers(_config) do
+    ""
   end
 end
