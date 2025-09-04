@@ -393,13 +393,15 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
             related_config = SelectoMix.SchemaIntrospector.introspect_schema(related_schema, [])
             
             # Build expanded schema config
+            # We don't include associations in expanded schemas to avoid complexity
+            # and circular reference issues
             Map.put(acc, assoc_name, %{
               source_table: related_config[:table_name],
               primary_key: related_config[:primary_key],
               fields: related_config[:fields],
               redact_fields: [],
               columns: related_config[:field_types] || %{},
-              associations: related_config[:associations] || %{}
+              associations: %{}  # No associations in expanded schemas
             })
           else
             acc

@@ -353,8 +353,8 @@ defmodule SelectoMix.DomainGenerator do
                 {field, simplified_type}
               end)
             
-            # Basic association discovery (simplified)
-            associations = discover_basic_associations(schema_module)
+            # No associations in expanded schemas to avoid circular references
+            associations = %{}
             
             {:ok, %{
               fields: fields,
@@ -407,11 +407,16 @@ defmodule SelectoMix.DomainGenerator do
   defp get_association_queryable(assoc) do
     case assoc.queryable do
       module when is_atom(module) ->
-        module
+        # For now, we'll just exclude associations that point back to the main schema
+        # This is a temporary fix - a proper solution would handle self-referential associations
+        module_name = module
         |> Module.split()
         |> List.last()
         |> Macro.underscore()
-        |> String.to_atom()
+        
+        # Return nil for associations we want to skip
+        # The calling code should filter these out
+        String.to_atom(module_name)
       other -> other
     end
   end

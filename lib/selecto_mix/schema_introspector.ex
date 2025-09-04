@@ -254,15 +254,15 @@ defmodule SelectoMix.SchemaIntrospector do
     _field_str = to_string(field)
     
     base_config = %{
-      "name" => humanize_field_name(field),
-      "type" => filter_type_for_selecto_type(field_type)
+      name: humanize_field_name(field),
+      type: filter_type_for_selecto_type(field_type)
     }
     
     case field_type do
       :boolean -> 
-        Map.put(base_config, "default", true)
+        Map.put(base_config, :default, true)
       type when type in [:date, :utc_datetime] ->
-        Map.put(base_config, "operator", "gte")
+        Map.put(base_config, :operator, "gte")
       _ -> 
         base_config
     end
