@@ -202,35 +202,35 @@ defmodule SelectoMix.CLIParser do
     # Validate adapter
     errors = case args[:adapter] do
       nil -> errors
-      adapter when adapter in ["postgres", "mysql", "sqlite"] -> errors
+      adapter when adapter in [:postgres, :mysql, :sqlite] -> errors
       adapter -> ["Invalid adapter: #{adapter}" | errors]
     end
     
     # Validate joins option
     errors = case args[:joins] do
       nil -> errors
-      joins when joins in ["all", "basic", "advanced", "none"] -> errors
+      joins when joins in [:all, :basic, :advanced, :none] -> errors
       joins -> ["Invalid joins option: #{joins}" | errors]
     end
     
     # Validate join strategy
     errors = case args[:join_strategy] do
       nil -> errors
-      strategy when strategy in ["eager", "lazy", "optimized"] -> errors
+      strategy when strategy in [:eager, :lazy, :optimized] -> errors
       strategy -> ["Invalid join strategy: #{strategy}" | errors]
     end
     
     # Validate format
     errors = case args[:format] do
       nil -> errors
-      format when format in ["compact", "expanded", "documented"] -> errors
+      format when format in [:compact, :expanded, :documented] -> errors
       format -> ["Invalid format: #{format}" | errors]
     end
     
     # Validate style
     errors = case args[:style] do
       nil -> errors
-      style when style in ["phoenix", "clean", "modular"] -> errors
+      style when style in [:phoenix, :clean, :modular] -> errors
       style -> ["Invalid style: #{style}" | errors]
     end
     
