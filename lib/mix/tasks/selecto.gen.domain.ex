@@ -456,16 +456,18 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     end
   end
 
-  defp live_view_file_path(_app_name_atom, schema) do
+  defp live_view_file_path(app_name_atom, schema) do
     schema_parts = schema |> to_string() |> String.split(".")
-    app_name = get_app_name_from_schema_parts(schema_parts)
+    # Use the actual app name from Igniter instead of trying to derive it
+    app_name = app_name_atom |> to_string()
     schema_name = List.last(schema_parts) |> Macro.underscore()
     "lib/#{app_name}_web/live/#{schema_name}_live.ex"
   end
 
-  defp live_view_html_file_path(_app_name_atom, schema) do
+  defp live_view_html_file_path(app_name_atom, schema) do
     schema_parts = schema |> to_string() |> String.split(".")
-    app_name = get_app_name_from_schema_parts(schema_parts)
+    # Use the actual app name from Igniter instead of trying to derive it
+    app_name = app_name_atom |> to_string()
     schema_name = List.last(schema_parts) |> Macro.underscore()
     "lib/#{app_name}_web/live/#{schema_name}_live.html.heex"
   end
@@ -489,10 +491,15 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   defp render_live_view_template(schema, opts) do
     # Extract app name from the schema module
     schema_parts = schema |> to_string() |> String.split(".")
-    app_name = List.first(schema_parts)
-    schema_name = List.last(schema_parts)
+    # Remove "Elixir" prefix if present
+    clean_parts = case schema_parts do
+      ["Elixir" | rest] -> rest
+      parts -> parts
+    end
+    app_name = List.first(clean_parts)
+    schema_name = List.last(clean_parts)
     schema_underscore = Macro.underscore(schema_name)
-    domain_module = "#{schema}Domain"
+    domain_module = "#{app_name}.SelectoDomains.#{schema_name}Domain"
     web_module = "#{app_name}Web"
 
     saved_views_code = if opts[:saved_views] do
@@ -633,8 +640,13 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
   defp add_route_suggestion(igniter, schema) do
     schema_parts = schema |> to_string() |> String.split(".")
-    app_name = List.first(schema_parts)
-    schema_name = List.last(schema_parts)
+    # Remove Elixir prefix if present
+    clean_parts = case schema_parts do
+      ["Elixir" | rest] -> rest
+      parts -> parts
+    end
+    app_name = List.first(clean_parts)
+    schema_name = List.last(clean_parts)
     schema_underscore = Macro.underscore(schema_name)
     live_module = "#{app_name}Web.#{schema_name}Live"
 
