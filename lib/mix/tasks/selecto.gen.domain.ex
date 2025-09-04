@@ -67,6 +67,9 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   """
 
   use Igniter.Mix.Task
+  
+  alias SelectoMix.{AdapterDetector, CLIParser, JoinAnalyzer}
+  alias SelectoMix.{SchemaIntrospector, ConfigMerger, DomainGenerator}
 
   @impl Igniter.Mix.Task
   def info(_argv, _composing_task) do
