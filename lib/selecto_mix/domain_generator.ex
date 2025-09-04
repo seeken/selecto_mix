@@ -138,11 +138,14 @@ defmodule SelectoMix.DomainGenerator do
     "      # Suggested filters (add/remove as needed)\n" <>
     "      filters: #{generate_filters_config(config)},\n      \n" <>
     "      # Subfilters for relationship-based filtering (Selecto 0.3.0+)\n" <>
-    "      subfilters: #{generate_subfilters_config(config)},\n      \n" <>
+    "      subfilters: #{generate_subfilters_config(config)},\n" <>
+    "      \n" <>
     "      # Window functions configuration (Selecto 0.3.0+)\n" <>
-    "      window_functions: #{generate_window_functions_config(config)},\n      \n" <>
+    "      window_functions: #{generate_window_functions_config(config)},\n" <>
+    "      \n" <>
     "      # Query pagination settings\n" <>
-    "      pagination: #{generate_pagination_config(config)},\n      \n" <>
+    "      pagination: #{generate_pagination_config(config)},\n" <>
+    "      \n" <>
     "      # Pivot table configuration (Selecto 0.3.0+)\n" <>
     "      pivot: #{generate_pivot_config(config)},\n      \n" <>
     "      # Join configurations\n" <>
@@ -280,10 +283,13 @@ defmodule SelectoMix.DomainGenerator do
     schema_name_str = to_string(schema_name)
     related_schema_str = to_string(related_schema)
     
-    Enum.any?(expand_schemas_list, fn expand_name ->
-      String.contains?(schema_name_str, expand_name) or
-      String.contains?(related_schema_str, expand_name)
+      # Remove debug output
+    result = Enum.any?(expand_schemas_list || [], fn expand_name ->
+      String.contains?(String.downcase(schema_name_str), String.downcase(expand_name)) or
+      String.contains?(String.downcase(related_schema_str), String.downcase(expand_name))
     end)
+    
+    result
   end
   
   defp generate_placeholder_schema_config(schema_name, related_schema_string, table_name) do
@@ -331,36 +337,40 @@ defmodule SelectoMix.DomainGenerator do
   defp introspect_related_schema(schema_module) do
     try do
       # Try to load the module and introspect it
-      Code.ensure_loaded(schema_module)
-      
-      if function_exported?(schema_module, :__schema__, 1) do
-        fields = schema_module.__schema__(:fields)
-        types = schema_module.__schema__(:types)
-        primary_key = schema_module.__schema__(:primary_key) |> List.first() || :id
-        
-        # Convert types to simplified format
-        field_types = 
-          fields
-          |> Enum.into(%{}, fn field ->
-            type = Map.get(types, field, :string)
-            simplified_type = simplify_ecto_type(type)
-            {field, simplified_type}
-          end)
-        
-        # Basic association discovery (simplified)
-        associations = discover_basic_associations(schema_module)
-        
-        {:ok, %{
-          fields: fields,
-          field_types: field_types,
-          primary_key: primary_key,
-          associations: associations
-        }}
-      else
-        {:error, :not_ecto_schema}
+      # Ensure the module is loaded
+      case Code.ensure_loaded(schema_module) do
+        {:module, _} ->
+          if function_exported?(schema_module, :__schema__, 1) do
+            fields = schema_module.__schema__(:fields)
+            primary_key = schema_module.__schema__(:primary_key) |> List.first() || :id
+            
+            # Convert types to simplified format
+            field_types = 
+              fields
+              |> Enum.into(%{}, fn field ->
+                type = schema_module.__schema__(:type, field)
+                simplified_type = simplify_ecto_type(type)
+                {field, simplified_type}
+              end)
+            
+            # Basic association discovery (simplified)
+            associations = discover_basic_associations(schema_module)
+            
+            {:ok, %{
+              fields: fields,
+              field_types: field_types,
+              primary_key: primary_key,
+              associations: associations
+            }}
+          else
+            {:error, :not_ecto_schema}
+          end
+        {:error, _reason} ->
+          {:error, :module_not_loaded}
       end
     rescue
-      _ -> {:error, :introspection_failed}
+      _ -> 
+        {:error, :introspection_failed}
     end
   end
   
@@ -535,52 +545,16 @@ defmodule SelectoMix.DomainGenerator do
     associations = config[:associations] || %{}
     
     if Enum.empty?(associations) do
-      "%{}\n      # Example subfilters:\n" <>
-      "      # \"has_active_items\" => %{\n" <>
-      "      #   path: \"items\",\n" <>
-      "      #   filter: %{\"active\" => true},\n" <>
-      "      #   strategy: :exists\n" <>
-      "      # },\n" <>
-      "      # \"high_value_orders\" => %{\n" <>
-      "      #   path: \"orders\",\n" <>
-      "      #   filter: {:aggregation, :sum, \"total\", \">\", 1000},\n" <>
-      "      #   strategy: :aggregation\n" <>
-      "      # }"
+      "%{}"
     else
-      # Generate example subfilters based on actual associations
-      examples = associations
-        |> Enum.take(2)
-        |> Enum.map(fn {assoc_name, _assoc_config} ->
-          "      # \"has_#{assoc_name}\" => %{\n" <>
-          "      #   path: \"#{assoc_name}\",\n" <>
-          "      #   filter: {:count, \">\", 0},\n" <>
-          "      #   strategy: :exists\n" <>
-          "      # }"
-        end)
-        |> Enum.join(",\n")
-      
-      "%{}\n#{examples}"
+      # Generate example subfilters based on actual associations as comments
+      # We'll just return an empty map for now
+      "%{}"
     end
   end
 
   defp generate_window_functions_config(_config) do
-    "%{}\n      # Example window functions:\n" <>
-    "      # \"rank_by_created\" => %{\n" <>
-    "      #   function: :row_number,\n" <>
-    "      #   partition_by: [],\n" <>
-    "      #   order_by: [{\"created_at\", :desc}]\n" <>
-    "      # },\n" <>
-    "      # \"percentile_by_amount\" => %{\n" <>
-    "      #   function: :percent_rank,\n" <>
-    "      #   partition_by: [\"category_id\"],\n" <>
-    "      #   order_by: [{\"amount\", :asc}]\n" <>
-    "      # },\n" <>
-    "      # \"running_total\" => %{\n" <>
-    "      #   function: {:sum, \"amount\"},\n" <>
-    "      #   partition_by: [\"user_id\"],\n" <>
-    "      #   order_by: [{\"created_at\", :asc}],\n" <>
-    "      #   frame: {:rows, :unbounded_preceding, :current_row}\n" <>
-    "      # }"
+    "%{}"
   end
 
   defp generate_pagination_config(_config) do
@@ -598,26 +572,8 @@ defmodule SelectoMix.DomainGenerator do
     "      }"
   end
 
-  defp generate_pivot_config(config) do
-    # Get field types to suggest numeric fields for pivot values
-    field_types = config[:field_types] || %{}
-    numeric_fields = field_types
-      |> Enum.filter(fn {_field, type} ->
-        type in [:integer, :decimal, :float]
-      end)
-      |> Enum.map(fn {field, _type} -> field end)
-      |> Enum.take(2)
-    
-    value_field = List.first(numeric_fields, :amount)
-    
-    "%{}\n      # Example pivot configuration:\n" <>
-    "      # %{\n" <>
-    "      #   row_key: \"category_id\",\n" <>
-    "      #   column_key: \"month\",\n" <>
-    "      #   value_field: \"#{value_field}\",\n" <>
-    "      #   aggregation: :sum,\n" <>
-    "      #   fill_value: 0\n" <>
-    "      # }"
+  defp generate_pivot_config(_config) do
+    "%{}"
   end
 
   defp generate_custom_metadata(config) do
@@ -856,28 +812,6 @@ defmodule SelectoMix.DomainGenerator do
 
   # New helper functions for advanced Selecto features
 
-  defp generate_window_functions_config(config) do
-    # Generate window function configurations based on schema
-    # This can be enhanced to detect common patterns
-    if config[:generate_window_functions] do
-      "%{
-        # Example window functions - customize as needed
-        # row_number: %{
-        #   partition_by: [\"category\"],
-        #   order_by: [\"created_at\"]
-        # },
-        # running_total: %{
-        #   function: :sum,
-        #   column: \"amount\",
-        #   partition_by: [\"user_id\"],
-        #   order_by: [\"date\"],
-        #   frame: {:rows, :unbounded_preceding, :current_row}
-        # }
-      }"
-    else
-      ""
-    end
-  end
 
   # Unused - kept for future CTE support
   # defp generate_ctes_config(config) do
@@ -897,26 +831,6 @@ defmodule SelectoMix.DomainGenerator do
   #   end
   # end
 
-  defp generate_subfilters_config(config) do
-    # Generate subfilter configurations with temporal/range support
-    if config[:generate_subfilters] do
-      "%{
-        # Example subfilters with temporal/range support
-        # recent_activity: %{
-        #   field: \"last_update\",
-        #   filter: {:within_days, 7},
-        #   strategy: :exists
-        # },
-        # price_range: %{
-        #   field: \"amount\",
-        #   filter: {\"between\", 10.0, 100.0},
-        #   strategy: :in
-        # }
-      }"
-    else
-      ""
-    end
-  end
 
   # Unused - kept for future VALUES clause support
   defp generate_values_clauses_config(_config) do

@@ -104,7 +104,13 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
   @impl Igniter.Mix.Task
   def igniter(igniter) do
-    {parsed_args, remaining_args} = OptionParser.parse!(igniter.args.argv, strict: info(igniter.args.argv, nil).schema)
+    # Ensure all modules are compiled first
+    Mix.Task.run("compile", [])
+    
+    {parsed_args_list, remaining_args} = OptionParser.parse!(igniter.args.argv, strict: info(igniter.args.argv, nil).schema)
+    
+    # Convert keyword list to map for easier manipulation
+    parsed_args = Map.new(parsed_args_list)
 
     schemas_arg = List.first(remaining_args) || ""
 
@@ -311,21 +317,43 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
   defp ensure_directory_exists(igniter, dir_path) do
     # Use Igniter to ensure directory exists
-    Igniter.create_new_file(igniter, Path.join(dir_path, ".gitkeep"), "")
+    gitkeep_path = Path.join(dir_path, ".gitkeep")
+    if File.exists?(gitkeep_path) do
+      igniter
+    else
+      Igniter.create_new_file(igniter, gitkeep_path, "")
+    end
   end
 
   defp generate_domain_file(igniter, schema, file_path, opts) do
     existing_content = read_existing_domain_file(igniter, file_path)
-    domain_config = SelectoMix.SchemaIntrospector.introspect_schema(schema, opts)
+    # Convert map opts to keyword list for SchemaIntrospector
+    opts_list = Map.to_list(opts)
+    domain_config = SelectoMix.SchemaIntrospector.introspect_schema(schema, opts_list)
+    
+    # Expand associated schemas if requested
+    expanded_config = if opts[:expand_schemas_list] && is_list(opts[:expand_schemas_list]) do
+      domain_config
+      |> expand_associated_schemas(opts[:expand_schemas_list])
+      |> Map.put(:expand_schemas_list, opts[:expand_schemas_list])
+    else
+      domain_config
+    end
 
     merged_config = if opts[:force] do
-      domain_config
+      expanded_config
     else
-      SelectoMix.ConfigMerger.merge_with_existing(domain_config, existing_content)
+      SelectoMix.ConfigMerger.merge_with_existing(expanded_config, existing_content)
     end
 
     content = SelectoMix.DomainGenerator.generate_domain_file(schema, merged_config)
 
+    # For now, delete the existing file and create a new one
+    # This is a workaround until we figure out the proper Igniter API
+    if File.exists?(file_path) do
+      File.rm!(file_path)
+    end
+    
     Igniter.create_new_file(igniter, file_path, content)
   end
 
@@ -345,6 +373,44 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       {:error, :enoent} -> nil
       {:error, _reason} -> nil
     end
+  end
+  
+  defp expand_associated_schemas(domain_config, expand_list) do
+    associations = domain_config[:associations] || %{}
+    
+    expanded_schemas = Enum.reduce(expand_list, %{}, fn schema_name, acc ->
+      # Find matching association by name
+      matching_assoc = Enum.find(associations, fn {assoc_name, assoc_data} ->
+        String.downcase(to_string(assoc_name)) == String.downcase(schema_name)
+      end)
+      
+      case matching_assoc do
+        {assoc_name, assoc_data} ->
+          # Get the related schema module
+          related_schema = assoc_data[:related_schema]
+          if related_schema && Code.ensure_loaded?(related_schema) do
+            # Introspect the related schema
+            related_config = SelectoMix.SchemaIntrospector.introspect_schema(related_schema, [])
+            
+            # Build expanded schema config
+            Map.put(acc, assoc_name, %{
+              source_table: related_config[:table_name],
+              primary_key: related_config[:primary_key],
+              fields: related_config[:fields],
+              redact_fields: [],
+              columns: related_config[:field_types] || %{},
+              associations: related_config[:associations] || %{}
+            })
+          else
+            acc
+          end
+        nil ->
+          acc
+      end
+    end)
+    
+    # Add expanded schemas to the domain config
+    Map.put(domain_config, :expanded_schemas, expanded_schemas)
   end
 
   defp generate_live_view_for_schema(igniter, schema, opts) do
