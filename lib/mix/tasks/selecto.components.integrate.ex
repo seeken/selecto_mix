@@ -49,6 +49,9 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
     
     Mix.shell().info("🔧 SelectoComponents Asset Integration")
     Mix.shell().info("=====================================\n")
+    
+    # Check if Chart.js is installed
+    check_chart_js_installation()
 
     app_js_status = integrate_app_js(opts)
     app_css_status = integrate_app_css(opts)
@@ -69,6 +72,81 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
     end
   end
 
+  defp check_chart_js_installation do
+    package_json_path = "assets/package.json"
+    
+    if File.exists?(package_json_path) do
+      case File.read(package_json_path) do
+        {:ok, content} ->
+          # Check if Chart.js is already in dependencies
+          if !String.contains?(content, "\"chart.js\"") do
+            # Add Chart.js to existing package.json
+            add_chart_js_to_package_json(package_json_path, content)
+          else
+            Mix.shell().info("✓ Chart.js: Already configured in package.json")
+          end
+        _ -> :ok
+      end
+    else
+      # Create a minimal package.json with Chart.js
+      create_package_json_with_chart_js(package_json_path)
+    end
+  end
+  
+  defp create_package_json_with_chart_js(path) do
+    content = """
+    {
+      "name": "assets",
+      "version": "1.0.0",
+      "private": true,
+      "dependencies": {
+        "chart.js": "^4.4.0"
+      }
+    }
+    """
+    
+    File.write!(path, content)
+    Mix.shell().info("✓ Created package.json with Chart.js dependency")
+    Mix.shell().info("  Run `cd assets && npm install` to install Chart.js")
+  end
+  
+  defp add_chart_js_to_package_json(path, content) do
+    # Parse JSON and add chart.js to dependencies
+    case Jason.decode(content) do
+      {:ok, json} ->
+        dependencies = Map.get(json, "dependencies", %{})
+        updated_deps = Map.put(dependencies, "chart.js", "^4.4.0")
+        updated_json = Map.put(json, "dependencies", updated_deps)
+        
+        case Jason.encode(updated_json, pretty: true) do
+          {:ok, new_content} ->
+            File.write!(path, new_content)
+            Mix.shell().info("✓ Added Chart.js to package.json dependencies")
+            Mix.shell().info("  Run `cd assets && npm install` to install Chart.js")
+          _ ->
+            Mix.shell().info("""
+            ⚠️  Could not automatically add Chart.js to package.json.
+            
+            Please add manually to your package.json dependencies:
+                "chart.js": "^4.4.0"
+            
+            Then run:
+                cd assets && npm install
+            """)
+        end
+      _ ->
+        Mix.shell().info("""
+        ⚠️  Could not parse package.json.
+        
+        Please add Chart.js manually to your package.json dependencies:
+            "chart.js": "^4.4.0"
+        
+        Then run:
+            cd assets && npm install
+        """)
+    end
+  end
+  
   defp integrate_app_js(opts) do
     app_js_path = "assets/js/app.js"
     
@@ -163,13 +241,56 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
   end
   
   defp add_import_to_js(content) do
+    # First check if Chart.js is imported
+    content_with_chart = 
+      if String.contains?(content, "window.Chart") || String.contains?(content, "import Chart") do
+        content
+      else
+        add_chart_js_import(content)
+      end
+    
+    # Then add selectoComponentsHooks if needed
     cond do
-      String.contains?(content, "import {LiveSocket}") ->
+      String.contains?(content_with_chart, "import {LiveSocket}") ->
         # Add import after LiveSocket import
         String.replace(
-          content,
+          content_with_chart,
           ~r/(import {LiveSocket} from "phoenix_live_view")/,
           "\\1\nimport {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\""
+        )
+        
+      String.contains?(content_with_chart, "import") ->
+        # Find last import and add after it
+        lines = String.split(content_with_chart, "\n")
+        import_lines = Enum.filter(lines, &String.starts_with?(&1, "import"))
+        
+        if length(import_lines) > 0 do
+          last_import = List.last(import_lines)
+          String.replace(
+            content_with_chart,
+            last_import,
+            last_import <> "\nimport {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\""
+          )
+        else
+          # Add at the beginning
+          "import {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\"\n" <> content_with_chart
+        end
+        
+      true ->
+        # Add at the beginning
+        "import {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\"\n" <> content_with_chart
+    end
+  end
+  
+  defp add_chart_js_import(content) do
+    # Find a good place to add Chart.js import
+    cond do
+      String.contains?(content, "import topbar") ->
+        # Add after topbar import
+        String.replace(
+          content,
+          ~r/(import topbar from[^\n]+)/,
+          "\\1\n\n// Import Chart.js for SelectoComponents graph visualization\nimport Chart from \"chart.js/auto\"\nwindow.Chart = Chart"
         )
         
       String.contains?(content, "import") ->
@@ -182,31 +303,39 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
           String.replace(
             content,
             last_import,
-            last_import <> "\nimport {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\""
+            last_import <> "\n\n// Import Chart.js for SelectoComponents graph visualization\nimport Chart from \"chart.js/auto\"\nwindow.Chart = Chart"
           )
         else
-          # Add at the beginning
-          "import {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\"\n" <> content
+          content
         end
         
       true ->
-        # Add at the beginning
-        "import {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\"\n" <> content
+        content
     end
   end
   
   defp add_hooks_to_livesocket(content) do
     cond do
-      String.contains?(content, "hooks:") && String.contains?(content, "selectoComponentsHooks") ->
+      # Check if selectoComponentsHooks is actually IN the hooks object, not just imported
+      String.contains?(content, "hooks:") && String.contains?(content, "...selectoComponentsHooks") ->
         # Already configured
         content
         
+      String.contains?(content, "hooks:") && String.contains?(content, "...") ->
+        # Hooks object exists with spread operator, add our hooks
+        # This handles cases like: hooks: {...colocatedHooks}
+        String.replace(
+          content,
+          ~r/hooks:\s*{\s*([^}]+)}/,
+          "hooks: {\\1, ...selectoComponentsHooks}"
+        )
+        
       String.contains?(content, "hooks:") ->
-        # Hooks object exists, add to it
+        # Hooks object exists without spread, add with spread to preserve existing
         String.replace(
           content,
           ~r/hooks:\s*{([^}]*)}/,
-          "hooks: {\n    ...selectoComponentsHooks,\\1}"
+          "hooks: {...selectoComponentsHooks,\\1}"
         )
         
       String.contains?(content, "new LiveSocket") ->
