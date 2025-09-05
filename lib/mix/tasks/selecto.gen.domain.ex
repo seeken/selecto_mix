@@ -575,6 +575,27 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       end
 
       @impl true
+      def render(assigns) do
+        ~H\"\"\"
+        <div class="container mx-auto px-4 py-8">
+          <h1 class="text-3xl font-bold mb-6">#{schema_name} Explorer</h1>
+          
+          <.live_component
+            module={SelectoComponents.Form}
+            id="#{schema_underscore}-form"
+            {assigns}
+          />
+          
+          <.live_component
+            module={SelectoComponents.Results}
+            id="#{schema_underscore}-results"
+            {assigns}
+          />
+        </div>
+        \"\"\"
+      end
+
+      @impl true
       def handle_event("toggle_show_view_configurator", _params, socket) do
         {:noreply, assign(socket, show_view_configurator: !socket.assigns.show_view_configurator)}
       end
