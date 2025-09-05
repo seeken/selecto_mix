@@ -270,13 +270,16 @@ defmodule SelectoMix.SchemaIntrospector do
 
   defp filter_type_for_selecto_type(selecto_type) do
     case selecto_type do
-      :boolean -> "boolean"
-      :integer -> "number"
-      :decimal -> "number"
-      :float -> "number"
-      :date -> "date"
-      :utc_datetime -> "datetime"
-      _ -> "string"
+      :boolean -> :boolean
+      :integer -> :integer
+      :decimal -> :decimal
+      :float -> :float
+      :date -> :date
+      :utc_datetime -> :utc_datetime
+      :naive_datetime -> :naive_datetime
+      :string -> :string
+      :text -> :string
+      _ -> :string
     end
   end
 
