@@ -426,6 +426,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     |> generate_live_view_file(schema, live_file, opts)
     |> generate_live_view_html_file(schema, html_file, opts)
     |> add_success_message("Generated LiveView files for #{schema}")
+    |> add_colocated_hooks_setup_instructions()
     |> add_route_suggestion(schema)
   end
 
@@ -532,6 +533,27 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
     """
     defmodule #{web_module}.#{schema_name}Live do
+      @moduledoc \"\"\"
+      LiveView for #{schema_name} using SelectoComponents.
+      
+      ## Quick Setup (Phoenix 1.7+)
+      
+      1. Import hooks in `assets/js/app.js`:
+         ```javascript
+         import {hooks as selectoHooks} from "phoenix-colocated/selecto_components"
+         // Add to your liveSocket hooks: { ...selectoHooks }
+         ```
+      
+      2. Add to Tailwind in `assets/css/app.css`:
+         ```css
+         @source "../../deps/selecto_components/lib/**/*.{ex,heex}";
+         ```
+      
+      3. Run `mix assets.build`
+      
+      That's it! The drag-and-drop query builder and charts will work automatically.
+      \"\"\"
+
       use #{web_module}, :live_view
       use SelectoComponents.Form
 
@@ -663,5 +685,28 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
   defp add_success_message(igniter, message) do
     Igniter.add_notice(igniter, message)
+  end
+
+  defp add_colocated_hooks_setup_instructions(igniter) do
+    Igniter.add_notice(igniter, """
+    
+    SelectoComponents Setup (2 simple steps)
+    =========================================
+    
+    1. Import hooks in assets/js/app.js:
+       import {hooks as selectoHooks} from "phoenix-colocated/selecto_components"
+       
+       // Then add to your existing liveSocket:
+       hooks: {
+         ...selectoHooks,
+         // your other hooks
+       }
+    
+    2. Add to Tailwind sources in assets/css/app.css:
+       @source "../../deps/selecto_components/lib/**/*.{ex,heex}";
+    
+    That's it! Phoenix 1.7+ already has everything else configured.
+    Run `mix assets.build` after making these changes.
+    """)
   end
 end
