@@ -78,57 +78,68 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
     if File.exists?(package_json_path) do
       case File.read(package_json_path) do
         {:ok, content} ->
-          # Check if Chart.js is already in dependencies
-          if !String.contains?(content, "\"chart.js\"") do
-            # Add Chart.js to existing package.json
-            add_chart_js_to_package_json(package_json_path, content)
+          # Check if Chart.js and Alpine.js are already in dependencies
+          needs_chart = !String.contains?(content, "\"chart.js\"")
+          needs_alpine = !String.contains?(content, "\"alpinejs\"")
+          
+          if needs_chart || needs_alpine do
+            # Add missing dependencies to existing package.json
+            add_dependencies_to_package_json(package_json_path, content, needs_chart, needs_alpine)
           else
             Mix.shell().info("✓ Chart.js: Already configured in package.json")
+            Mix.shell().info("✓ Alpine.js: Already configured in package.json")
           end
         _ -> :ok
       end
     else
-      # Create a minimal package.json with Chart.js
-      create_package_json_with_chart_js(package_json_path)
+      # Create a minimal package.json with Chart.js and Alpine.js
+      create_package_json_with_dependencies(package_json_path)
     end
   end
   
-  defp create_package_json_with_chart_js(path) do
+  defp create_package_json_with_dependencies(path) do
     content = """
     {
       "name": "assets",
       "version": "1.0.0",
       "private": true,
       "dependencies": {
-        "chart.js": "^4.4.0"
+        "chart.js": "^4.4.0",
+        "alpinejs": "^3.13.0"
       }
     }
     """
     
     File.write!(path, content)
-    Mix.shell().info("✓ Created package.json with Chart.js dependency")
-    Mix.shell().info("  Run `cd assets && npm install` to install Chart.js")
+    Mix.shell().info("✓ Created package.json with Chart.js and Alpine.js dependencies")
+    Mix.shell().info("  Run `cd assets && npm install` to install dependencies")
   end
   
-  defp add_chart_js_to_package_json(path, content) do
-    # Parse JSON and add chart.js to dependencies
+  defp add_dependencies_to_package_json(path, content, needs_chart, needs_alpine) do
+    # Parse JSON and add missing dependencies
     case Jason.decode(content) do
       {:ok, json} ->
         dependencies = Map.get(json, "dependencies", %{})
-        updated_deps = Map.put(dependencies, "chart.js", "^4.4.0")
+        
+        updated_deps = dependencies
+        updated_deps = if needs_chart, do: Map.put(updated_deps, "chart.js", "^4.4.0"), else: updated_deps
+        updated_deps = if needs_alpine, do: Map.put(updated_deps, "alpinejs", "^3.13.0"), else: updated_deps
+        
         updated_json = Map.put(json, "dependencies", updated_deps)
         
         case Jason.encode(updated_json, pretty: true) do
           {:ok, new_content} ->
             File.write!(path, new_content)
-            Mix.shell().info("✓ Added Chart.js to package.json dependencies")
-            Mix.shell().info("  Run `cd assets && npm install` to install Chart.js")
+            if needs_chart, do: Mix.shell().info("✓ Added Chart.js to package.json dependencies")
+            if needs_alpine, do: Mix.shell().info("✓ Added Alpine.js to package.json dependencies")
+            Mix.shell().info("  Run `cd assets && npm install` to install dependencies")
           _ ->
             Mix.shell().info("""
-            ⚠️  Could not automatically add Chart.js to package.json.
+            ⚠️  Could not automatically add dependencies to package.json.
             
             Please add manually to your package.json dependencies:
                 "chart.js": "^4.4.0"
+                "alpinejs": "^3.13.0"
             
             Then run:
                 cd assets && npm install
@@ -138,8 +149,9 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
         Mix.shell().info("""
         ⚠️  Could not parse package.json.
         
-        Please add Chart.js manually to your package.json dependencies:
+        Please add these to your package.json dependencies:
             "chart.js": "^4.4.0"
+            "alpinejs": "^3.13.0"
         
         Then run:
             cd assets && npm install
@@ -249,36 +261,44 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
         add_chart_js_import(content)
       end
     
-    # Then add selectoComponentsHooks if needed
+    # Then check if Alpine.js is imported
+    content_with_alpine =
+      if String.contains?(content_with_chart, "window.Alpine") || String.contains?(content_with_chart, "import Alpine") do
+        content_with_chart
+      else
+        add_alpine_js_import(content_with_chart)
+      end
+    
+    # Finally add selectoComponentsHooks if needed
     cond do
-      String.contains?(content_with_chart, "import {LiveSocket}") ->
+      String.contains?(content_with_alpine, "import {LiveSocket}") ->
         # Add import after LiveSocket import
         String.replace(
-          content_with_chart,
+          content_with_alpine,
           ~r/(import {LiveSocket} from "phoenix_live_view")/,
           "\\1\nimport {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\""
         )
         
-      String.contains?(content_with_chart, "import") ->
+      String.contains?(content_with_alpine, "import") ->
         # Find last import and add after it
-        lines = String.split(content_with_chart, "\n")
+        lines = String.split(content_with_alpine, "\n")
         import_lines = Enum.filter(lines, &String.starts_with?(&1, "import"))
         
         if length(import_lines) > 0 do
           last_import = List.last(import_lines)
           String.replace(
-            content_with_chart,
+            content_with_alpine,
             last_import,
             last_import <> "\nimport {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\""
           )
         else
           # Add at the beginning
-          "import {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\"\n" <> content_with_chart
+          "import {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\"\n" <> content_with_alpine
         end
         
       true ->
         # Add at the beginning
-        "import {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\"\n" <> content_with_chart
+        "import {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\"\n" <> content_with_alpine
     end
   end
   
@@ -304,6 +324,46 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
             content,
             last_import,
             last_import <> "\n\n// Import Chart.js for SelectoComponents graph visualization\nimport Chart from \"chart.js/auto\"\nwindow.Chart = Chart"
+          )
+        else
+          content
+        end
+        
+      true ->
+        content
+    end
+  end
+  
+  defp add_alpine_js_import(content) do
+    # Find a good place to add Alpine.js import
+    cond do
+      String.contains?(content, "window.Chart = Chart") ->
+        # Add after Chart.js if it exists
+        String.replace(
+          content,
+          ~r/(window\.Chart = Chart)/,
+          "\\1\n\n// Import Alpine.js for enhanced interactivity\nimport Alpine from \"alpinejs\"\nwindow.Alpine = Alpine\nAlpine.start()"
+        )
+        
+      String.contains?(content, "import topbar") ->
+        # Add after topbar import
+        String.replace(
+          content,
+          ~r/(import topbar from[^\n]+)/,
+          "\\1\n\n// Import Alpine.js for enhanced interactivity\nimport Alpine from \"alpinejs\"\nwindow.Alpine = Alpine\nAlpine.start()"
+        )
+        
+      String.contains?(content, "import") ->
+        # Find last import and add after it
+        lines = String.split(content, "\n")
+        import_lines = Enum.filter(lines, &String.starts_with?(&1, "import"))
+        
+        if length(import_lines) > 0 do
+          last_import = List.last(import_lines)
+          String.replace(
+            content,
+            last_import,
+            last_import <> "\n\n// Import Alpine.js for enhanced interactivity\nimport Alpine from \"alpinejs\"\nwindow.Alpine = Alpine\nAlpine.start()"
           )
         else
           content
