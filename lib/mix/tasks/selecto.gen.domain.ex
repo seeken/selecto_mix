@@ -430,32 +430,27 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     |> add_route_suggestion(schema)
   end
 
-  defp generate_saved_views_if_needed(igniter, _opts) do
-    app_name = Igniter.Project.Application.app_name(igniter)
-    saved_view_context_path = "lib/#{app_name}/saved_view_context.ex"
+  defp generate_saved_views_if_needed(igniter, opts) do
+    if opts[:saved_views] do
+      app_name = Igniter.Project.Application.app_name(igniter)
+      saved_view_context_path = "lib/#{app_name}/saved_view_context.ex"
 
-    # Check if saved views implementation already exists
-    case File.exists?(saved_view_context_path) do
-      true ->
-        igniter
-      false ->
-        # Generate saved views implementation
-        Mix.Tasks.Selecto.Gen.SavedViews.igniter(%Igniter{
-          args: %{argv: [to_string(Macro.camelize(to_string(app_name)))]},
-          issues: [],
-          notices: [],
-          tasks: [],
-          warnings: [],
-          assigns: %{}
-        })
-        |> then(fn saved_views_igniter ->
-          # Merge the results back into our igniter
-          %{igniter |
-            issues: igniter.issues ++ saved_views_igniter.issues,
-            notices: igniter.notices ++ saved_views_igniter.notices,
-            warnings: igniter.warnings ++ saved_views_igniter.warnings
+      # Check if saved views implementation already exists
+      case File.exists?(saved_view_context_path) do
+        true ->
+          igniter
+        false ->
+          # Generate saved views implementation by updating the igniter's args
+          # and calling the saved views task
+          updated_igniter = %{igniter |
+            args: %{igniter.args |
+              argv: [to_string(Macro.camelize(to_string(app_name)))]
+            }
           }
-        end)
+          Mix.Tasks.Selecto.Gen.SavedViews.igniter(updated_igniter)
+      end
+    else
+      igniter
     end
   end
 
