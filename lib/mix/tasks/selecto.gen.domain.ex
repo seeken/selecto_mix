@@ -426,7 +426,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     |> generate_live_view_file(schema, live_file, opts)
     |> generate_live_view_html_file(schema, html_file, opts)
     |> add_success_message("Generated LiveView files for #{schema}")
-    |> add_colocated_hooks_setup_instructions()
+    |> maybe_run_assets_integration()
     |> add_route_suggestion(schema)
   end
 
@@ -687,26 +687,25 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     Igniter.add_notice(igniter, message)
   end
 
-  defp add_colocated_hooks_setup_instructions(igniter) do
-    Igniter.add_notice(igniter, """
+  defp maybe_run_assets_integration(igniter) do
+    # Check if integration is needed
+    Mix.Task.run("selecto.components.integrate", ["--check"])
     
-    SelectoComponents Setup (2 simple steps)
-    =========================================
+    # Ask user if they want to run integration
+    if Mix.shell().yes?("\nWould you like to automatically integrate SelectoComponents?") do
+      Mix.Task.rerun("selecto.components.integrate", [])
+    else
+      Igniter.add_notice(igniter, """
+      
+      To complete SelectoComponents setup, run:
+          mix selecto.components.integrate
+      
+      Or manually configure:
+      1. Import hooks in assets/js/app.js
+      2. Add @source directive in assets/css/app.css
+      """)
+    end
     
-    1. Import hooks in assets/js/app.js:
-       import {hooks as selectoHooks} from "phoenix-colocated/selecto_components"
-       
-       // Then add to your existing liveSocket:
-       hooks: {
-         ...selectoHooks,
-         // your other hooks
-       }
-    
-    2. Add to Tailwind sources in assets/css/app.css:
-       @source "../../deps/selecto_components/lib/**/*.{ex,heex}";
-    
-    That's it! Phoenix 1.7+ already has everything else configured.
-    Run `mix assets.build` after making these changes.
-    """)
+    igniter
   end
 end
