@@ -34,9 +34,9 @@ defmodule SelectoMix.AdapterDetector do
     },
     mysql: %{
       arrays: false,  # Use JSON arrays instead
-      ctes: {">= 8.0", true, false},  # Version dependent
-      recursive_ctes: {">= 8.0", true, false},
-      window_functions: {">= 8.0", true, false},
+      ctes: {">= 8.0.0", true, false},  # Version dependent
+      recursive_ctes: {">= 8.0.0", true, false},
+      window_functions: {">= 8.0.0", true, false},
       lateral_joins: {">= 8.0.14", true, false},  # Limited support
       full_outer_join: false,
       json_operators: true,
@@ -45,7 +45,7 @@ defmodule SelectoMix.AdapterDetector do
       partial_indexes: {">= 8.0.13", true, false},
       check_constraints: {">= 8.0.16", true, false},
       exclusion_constraints: false,
-      generated_columns: {">= 5.7", true, false},
+      generated_columns: {">= 5.7.0", true, false},
       table_inheritance: false,
       listen_notify: false
     },
@@ -53,7 +53,7 @@ defmodule SelectoMix.AdapterDetector do
       arrays: false,  # Use JSON arrays
       ctes: true,
       recursive_ctes: true,
-      window_functions: {">= 3.25", true, false},
+      window_functions: {">= 3.25.0", true, false},
       lateral_joins: false,
       full_outer_join: false,
       json_operators: true,  # Requires JSON1 extension
@@ -62,7 +62,7 @@ defmodule SelectoMix.AdapterDetector do
       partial_indexes: true,
       check_constraints: true,
       exclusion_constraints: false,
-      generated_columns: {">= 3.31", true, false},
+      generated_columns: {">= 3.31.0", true, false},
       table_inheritance: false,
       listen_notify: false
     }
@@ -310,7 +310,21 @@ defmodule SelectoMix.AdapterDetector do
   end
   
   defp version_supported?(version, min_version, supported, unsupported) do
-    if Version.match?(version, min_version) do
+    # Convert version string to valid semantic version if needed
+    version_str = case version do
+      nil -> nil
+      v when is_binary(v) ->
+        # Ensure version has at least three parts (major.minor.patch)
+        parts = String.split(v, ".")
+        case length(parts) do
+          1 -> "#{v}.0.0"
+          2 -> "#{v}.0"
+          _ -> v
+        end
+      v -> to_string(v)
+    end
+    
+    if version_str && Version.match?(version_str, min_version) do
       supported
     else
       unsupported
