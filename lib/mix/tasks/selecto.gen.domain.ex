@@ -68,8 +68,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
   use Igniter.Mix.Task
   
-  alias SelectoMix.{AdapterDetector, CLIParser, JoinAnalyzer}
-  alias SelectoMix.{SchemaIntrospector, ConfigMerger, DomainGenerator}
+  # alias SelectoMix.{AdapterDetector, CLIParser, JoinAnalyzer}
+  # alias SelectoMix.{SchemaIntrospector, ConfigMerger, DomainGenerator}
 
   @impl Igniter.Mix.Task
   def info(_argv, _composing_task) do
@@ -380,7 +380,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     
     expanded_schemas = Enum.reduce(expand_list, %{}, fn schema_name, acc ->
       # Find matching association by name
-      matching_assoc = Enum.find(associations, fn {assoc_name, assoc_data} ->
+      matching_assoc = Enum.find(associations, fn {assoc_name, _assoc_data} ->
         String.downcase(to_string(assoc_name)) == String.downcase(schema_name)
       end)
       

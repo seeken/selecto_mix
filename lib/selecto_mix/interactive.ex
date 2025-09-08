@@ -6,13 +6,14 @@ defmodule SelectoMix.Interactive do
   Selecto domains with real-time validation and suggestions.
   """
   
-  alias SelectoMix.{AdapterDetector, JoinAnalyzer, CLIParser}
+  alias SelectoMix.{AdapterDetector, JoinAnalyzer}
+  # alias SelectoMix.CLIParser
   
   @doc """
   Starts the interactive domain generation process.
   """
   @spec run(keyword()) :: :ok | {:error, term()}
-  def run(opts \\ []) do
+  def run(_opts \\ []) do
     IO.puts("\n🚀 SelectoMix Interactive Domain Generator")
     IO.puts("=" |> String.duplicate(50))
     
@@ -222,7 +223,7 @@ defmodule SelectoMix.Interactive do
   defp generate_domains(schemas, {adapter, version}, features, join_config, output_config) do
     IO.puts("\n🔨 Generating domains...")
     
-    args = Map.merge(features, %{
+    _args = Map.merge(features, %{
       adapter: adapter,
       adapter_version: version,
       joins: join_config.type,
@@ -324,7 +325,7 @@ defmodule SelectoMix.Interactive do
     if version == "", do: "3.35", else: version
   end
   
-  defp configure_advanced_joins(schemas, adapter) do
+  defp configure_advanced_joins(_schemas, _adapter) do
     IO.puts("\nAdvanced join configuration:")
     
     depth = prompt("Maximum join depth", default: "3")

@@ -46,7 +46,7 @@ defmodule Mix.Tasks.Selecto.Validate.ParameterizedJoins do
 
   use Mix.Task
 
-  alias Selecto.FieldResolver.ParameterizedParser
+  # alias Selecto.FieldResolver.ParameterizedParser  # Module not implemented yet
 
   @impl Mix.Task
   def run(args) do
@@ -80,21 +80,24 @@ defmodule Mix.Tasks.Selecto.Validate.ParameterizedJoins do
     Enum.each(references, fn ref ->
       Mix.shell().info("Testing: #{inspect(ref)}")
       
-      case ParameterizedParser.parse_field_reference(ref) do
-        {:ok, parsed} ->
-          Mix.shell().info("  ✅ Valid syntax")
-          Mix.shell().info("  📋 Parsed: #{format_parsed_reference(parsed)}")
-          
-          case parsed.type do
-            :parameterized ->
-              Mix.shell().info("  🔧 Parameters: #{format_parameters(parsed.parameters)}")
-            _ ->
-              nil
-          end
-        
-        {:error, reason} ->
-          Mix.shell().error("  ❌ Invalid syntax: #{inspect(reason)}")
-      end
+      # TODO: ParameterizedParser module not implemented yet
+      # case ParameterizedParser.parse_field_reference(ref) do
+      #   {:ok, parsed} ->
+      #     Mix.shell().info("  ✅ Valid syntax")
+      #     Mix.shell().info("  📋 Parsed: #{format_parsed_reference(parsed)}")
+      #     
+      #     case parsed.type do
+      #       :parameterized ->
+      #         Mix.shell().info("  🔧 Parameters: #{format_parameters(parsed.parameters)}")
+      #       _ ->
+      #         nil
+      #     end
+      #   
+      #   {:error, reason} ->
+      #     Mix.shell().error("  ❌ Invalid syntax: #{inspect(reason)}")
+      # end
+      
+      Mix.shell().info("  ⚠️ Parameterized parser not yet implemented")
       
       Mix.shell().info("")
     end)
@@ -338,33 +341,33 @@ defmodule Mix.Tasks.Selecto.Validate.ParameterizedJoins do
     end
   end
 
-  defp format_parsed_reference(parsed) do
-    case parsed.type do
-      :simple ->
-        "Simple field: #{parsed.field}"
-      
-      :dot_notation ->
-        "Dot notation: #{parsed.join}.#{parsed.field}"
-      
-      :parameterized ->
-        "Parameterized: #{parsed.join}.#{parsed.field} with #{length(parsed.parameters)} parameter(s)"
-      
-      :legacy_bracket ->
-        "Legacy bracket notation: #{parsed.join}[#{parsed.field}]"
-    end
-  end
+  # defp format_parsed_reference(parsed) do
+  #   case parsed.type do
+  #     :simple ->
+  #       "Simple field: #{parsed.field}"
+  #     
+  #     :dot_notation ->
+  #       "Dot notation: #{parsed.join}.#{parsed.field}"
+  #     
+  #     :parameterized ->
+  #       "Parameterized: #{parsed.join}.#{parsed.field} with #{length(parsed.parameters)} parameter(s)"
+  #     
+  #     :legacy_bracket ->
+  #       "Legacy bracket notation: #{parsed.join}[#{parsed.field}]"
+  #   end
+  # end
 
-  defp format_parameters(parameters) when is_list(parameters) do
-    parameters
-    |> Enum.map(fn param ->
-      case param do
-        %{type: type, value: value} -> "#{type}(#{value})"
-        {type, value} -> "#{type}(#{value})"
-        value -> "#{value}"
-      end
-    end)
-    |> Enum.join(", ")
-  end
+  # defp format_parameters(parameters) when is_list(parameters) do
+  #   parameters
+  #   |> Enum.map(fn param ->
+  #     case param do
+  #       %{type: type, value: value} -> "#{type}(#{value})"
+  #       {type, value} -> "#{type}(#{value})"
+  #       value -> "#{value}"
+  #     end
+  #   end)
+  #   |> Enum.join(", ")
+  # end
 
-  defp format_parameters(_), do: "none"
+  # defp format_parameters(_), do: "none"
 end

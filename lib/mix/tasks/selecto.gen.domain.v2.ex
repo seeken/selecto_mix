@@ -284,7 +284,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain.V2 do
       e ->
         Mix.shell().error("  ✗ Failed: #{Exception.message(e)}")
         if args[:verbose] do
-          Mix.shell().error("     #{Exception.format_stacktrace(System.stacktrace())}")
+          Mix.shell().error("     #{Exception.format_stacktrace(__STACKTRACE__)}")
         end
         {:error, schema}
     end

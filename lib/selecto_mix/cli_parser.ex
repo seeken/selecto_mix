@@ -187,8 +187,8 @@ defmodule SelectoMix.CLIParser do
   @spec merge_with_config(parsed_args(), map()) :: parsed_args()
   def merge_with_config(cli_args, config) do
     # CLI args take precedence over config file
-    Map.merge(config, cli_args, fn _key, _config_val, cli_val -> 
-      cli_val || _config_val
+    Map.merge(config, cli_args, fn _key, config_val, cli_val -> 
+      cli_val || config_val
     end)
   end
   
@@ -235,16 +235,22 @@ defmodule SelectoMix.CLIParser do
     end
     
     # Check for conflicting options
-    if args[:quiet] && args[:verbose] do
-      errors = ["Cannot use --quiet and --verbose together" | errors]
+    errors = if args[:quiet] && args[:verbose] do
+      ["Cannot use --quiet and --verbose together" | errors]
+    else
+      errors
     end
     
-    if args[:saved_views] && !args[:live] do
-      errors = ["--saved-views requires --live to be set" | errors]
+    errors = if args[:saved_views] && !args[:live] do
+      ["--saved-views requires --live to be set" | errors]
+    else
+      errors
     end
     
-    if args[:interactive] && args[:dry_run] do
-      errors = ["Cannot use --interactive with --dry-run" | errors]
+    errors = if args[:interactive] && args[:dry_run] do
+      ["Cannot use --interactive with --dry-run" | errors]
+    else
+      errors
     end
     
     case errors do

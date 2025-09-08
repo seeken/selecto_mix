@@ -6,10 +6,9 @@ defmodule SelectoMix.TemplateEngine do
   and user preferences.
   """
   
-  alias SelectoMix.{AdapterDetector, JoinAnalyzer}
+  alias SelectoMix.AdapterDetector
   
-  @template_base_path "priv/templates"
-  
+    
   @type template_context :: %{
     module: module(),
     schema_info: map(),
@@ -309,7 +308,7 @@ defmodule SelectoMix.TemplateEngine do
     }
   end
   
-  defp select_template(type, adapter, features) do
+  defp select_template(type, adapter, _features) do
     # Try adapter-specific template first
     adapter_template = get_adapter_template(type, adapter)
     
@@ -442,40 +441,4 @@ defmodule SelectoMix.TemplateEngine do
     "#{Macro.camelize(to_string(app))}.Repo"
   end
   
-  defp format_columns(columns, adapter) do
-    # Format columns for template output
-    inspect(columns, pretty: true)
-  end
-  
-  defp format_joins(joins, adapter) do
-    # Format joins with adapter considerations
-    inspect(joins, pretty: true)
-  end
-  
-  defp format_warnings(warnings) do
-    "\nWarnings:\n" <> Enum.map_join(warnings, "\n", &("  - " <> &1))
-  end
-  
-  defp render_helper_functions(context) do
-    # Render any helper functions based on context
-    ""
-  end
-  
-  defp has_arrays?(columns) do
-    Enum.any?(columns, fn col ->
-      match?({:array, _}, col.type) or match?({:array, _}, col.original_type)
-    end)
-  end
-  
-  defp has_uuid_fields?(columns) do
-    Enum.any?(columns, fn col ->
-      col.type in [:uuid, :binary_id]
-    end)
-  end
-  
-  defp has_full_text_search?(columns) do
-    Enum.any?(columns, fn col ->
-      col[:search_vector] == true or col[:full_text_search] == true
-    end)
-  end
 end

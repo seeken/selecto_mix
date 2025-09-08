@@ -8,11 +8,11 @@ defmodule SelectoMix.AdapterDetector do
   
   @known_adapters [:postgres, :mysql, :sqlite]
   
-  @adapter_modules %{
-    postgres: {Ecto.Adapters.Postgres, Postgrex},
-    mysql: {Ecto.Adapters.MyXQL, MyXQL},
-    sqlite: {Ecto.Adapters.SQLite3, Exqlite}
-  }
+  # @adapter_modules %{
+  #   postgres: {Ecto.Adapters.Postgres, Postgrex},
+  #   mysql: {Ecto.Adapters.MyXQL, MyXQL},
+  #   sqlite: {Ecto.Adapters.SQLite3, Exqlite}
+  # }
   
   @adapter_features %{
     postgres: %{
@@ -283,7 +283,7 @@ defmodule SelectoMix.AdapterDetector do
       array_type: fn _type -> "TEXT" end,  # JSON stored as TEXT
       json_type: "TEXT",
       boolean_type: "INTEGER",
-      text_search_index: fn idx, table, field -> "CREATE VIRTUAL TABLE #{table}_fts USING fts5(#{field})" end
+      text_search_index: fn _idx, table, field -> "CREATE VIRTUAL TABLE #{table}_fts USING fts5(#{field})" end
     }
   end
   

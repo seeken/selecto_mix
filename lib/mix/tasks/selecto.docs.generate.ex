@@ -113,11 +113,14 @@ defmodule Mix.Tasks.Selecto.Docs.Generate do
     # Find all domain modules in the project
     app_name = Igniter.Project.Application.app_name(igniter)
     
-    igniter
-    |> Igniter.Project.Module.find_all_matching_modules(fn module_name ->
-      module_str = to_string(module_name)
-      String.contains?(module_str, "Domain") and String.starts_with?(module_str, to_string(app_name))
-    end)
+    {_igniter, modules} = 
+      igniter
+      |> Igniter.Project.Module.find_all_matching_modules(fn module_name, _zipper ->
+        module_str = to_string(module_name)
+        String.contains?(module_str, "Domain") and String.starts_with?(module_str, to_string(app_name))
+      end)
+    
+    modules
     |> Enum.map(&extract_domain_name/1)
     |> Enum.filter(&(&1 != nil))
   end
@@ -150,13 +153,13 @@ defmodule Mix.Tasks.Selecto.Docs.Generate do
 
   defp parse_formats(format_arg) do
     case format_arg do
-      nil -> [:markdown]
+      nil -> [:exs]  # Default to executable format
       formats_str ->
         formats_str
         |> String.split(",")
         |> Enum.map(&String.trim/1)
         |> Enum.map(&String.to_atom/1)
-        |> Enum.filter(&(&1 in [:markdown, :html]))
+        |> Enum.filter(&(&1 in [:markdown, :html, :exs]))
     end
   end
 
@@ -188,40 +191,54 @@ defmodule Mix.Tasks.Selecto.Docs.Generate do
   end
 
   defp get_documentation_files(domain, output_dir, formats, opts) do
-    base_files = [
-      "#{domain}_overview",
-      "#{domain}_fields", 
-      "#{domain}_joins",
-      "#{domain}_examples"
-    ]
-    
-    optional_files = []
-    optional_files = if opts[:with_benchmarks], do: optional_files ++ ["#{domain}_performance"], else: optional_files
-    optional_files = if opts[:interactive], do: optional_files ++ ["#{domain}_interactive"], else: optional_files
-    
-    all_files = base_files ++ optional_files
-    
-    Enum.flat_map(all_files, fn base_name ->
-      Enum.map(formats, fn format ->
-        extension = case format do
-          :markdown -> if String.ends_with?(base_name, "interactive"), do: ".livemd", else: ".md"
-          :html -> ".html"
-        end
-        Path.join(output_dir, "#{base_name}#{extension}")
+    # For .exs format, only generate examples file
+    if formats == [:exs] do
+      [Path.join(output_dir, "#{domain}_examples.exs")]
+    else
+      base_files = [
+        "#{domain}_overview",
+        "#{domain}_fields", 
+        "#{domain}_joins",
+        "#{domain}_examples"
+      ]
+      
+      optional_files = []
+      optional_files = if opts[:with_benchmarks], do: optional_files ++ ["#{domain}_performance"], else: optional_files
+      optional_files = if opts[:interactive], do: optional_files ++ ["#{domain}_interactive"], else: optional_files
+      
+      all_files = base_files ++ optional_files
+      
+      Enum.flat_map(all_files, fn base_name ->
+        Enum.map(formats, fn format ->
+          extension = case format do
+            :markdown -> if String.ends_with?(base_name, "interactive"), do: ".livemd", else: ".md"
+            :html -> ".html"
+            :exs -> ".exs"
+          end
+          Path.join(output_dir, "#{base_name}#{extension}")
+        end)
       end)
-    end)
+    end
   end
 
   defp generate_documentation_for_domain(igniter, domain, output_dir, formats, opts) do
-    igniter
-    |> ensure_directory_exists(output_dir)
-    |> generate_overview_documentation(domain, output_dir, formats, opts)
-    |> generate_fields_documentation(domain, output_dir, formats, opts)
-    |> generate_joins_documentation(domain, output_dir, formats, opts)
-    |> generate_examples_documentation(domain, output_dir, formats, opts)
-    |> maybe_generate_performance_documentation(domain, output_dir, formats, opts)
-    |> maybe_generate_interactive_documentation(domain, output_dir, formats, opts)
-    |> add_success_message("Generated documentation for #{domain} domain")
+    # For .exs format, only generate the examples file
+    if formats == [:exs] do
+      igniter
+      |> ensure_directory_exists(output_dir)
+      |> generate_examples_documentation(domain, output_dir, formats, opts)
+      |> add_success_message("Generated executable examples for #{domain} domain")
+    else
+      igniter
+      |> ensure_directory_exists(output_dir)
+      |> generate_overview_documentation(domain, output_dir, formats, opts)
+      |> generate_fields_documentation(domain, output_dir, formats, opts)
+      |> generate_joins_documentation(domain, output_dir, formats, opts)
+      |> generate_examples_documentation(domain, output_dir, formats, opts)
+      |> maybe_generate_performance_documentation(domain, output_dir, formats, opts)
+      |> maybe_generate_interactive_documentation(domain, output_dir, formats, opts)
+      |> add_success_message("Generated documentation for #{domain} domain")
+    end
   end
 
   defp ensure_directory_exists(igniter, dir_path) do
@@ -257,10 +274,21 @@ defmodule Mix.Tasks.Selecto.Docs.Generate do
 
   defp generate_examples_documentation(igniter, domain, output_dir, formats, opts) do
     Enum.reduce(formats, igniter, fn format, acc_igniter ->
-      extension = if format == :markdown, do: ".md", else: ".html"
+      extension = case format do
+        :markdown -> ".md"
+        :html -> ".html"
+        :exs -> ".exs"
+      end
       file_path = Path.join(output_dir, "#{domain}_examples#{extension}")
       content = SelectoMix.DocsGenerator.generate_examples(domain, format, opts)
-      Igniter.create_new_file(acc_igniter, file_path, content)
+      
+      # Create the file first
+      acc_igniter = Igniter.create_new_file(acc_igniter, file_path, content)
+      
+      # Note: File permissions will need to be set after Igniter writes the files
+      # For now, we'll just create the file and users can chmod it manually if needed
+      
+      acc_igniter
     end)
   end
 

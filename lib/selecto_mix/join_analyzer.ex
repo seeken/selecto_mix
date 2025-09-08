@@ -125,7 +125,7 @@ defmodule SelectoMix.JoinAnalyzer do
   Detects dimension table patterns (star/snowflake schema).
   """
   @spec analyze_dimensions(map(), keyword()) :: list(map())
-  def analyze_dimensions(schema_info, opts) do
+  def analyze_dimensions(schema_info, _opts) do
     # Look for typical dimension patterns
     dimensions = []
     
@@ -210,7 +210,7 @@ defmodule SelectoMix.JoinAnalyzer do
     adjust_for_adapter(base_config, adapter)
   end
   
-  defp build_many_to_many_config(assoc, schema_module) do
+  defp build_many_to_many_config(assoc, _schema_module) do
     %{
       type: :inner,
       schema: assoc.related,
@@ -379,7 +379,7 @@ defmodule SelectoMix.JoinAnalyzer do
   
   defp adjust_for_adapter(config, _adapter), do: config
   
-  defp is_many_to_many?(assoc_name) do
+  defp is_many_to_many?(_assoc_name) do
     # This is a simplified check - in reality would need schema inspection
     false  # Placeholder
   end
@@ -454,7 +454,7 @@ defmodule SelectoMix.JoinAnalyzer do
     end)
   end
   
-  defp dfs_find_cycle(_graph, _current, path, _visited, 0), do: nil
+  defp dfs_find_cycle(_graph, _current, _path, _visited, 0), do: nil
   
   defp dfs_find_cycle(graph, current, path, visited, depth) do
     neighbors = Map.get(graph, current, [])
@@ -481,7 +481,7 @@ defmodule SelectoMix.JoinAnalyzer do
     %{config | strategy: :lazy}
   end
   
-  defp optimize_join_config(config, :optimized, adapter) do
+  defp optimize_join_config(config, :optimized, _adapter) do
     # Apply intelligent optimization based on relationship type
     strategy = case config.metadata[:cardinality] do
       :belongs_to -> :eager  # Usually want parent data
@@ -532,7 +532,7 @@ defmodule SelectoMix.JoinAnalyzer do
     warnings
   end
   
-  defp generate_suggestions(schema_info, optimized_joins) do
+  defp generate_suggestions(_schema_info, optimized_joins) do
     suggestions = []
     
     # Suggest indexes for foreign keys

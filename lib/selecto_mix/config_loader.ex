@@ -69,8 +69,8 @@ defmodule SelectoMix.ConfigLoader do
     base = extract_base_config(config)
     
     # CLI args override config file settings
-    Map.merge(base, cli_args, fn _key, _config_val, cli_val ->
-      cli_val || _config_val
+    Map.merge(base, cli_args, fn _key, config_val, cli_val ->
+      cli_val || config_val
     end)
   end
   

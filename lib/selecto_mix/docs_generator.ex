@@ -50,6 +50,7 @@ defmodule SelectoMix.DocsGenerator do
     case format do
       :markdown -> generate_markdown_examples(domain, domain_info, opts)
       :html -> generate_html_examples(domain, domain_info, opts)
+      :exs -> generate_executable_examples(domain, domain_info, opts)
     end
   end
 
@@ -96,28 +97,94 @@ defmodule SelectoMix.DocsGenerator do
   end
 
   defp analyze_source_schema(domain) do
-    # Analyze the main source schema for the domain
-    %{
-      table: "#{domain}",
-      primary_key: :id,
-      fields: [:id, :name, :created_at, :updated_at],
-      types: %{
-        id: :integer,
-        name: :string,
-        created_at: :datetime,
-        updated_at: :datetime
+    # Try to get actual domain configuration
+    domain_module = try_get_domain_module(domain)
+    
+    if domain_module && function_exported?(domain_module, :domain, 0) do
+      # Get actual configuration from the domain module
+      config = domain_module.domain()
+      source = config[:source] || %{}
+      
+      %{
+        table: source[:source_table] || "#{domain}",
+        primary_key: source[:primary_key] || :id,
+        fields: source[:fields] || get_default_fields(source[:fields]),
+        types: source[:columns] || get_default_types(source[:columns]),
+        associations: source[:associations] || %{}
       }
-    }
+    else
+      # Fall back to minimal defaults if domain module doesn't exist
+      %{
+        table: "#{domain}",
+        primary_key: :id,
+        fields: [:id],
+        types: %{id: :integer},
+        associations: %{}
+      }
+    end
+  end
+  
+  defp try_get_domain_module(domain) do
+    # Try to find the domain module
+    # First try SelectoNorthwind.SelectoDomains.{Domain}Domain
+    # Convert atom to string if needed
+    domain_string = to_string(domain)
+    module_name = "Elixir.SelectoNorthwind.SelectoDomains.#{String.capitalize(domain_string)}Domain"
+    
+    case Code.ensure_compiled(String.to_atom(module_name)) do
+      {:module, module} -> module
+      _ -> nil
+    end
+  end
+  
+  defp get_default_fields(fields) when is_list(fields) do
+    # Just take the first few fields from what's actually available
+    # Always include :id if present, then take up to 3-4 more fields
+    id_field = if :id in fields, do: [:id], else: []
+    other_fields = fields
+                   |> Enum.reject(&(&1 == :id))
+                   |> Enum.take(3)
+    
+    id_field ++ other_fields
+  end
+  defp get_default_fields(_) do
+    # Fallback if fields aren't a list
+    [:id]
+  end
+  
+  defp get_default_types(types) when is_map(types) do
+    # Just return the actual types map from the domain
+    types
+  end
+  defp get_default_types(_) do
+    # Minimal fallback
+    %{id: :integer}
   end
 
-  defp analyze_related_schemas(_domain) do
-    # Analyze related schemas and associations
-    %{}
+  defp analyze_related_schemas(domain) do
+    # Try to get actual domain configuration
+    domain_module = try_get_domain_module(domain)
+    
+    if domain_module && function_exported?(domain_module, :domain, 0) do
+      # Get actual configuration from the domain module
+      config = domain_module.domain()
+      config[:schemas] || %{}
+    else
+      %{}
+    end
   end
 
-  defp analyze_join_relationships(_domain) do
-    # Analyze join patterns and relationships
-    []
+  defp analyze_join_relationships(domain) do
+    # Try to get actual domain configuration
+    domain_module = try_get_domain_module(domain)
+    
+    if domain_module && function_exported?(domain_module, :domain, 0) do
+      # Get actual configuration from the domain module
+      config = domain_module.domain()
+      config[:joins] || %{}
+    else
+      %{}
+    end
   end
 
   defp detect_domain_patterns(_domain) do
@@ -147,6 +214,16 @@ defmodule SelectoMix.DocsGenerator do
     ### Available Fields
     #{generate_field_list(domain_info.source.fields, domain_info.source.types)}
 
+    ## Configuration
+
+    ```elixir
+    # Get the domain configuration from your generated domain module
+    domain = SelectoNorthwind.SelectoDomains.#{String.capitalize(domain)}Domain.domain()
+    
+    # Configure Selecto to use your Repo
+    selecto = Selecto.configure(domain, SelectoNorthwind.Repo)
+    ```
+
     ## Usage Patterns
 
     The #{domain} domain supports the following common usage patterns:
@@ -154,23 +231,27 @@ defmodule SelectoMix.DocsGenerator do
     ### Basic Queries
     ```elixir
     # Select all records
-    Selecto.select(#{domain}_domain(), [:id, :name])
+    selecto
+    |> Selecto.select([:id, :name])
 
     # Filter by specific criteria
-    Selecto.select(#{domain}_domain(), [:id, :name])
-    |> Selecto.filter(:name, :eq, "example")
+    selecto
+    |> Selecto.select([:id, :name])
+    |> Selecto.filter([{:name, {:eq, "example"}}])
     ```
 
     ### Aggregations
     ```elixir
-    # Count records
-    Selecto.select(#{domain}_domain(), [:count])
-    |> Selecto.aggregate(:count, :id)
+    # Count records using proper Selecto syntax
+    selecto
+    |> Selecto.select([{:field, {:count, "id"}, "total_count"}])
+    |> Selecto.execute()
 
-    # Group by fields
-    Selecto.select(#{domain}_domain(), [:name, :count])
+    # Group by fields with aggregation
+    selecto
+    |> Selecto.select([:name, {:field, {:count, "id"}, "count"}])
     |> Selecto.group_by([:name])
-    |> Selecto.aggregate(:count, :id)
+    |> Selecto.execute()
     ```
 
     ## Related Documentation
@@ -192,9 +273,10 @@ defmodule SelectoMix.DocsGenerator do
     # Example usage in LiveView
     def mount(_params, _session, socket) do
       initial_data = 
-        Selecto.select(#{domain}_domain(), [:id, :name])
+        selecto
+    |> Selecto.select( [:id, :name])
         |> Selecto.limit(10)
-        |> Selecto.execute(MyApp.Repo)
+        |> Selecto.execute(SelectoNorthwind.Repo)
 
       {:ok, assign(socket, data: initial_data)}
     end
@@ -223,37 +305,44 @@ defmodule SelectoMix.DocsGenerator do
     ### Basic Field Selection
     ```elixir
     # Select specific fields
-    Selecto.select(#{domain}_domain(), [:id, :name])
+    selecto
+    |> Selecto.select( [:id, :name])
 
     # Select all fields
-    Selecto.select(#{domain}_domain(), :all)
+    selecto
+    |> Selecto.select( :all)
     ```
 
     ### Field Filtering
     ```elixir
     # String field filtering
-    Selecto.select(#{domain}_domain(), [:id, :name])
-    |> Selecto.filter(:name, :like, "%example%")
+    selecto
+    |> Selecto.select([:id, :name])
+    |> Selecto.filter([{:name, {:like, "%example%"}}])
 
     # Numeric field filtering
-    Selecto.select(#{domain}_domain(), [:id, :name])
-    |> Selecto.filter(:id, :gt, 100)
+    selecto
+    |> Selecto.select([:id, :name])
+    |> Selecto.filter([{:id, {:gt, 100}}])
 
     # Date field filtering
-    Selecto.select(#{domain}_domain(), [:id, :created_at])
-    |> Selecto.filter(:created_at, :gt, ~D[2024-01-01])
+    selecto
+    |> Selecto.select([:id, :created_at])
+    |> Selecto.filter([{:created_at, {:gt, ~D[2024-01-01]}}])
     ```
 
     ### Field Aggregations
     ```elixir
-    # Count distinct values
-    Selecto.select(#{domain}_domain(), [:name, :count])
+    # Count distinct values using proper Selecto syntax
+    selecto
+    |> Selecto.select([:name, {:field, {:count, "id"}, "count"}])
     |> Selecto.group_by([:name])
-    |> Selecto.aggregate(:count, :id)
+    |> Selecto.execute()
 
     # Calculate averages (numeric fields only)
-    Selecto.select(#{domain}_domain(), [:avg_value])
-    |> Selecto.aggregate(:avg, :numeric_field)
+    selecto
+    |> Selecto.select([{:field, {:avg, "numeric_field"}, "avg_value"}])
+    |> Selecto.execute()
     ```
 
     ## Field Type Reference
@@ -309,319 +398,437 @@ defmodule SelectoMix.DocsGenerator do
 
   defp generate_markdown_joins(domain, domain_info) do
     """
-    # #{String.capitalize(domain)} Domain Joins Guide
+    # #{String.capitalize(domain)} Domain Relationships Guide
 
-    This document explains how to work with joins and relationships in the #{domain} domain,
-    including performance optimization and best practices.
+    This document explains how Selecto automatically handles relationships and joins
+    in the #{domain} domain through intelligent field selection.
 
-    ## Available Joins
+    ## How Joins Work in Selecto
+
+    **Selecto automatically infers joins based on the fields you select.** There are no explicit
+    join functions - instead, when you reference fields from related tables using dot notation,
+    Selecto automatically creates the necessary joins.
+
+    ## Available Relationships
 
     #{generate_joins_documentation(domain_info.joins)}
 
-    ## Join Syntax
+    ## Accessing Related Data
 
-    ### Basic Join Operations
+    ### Basic Relationship Access
     ```elixir
-    # Inner join with related table
-    Selecto.select(#{domain}_domain(), [:id, :name])
-    |> Selecto.join(:inner, :related_table, :id, :#{domain}_id)
+    # Selecto automatically joins when you reference related fields
+    selecto
+    |> Selecto.select([:id, :product_name, "category.category_name", "supplier.company_name"])
+    |> Selecto.execute()
+    # Selecto automatically creates the necessary joins to categories and suppliers tables
     ```
 
-    ### Advanced Join Patterns
+    ### Filtering on Related Fields
     ```elixir
-    # Multiple joins
-    Selecto.select(#{domain}_domain(), [:id, :name])
-    |> Selecto.join(:inner, :categories, :category_id, :id)
-    |> Selecto.join(:left, :tags, :id, :#{domain}_id)
+    # Filter by related table fields - joins are automatic
+    selecto
+    |> Selecto.select([:id, :product_name])
+    |> Selecto.filter([{"category.category_name", {:eq, "Beverages"}}])
+    |> Selecto.execute()
+    # Selecto automatically joins to categories table when filtering
     ```
 
-    ## Join Types
-
-    ### Inner Joins
-    Inner joins return only records that have matching values in both tables.
-    
-    **Use when**: You need records that definitely have related data.
-    
+    ### Multiple Relationship Access
     ```elixir
-    # Only #{domain}s that have categories
-    Selecto.select(#{domain}_domain(), [:id, :name, "categories.name as category_name"])
-    |> Selecto.join(:inner, :categories, :category_id, :id)
+    # Access multiple relationships - all joins handled automatically
+    selecto
+    |> Selecto.select([
+      :id, 
+      :product_name,
+      "category.category_name",
+      "supplier.company_name",
+      "supplier.country"
+    ])
+    |> Selecto.filter([
+      {"category.category_name", {:like, "%Food%"}},
+      {"supplier.country", {:eq, "USA"}}
+    ])
+    |> Selecto.execute()
     ```
 
-    ### Left Joins
-    Left joins return all records from the left table, with matching records from the right table.
-    
-    **Use when**: You want all main records, even if they don't have related data.
+    ## Relationship Types Handled
+
+    ### One-to-Many Relationships
+    When the domain has a foreign key to another table:
     
     ```elixir
-    # All #{domain}s, with category names when available
-    Selecto.select(#{domain}_domain(), [:id, :name, "categories.name as category_name"])
-    |> Selecto.join(:left, :categories, :category_id, :id)
+    # Product belongs to Category (via category_id)
+    selecto
+    |> Selecto.select([:product_name, "category.category_name"])
+    |> Selecto.execute()
     ```
 
-    ### Right Joins
-    Right joins return all records from the right table, with matching records from the left table.
+    ### Many-to-One Relationships  
+    When other tables reference this domain:
     
-    **Use when**: You want all related records, even if they don't have main records.
+    ```elixir
+    # Access order details that reference this product
+    selecto
+    |> Selecto.select([:product_name, "order_details.quantity", "order_details.unit_price"])
+    |> Selecto.execute()
+    ```
 
-    ### Full Outer Joins
-    Full outer joins return records when there's a match in either table.
-    
-    **Use when**: You need comprehensive data from both tables.
+    ### Many-to-Many Relationships
+    Through junction tables (when configured in the domain):
+
+    ```elixir
+    # Access data through a junction table
+    selecto
+    |> Selecto.select([:product_name, "product_tags.tag_name"])
+    |> Selecto.execute()
+    ```
 
     ## Performance Optimization
 
     ### Index Usage
-    Ensure proper indexes exist for join conditions:
+    Ensure proper indexes exist on foreign key columns that Selecto will use for joins:
     
     ```sql
-    -- Example indexes for common joins
+    -- Example indexes for relationship columns
     CREATE INDEX idx_#{domain}_category_id ON #{domain} (category_id);
-    CREATE INDEX idx_categories_id ON categories (id);
+    CREATE INDEX idx_#{domain}_supplier_id ON #{domain} (supplier_id);
     ```
 
-    ### Join Order Optimization
-    - Start with the most selective table (smallest result set)
-    - Place most restrictive filters early in the query
-    - Use EXPLAIN ANALYZE to verify query performance
+    ### Query Optimization Tips
+    - **Filter early**: Apply filters to reduce the dataset before accessing related fields
+    - **Select only needed fields**: Don't select all columns if you only need a few
+    - **Use aggregations wisely**: When accessing one-to-many relationships, consider using aggregations
 
-    ### Query Hints
     ```elixir
-    # Prefer hash joins for large result sets
-    Selecto.select(#{domain}_domain(), [:id, :name])
-    |> Selecto.join(:inner, :large_table, :id, :#{domain}_id, hint: :hash)
-
-    # Prefer nested loop joins for small result sets
-    Selecto.select(#{domain}_domain(), [:id, :name])
-    |> Selecto.join(:inner, :small_table, :id, :#{domain}_id, hint: :nested_loop)
+    # Efficient: Filter before accessing related data
+    selecto
+    |> Selecto.filter([{:discontinued, {:eq, false}}])
+    |> Selecto.select([:product_name, "category.category_name"])
+    |> Selecto.limit(100)
+    |> Selecto.execute()
     ```
 
-    ## Common Join Patterns
+    ## Common Patterns
 
-    ### One-to-Many Relationships
+    ### Aggregating Related Data
     ```elixir
-    # #{String.capitalize(domain)} with multiple related records
-    Selecto.select(#{domain}_domain(), [:id, :name, "tags.name as tag_name"])
-    |> Selecto.join(:left, :#{domain}_tags, :id, :#{domain}_id)
-    |> Selecto.join(:left, :tags, "#{domain}_tags.tag_id", "tags.id")
+    # Count related records using proper Selecto syntax
+    selecto
+    |> Selecto.select([
+      :product_name,
+      {:field, {:count, "order_details.id"}, "total_orders"}
+    ])
+    |> Selecto.group_by([:id, :product_name])
+    |> Selecto.execute()
     ```
 
-    ### Many-to-Many Relationships
+    ### Filtering by Relationship Existence
     ```elixir
-    # #{String.capitalize(domain)} with many-to-many through junction table
-    Selecto.select(#{domain}_domain(), [:id, :name])
-    |> Selecto.join(:inner, :#{domain}_categories, :id, :#{domain}_id)
-    |> Selecto.join(:inner, :categories, "#{domain}_categories.category_id", "categories.id")
-    |> Selecto.filter("categories.active", :eq, true)
+    # Products that have been ordered (using EXISTS semantics)
+    selecto
+    |> Selecto.select([:product_name])
+    |> Selecto.filter([{"order_details.id", {:is_not_null, nil}}])
+    |> Selecto.distinct()
+    |> Selecto.execute()
     ```
 
-    ### Self-Referential Joins
+    ### Complex Relationship Queries
     ```elixir
-    # Hierarchical data (parent-child relationships)
-    Selecto.select(#{domain}_domain(), [:id, :name, "parent.name as parent_name"])
-    |> Selecto.join(:left, :#{domain}, :parent_id, :id, alias: "parent")
+    # Products with their category and supplier, filtered by both
+    selecto
+    |> Selecto.select([
+      :product_name,
+      :unit_price,
+      "category.category_name",
+      "supplier.company_name",
+      "supplier.country"
+    ])
+    |> Selecto.filter([
+      {"category.category_name", {:in, ["Beverages", "Dairy Products"]}},
+      {"supplier.country", {:in, ["USA", "UK", "France"]}}
+    ])
+    |> Selecto.order_by([{"category.category_name", :asc}, {:product_name, :asc}])
+    |> Selecto.execute()
     ```
 
     ## Troubleshooting
 
     ### Common Issues
 
-    **Cartesian Products**: Occurs when join conditions are missing or incorrect.
+    **Ambiguous column names**: When multiple tables have the same column name:
     ```elixir
-    # Wrong - missing join condition
-    Selecto.select(#{domain}_domain(), [:id, :name])
-    |> Selecto.join(:inner, :categories)  # Missing ON condition
-
-    # Correct - proper join condition
-    Selecto.select(#{domain}_domain(), [:id, :name])
-    |> Selecto.join(:inner, :categories, :category_id, :id)
+    # Be specific with table prefixes when needed
+    selecto
+    |> Selecto.select(["products.id", "categories.id as category_id"])
+    |> Selecto.execute()
     ```
 
-    **Duplicate Records**: Occurs with one-to-many joins without proper grouping.
-    ```elixir
-    # May produce duplicates
-    Selecto.select(#{domain}_domain(), [:id, :name, "tags.name"])
-    |> Selecto.join(:left, :tags, :id, :#{domain}_id)
-
-    # Use aggregation to avoid duplicates
-    Selecto.select(#{domain}_domain(), [:id, :name, "STRING_AGG(tags.name, ', ') as tag_names"])
-    |> Selecto.join(:left, :tags, :id, :#{domain}_id)
-    |> Selecto.group_by([:id, :name])
-    ```
+    **Performance with multiple relationships**: 
+    - Consider breaking complex queries into multiple simpler ones
+    - Use database query analysis tools to understand the generated SQL
+    - Monitor query execution time in production
 
     ### Performance Issues
 
-    **Slow Joins**: Usually caused by missing indexes or poor query structure.
+    **Slow queries with relationships**: 
     
-    1. Check for appropriate indexes on join columns
-    2. Analyze query execution plan
-    3. Consider query restructuring or breaking into multiple queries
+    1. Check for appropriate indexes on foreign key columns
+    2. Use database EXPLAIN to understand the query plan
+    3. Consider limiting the number of relationships accessed in a single query
+    4. Use field selection to avoid fetching unnecessary columns
 
-    **Memory Issues**: Large result sets from joins can cause memory problems.
+    **Memory Issues**: Large result sets from relationship queries can cause memory problems.
     
-    1. Use pagination with `LIMIT` and `OFFSET`
-    2. Consider using cursors for large datasets
-    3. Stream results when possible
+    1. Use pagination with `limit` and `offset`
+    2. Apply filters to reduce the dataset size
+    3. Consider streaming results for large datasets
 
     ## Best Practices
 
-    1. **Always use explicit join conditions** - Don't rely on implicit relationships
-    2. **Index foreign key columns** - Critical for join performance  
-    3. **Use appropriate join types** - Don't use INNER when you need LEFT
+    1. **Index foreign key columns** - Critical for relationship performance  
+    2. **Select only needed fields** - Reduces data transfer and memory usage
+    3. **Filter early** - Apply filters before accessing related data
     4. **Test with realistic data volumes** - Performance characteristics change with scale
     5. **Monitor query performance** - Use database profiling tools regularly
-    6. **Consider denormalization** - Sometimes avoiding joins improves performance
+    6. **Understand your data** - Know which relationships will multiply rows
+
+    ## Understanding the Generated SQL
+
+    Selecto generates efficient SQL with appropriate JOIN clauses based on your field selections.
+    Use logging or debugging to see the actual SQL being generated:
+
+    ```elixir
+    # Enable query logging to see the generated SQL
+    selecto
+    |> Selecto.select([:product_name, "category.category_name"])
+    |> Selecto.to_sql()  # Returns the SQL string for inspection
+    ```
 
     ## Related Documentation
 
     - [Performance Guide](#{domain}_performance.md) - Detailed performance optimization
-    - [Examples](#{domain}_examples.md) - Real-world join examples
-    - [Field Reference](#{domain}_fields.md) - Available fields for joins
+    - [Examples](#{domain}_examples.md) - Real-world relationship examples
+    - [Field Reference](#{domain}_fields.md) - Available fields and relationships
     """
   end
 
-  defp generate_markdown_examples(domain, _domain_info, _opts) do
+  defp generate_markdown_examples(domain, domain_info, _opts) do
+    # Get actual fields from domain_info
+    fields = domain_info.source.fields
+    
+    # Pick appropriate fields for examples based on type
+    string_field = find_field_by_type(fields, domain_info.source.types, :string) || :name
+    _numeric_field = find_field_by_type(fields, domain_info.source.types, [:integer, :decimal]) || :id
+    date_field = find_field_by_type(fields, domain_info.source.types, [:date, :datetime, :naive_datetime]) || :inserted_at
+    boolean_field = find_field_by_type(fields, domain_info.source.types, :boolean)
+    
+    # Pick 2-3 main fields for basic examples (prefer name fields)
+    main_fields = pick_main_fields(fields, domain_info.source.types)
     """
     # #{String.capitalize(domain)} Domain Examples
 
     This document provides practical examples of using the #{domain} domain for
     common data querying and visualization scenarios.
 
+    ## Configuration
+
+    First, get the domain configuration and configure Selecto:
+
+    ```elixir
+    # Get the domain configuration from your generated domain module
+    domain = SelectoNorthwind.SelectoDomains.#{String.capitalize(domain)}Domain.domain()
+    
+    # Configure Selecto to use your Repo
+    selecto = Selecto.configure(domain, SelectoNorthwind.Repo)
+    ```
+
     ## Basic Operations
 
     ### Simple Data Retrieval
     ```elixir
     # Get all records with basic fields
-    #{domain}_data = 
-      Selecto.select(#{domain}_domain(), [:id, :name])
-      |> Selecto.limit(50)
-      |> Selecto.execute(MyApp.Repo)
+    selecto
+    |> Selecto.select(#{inspect(main_fields)})
+    |> Selecto.limit(50)
+    |> Selecto.execute()
 
     # Get single record by ID
-    single_#{domain} = 
-      Selecto.select(#{domain}_domain(), [:id, :name, :created_at])
-      |> Selecto.filter(:id, :eq, 123)
-      |> Selecto.execute(MyApp.Repo)
-      |> List.first()
+    selecto
+    |> Selecto.select(#{inspect(main_fields ++ [date_field])})
+    |> Selecto.filter([{:id, {:eq, 123}}])
+    |> Selecto.execute()
+    |> List.first()
     ```
 
     ### Filtering Examples
     ```elixir
     # String filtering
-    filtered_data = 
-      Selecto.select(#{domain}_domain(), [:id, :name])
-      |> Selecto.filter(:name, :like, "%search%")
-      |> Selecto.execute(MyApp.Repo)
+    selecto
+    |> Selecto.select(#{inspect(main_fields)})
+    |> Selecto.filter([{#{inspect(string_field)}, {:like, "%search%"}}])
+    |> Selecto.execute()
 
     # Multiple filters with AND logic
-    complex_filter = 
-      Selecto.select(#{domain}_domain(), [:id, :name, :created_at])
-      |> Selecto.filter(:name, :like, "%active%")
-      |> Selecto.filter(:created_at, :gte, ~D[2024-01-01])
-      |> Selecto.execute(MyApp.Repo)
+    selecto
+    |> Selecto.select(#{inspect(main_fields ++ [date_field])})
+    |> Selecto.filter([
+      {#{inspect(string_field)}, {:like, "%active%"}},
+      {#{inspect(date_field)}, {:gte, #{get_date_literal_for_field(date_field, domain_info.source.types)}}}
+    ])
+    |> Selecto.execute()
+    #{if boolean_field do """
 
-    # OR logic using filter groups
-    or_filter = 
-      Selecto.select(#{domain}_domain(), [:id, :name])
-      |> Selecto.filter_group(:or, [
-        {:name, :like, "%urgent%"},
-        {:priority, :eq, "high"}
-      ])
-      |> Selecto.execute(MyApp.Repo)
+      # Boolean field filtering
+      selecto
+      |> Selecto.select(#{inspect(main_fields)})
+      |> Selecto.filter([{#{inspect(boolean_field)}, {:eq, true}}])
+      |> Selecto.execute()
+      """ else "" end}
     ```
 
     ## Aggregation Examples
 
     ### Basic Aggregations
     ```elixir
-    # Count total records
-    total_count = 
-      Selecto.select(#{domain}_domain(), [:count])
-      |> Selecto.aggregate(:count, :id)
-      |> Selecto.execute(MyApp.Repo)
-      |> hd()
-      |> Map.get(:count)
-
-    # Group by category with counts
-    category_counts = 
-      Selecto.select(#{domain}_domain(), [:category, :count])
-      |> Selecto.group_by([:category])
-      |> Selecto.aggregate(:count, :id)
-      |> Selecto.order_by([{:count, :desc}])
-      |> Selecto.execute(MyApp.Repo)
+    # Count total records using proper Selecto syntax
+    selecto
+    |> Selecto.select([{:field, {:count, "id"}, "total"}])
+    |> Selecto.execute()
+    
+    # Group by with count
+    selecto
+    |> Selecto.select([#{inspect(string_field)}, {:field, {:count, "id"}, "product_count"}])
+    |> Selecto.group_by([#{inspect(string_field)}])
+    |> Selecto.execute()
     ```
 
-    ### Advanced Aggregations
+    ### Complex Aggregations  
     ```elixir
-    # Multiple aggregations
-    summary_stats = 
-      Selecto.select(#{domain}_domain(), [:category, :total_count, :avg_score, :max_date])
-      |> Selecto.group_by([:category])
-      |> Selecto.aggregate(:count, :id, alias: :total_count)
-      |> Selecto.aggregate(:avg, :score, alias: :avg_score)
-      |> Selecto.aggregate(:max, :created_at, alias: :max_date)
-      |> Selecto.execute(MyApp.Repo)
-
-    # Conditional aggregations
-    conditional_stats = 
-      Selecto.select(#{domain}_domain(), [
-        :status,
-        "COUNT(CASE WHEN priority = 'high' THEN 1 END) as high_priority_count",
-        "COUNT(CASE WHEN priority = 'low' THEN 1 END) as low_priority_count"
-      ])
-      |> Selecto.group_by([:status])
-      |> Selecto.execute(MyApp.Repo)
+    # Multiple aggregation functions with proper Selecto syntax
+    selecto
+    |> Selecto.select([
+      "category_id",
+      {:field, {:count, "id"}, "total_count"},
+      {:field, {:avg, "unit_price"}, "avg_price"},
+      {:field, {:max, "units_in_stock"}, "max_stock"}
+    ])
+    |> Selecto.group_by(["category_id"])
+    |> Selecto.execute()
     ```
 
-    ## Join Examples
+    ## Automatic Join Inference
 
-    ### Simple Joins
+    Selecto automatically infers joins based on your field selections. When you reference
+    fields from related tables using dot notation, the necessary joins are created automatically.
+
+    ### Accessing Related Data
     ```elixir
-    # Inner join with categories
-    #{domain}_with_categories = 
-      Selecto.select(#{domain}_domain(), [:id, :name, "categories.name as category_name"])
-      |> Selecto.join(:inner, :categories, :category_id, :id)
-      |> Selecto.execute(MyApp.Repo)
+    # Selecto automatically joins when you reference related fields
+    selecto
+    |> Selecto.select(#{inspect(main_fields)} ++ ["category.name", "supplier.company_name"])
+    |> Selecto.execute()
+    # The joins to category and supplier tables are automatic
 
-    # Left join to include records without categories
-    all_#{domain}_with_optional_categories = 
-      Selecto.select(#{domain}_domain(), [:id, :name, "categories.name as category_name"])
-      |> Selecto.join(:left, :categories, :category_id, :id)
-      |> Selecto.execute(MyApp.Repo)
+    # Filter by related fields - joins are automatic
+    selecto
+    |> Selecto.select(#{inspect(main_fields)})
+    |> Selecto.filter([{"category.name", {:like, "%Electronics%"}}])
+    |> Selecto.execute()
+    
+    # Complex filtering across multiple joined tables
+    selecto
+    |> Selecto.select([#{inspect(string_field)}, :unit_price, "category.name", "supplier.country"])
+    |> Selecto.filter([
+      {"category.name", {:in, ["Beverages", "Dairy Products"]}},
+      {"supplier.country", {:eq, "USA"}},
+      {:unit_price, {:between, {10, 50}}}
+    ])
+    |> Selecto.order_by([{"category.name", :asc}, {#{inspect(string_field)}, :asc}])
+    |> Selecto.execute()
     ```
 
-    ### Complex Joins
+    ### Aggregating Related Data
     ```elixir
-    # Multiple joins with aggregation
-    #{domain}_summary = 
-      Selecto.select(#{domain}_domain(), [
-        :id, :name,
-        "COUNT(comments.id) as comment_count",
-        "AVG(ratings.score) as avg_rating"
-      ])
-      |> Selecto.join(:left, :comments, :id, :#{domain}_id)
-      |> Selecto.join(:left, :ratings, :id, :#{domain}_id)
-      |> Selecto.group_by([:id, :name])
-      |> Selecto.execute(MyApp.Repo)
+    # Count related records with automatic joins
+    selecto
+    |> Selecto.select([
+      #{inspect(List.first(main_fields))},
+      {:field, {:count, "order_details.id"}, "order_count"},
+      "category.name"
+    ])
+    |> Selecto.group_by([#{inspect(List.first(main_fields))}, "category.name"])
+    |> Selecto.execute()
+    ```
+
+    ## Pivot Operations
+
+    Pivot allows you to change the primary focus of your query, essentially "rotating" the data
+    to view it from a different perspective.
+
+    ### Basic Pivot
+    ```elixir
+    # Pivot from products to categories
+    selecto
+    |> Selecto.pivot("categories")
+    |> Selecto.select(["categories.category_name", {:field, {:count, "products.id"}, "product_count"}])
+    |> Selecto.group_by(["categories.category_name"])
+    |> Selecto.execute()
+    
+    # Pivot to suppliers with aggregation
+    selecto
+    |> Selecto.pivot("suppliers")
+    |> Selecto.select([
+      "suppliers.company_name",
+      "suppliers.country",
+      {:field, {:count, "products.id"}, "product_count"},
+      {:field, {:avg, "products.unit_price"}, "avg_price"}
+    ])
+    |> Selecto.group_by(["suppliers.company_name", "suppliers.country"])
+    |> Selecto.filter([{"suppliers.country", {:in, ["USA", "UK", "Germany"]}}])
+    |> Selecto.order_by([{:desc, "product_count"}])
+    |> Selecto.limit(10)
+    |> Selecto.execute()
+    ```
+
+    ### Complex Pivot with Multiple Joins
+    ```elixir
+    # Pivot to analyze data from category perspective
+    selecto
+    |> Selecto.pivot("categories")
+    |> Selecto.select([
+      "categories.category_name",
+      {:field, {:count, "products.id"}, "total_products"},
+      {:field, {:count_distinct, "products.supplier_id"}, "unique_suppliers"},
+      {:field, {:avg, "products.unit_price"}, "avg_price"},
+      {:field, {:sum, "order_details.quantity"}, "total_quantity_sold"}
+    ])
+    |> Selecto.group_by(["categories.category_name"])
+    |> Selecto.having([{{:field, {:count, "products.id"}, "total_products"}, {:gt, 5}}])
+    |> Selecto.execute()
     ```
 
     ## LiveView Integration Examples
 
     ### Basic LiveView Setup
     ```elixir
-    defmodule MyAppWeb.#{String.capitalize(domain)}Live do
-      use MyAppWeb, :live_view
+    defmodule SelectoNorthwindWeb.#{String.capitalize(domain)}Live do
+      use SelectoNorthwindWeb, :live_view
       
       def mount(_params, _session, socket) do
         {:ok, load_#{domain}_data(socket)}
       end
       
       defp load_#{domain}_data(socket) do
+        domain = SelectoNorthwind.SelectoDomains.#{String.capitalize(domain)}Domain.domain()
+        selecto = Selecto.configure(domain, SelectoNorthwind.Repo)
+        
         #{domain}_data = 
-          Selecto.select(#{domain}_domain(), [:id, :name, :created_at])
+          selecto
+          |> Selecto.select([:id, :name, :created_at])
           |> Selecto.order_by([{:created_at, :desc}])
           |> Selecto.limit(25)
-          |> Selecto.execute(MyApp.Repo)
+          |> Selecto.execute()
         
         assign(socket, #{domain}_data: #{domain}_data)
       end
@@ -631,19 +838,23 @@ defmodule SelectoMix.DocsGenerator do
     ### Interactive Filtering
     ```elixir
     def handle_event("filter", %{"search" => search_term}, socket) do
+      domain = SelectoNorthwind.SelectoDomains.#{String.capitalize(domain)}Domain.domain()
+      selecto = Selecto.configure(domain, SelectoNorthwind.Repo)
+      
       filtered_data = 
-        Selecto.select(#{domain}_domain(), [:id, :name, :created_at])
+        selecto
+        |> Selecto.select([:id, :name, :created_at])
         |> maybe_filter_by_search(search_term)
         |> Selecto.order_by([{:created_at, :desc}])
         |> Selecto.limit(25)
-        |> Selecto.execute(MyApp.Repo)
+        |> Selecto.execute()
       
       {:noreply, assign(socket, #{domain}_data: filtered_data)}
     end
     
     defp maybe_filter_by_search(query, ""), do: query
     defp maybe_filter_by_search(query, search_term) do
-      Selecto.filter(query, :name, :ilike, "%\#{search_term}%")
+      Selecto.filter(query, [{:name, {:ilike, "%\#{search_term}%"}}])
     end
     ```
 
@@ -653,12 +864,16 @@ defmodule SelectoMix.DocsGenerator do
       current_data = socket.assigns.#{domain}_data
       offset = length(current_data)
       
+      domain = SelectoNorthwind.SelectoDomains.#{String.capitalize(domain)}Domain.domain()
+      selecto = Selecto.configure(domain, SelectoNorthwind.Repo)
+      
       new_data = 
-        Selecto.select(#{domain}_domain(), [:id, :name, :created_at])
+        selecto
+        |> Selecto.select([:id, :name, :created_at])
         |> Selecto.order_by([{:created_at, :desc}])
         |> Selecto.limit(25)
         |> Selecto.offset(offset)
-        |> Selecto.execute(MyApp.Repo)
+        |> Selecto.execute()
       
       updated_data = current_data ++ new_data
       
@@ -674,7 +889,7 @@ defmodule SelectoMix.DocsGenerator do
     <.live_component 
       module={SelectoComponents.Aggregate} 
       id="#{domain}-aggregate"
-      domain={#{domain}_domain()}
+      domain={@#{domain}_domain}
       connection={@db_connection}
       initial_fields={[:id, :name, :category]}
       initial_aggregates={[:count]}
@@ -686,7 +901,7 @@ defmodule SelectoMix.DocsGenerator do
     <.live_component 
       module={SelectoComponents.Detail} 
       id="#{domain}-detail"
-      domain={#{domain}_domain()}
+      domain={@#{domain}_domain}
       connection={@db_connection}
       filters={@current_filters}
       on_row_click={&handle_#{domain}_selected/1}
@@ -699,17 +914,18 @@ defmodule SelectoMix.DocsGenerator do
     ```elixir
     # Cursor-based pagination for better performance
     def get_#{domain}_page(cursor_id \\\\ nil, limit \\\\ 25) do
-      base_query = Selecto.select(#{domain}_domain(), [:id, :name, :created_at])
+      base_query = selecto
+    |> Selecto.select( [:id, :name, :created_at])
       
       query = case cursor_id do
         nil -> base_query
-        id -> Selecto.filter(base_query, :id, :gt, id)
+        id -> Selecto.filter(base_query, [{:id, {:gt, id}}])
       end
       
       query
       |> Selecto.order_by([{:id, :asc}])
       |> Selecto.limit(limit)
-      |> Selecto.execute(MyApp.Repo)
+      |> Selecto.execute(SelectoNorthwind.Repo)
     end
     ```
 
@@ -719,15 +935,17 @@ defmodule SelectoMix.DocsGenerator do
     def load_#{domain}_with_related(#{domain}_ids) do
       # Load main records
       #{domain}s = 
-        Selecto.select(#{domain}_domain(), [:id, :name])
-        |> Selecto.filter(:id, :in, #{domain}_ids)
-        |> Selecto.execute(MyApp.Repo)
+        selecto
+    |> Selecto.select( [:id, :name])
+        |> Selecto.filter([{:id, {:in, #{domain}_ids}}])
+        |> Selecto.execute(SelectoNorthwind.Repo)
       
       # Load related data in batch
+      # Configure related domain similarly
       related_data = 
-        Selecto.select(related_domain(), [:#{domain}_id, :name])
-        |> Selecto.filter(:#{domain}_id, :in, #{domain}_ids)
-        |> Selecto.execute(MyApp.Repo)
+        related_selecto
+        |> Selecto.filter([{:#{domain}_id, {:in, #{domain}_ids}}])
+        |> Selecto.execute(SelectoNorthwind.Repo)
         |> Enum.group_by(& &1.#{domain}_id)
       
       # Combine data
@@ -744,9 +962,10 @@ defmodule SelectoMix.DocsGenerator do
     def safe_get_#{domain}(id) do
       try do
         result = 
-          Selecto.select(#{domain}_domain(), [:id, :name])
-          |> Selecto.filter(:id, :eq, id)
-          |> Selecto.execute(MyApp.Repo)
+          selecto
+    |> Selecto.select( [:id, :name])
+          |> Selecto.filter([{:id, {:eq, id}}])
+          |> Selecto.execute(SelectoNorthwind.Repo)
         
         case result do
           [#{domain}] -> {:ok, #{domain}}
@@ -787,17 +1006,18 @@ defmodule SelectoMix.DocsGenerator do
 
     ### Unit Tests for Domain Queries
     ```elixir
-    defmodule MyApp.#{String.capitalize(domain)}QueriesTest do
-      use MyApp.DataCase
+    defmodule SelectoNorthwind.#{String.capitalize(domain)}QueriesTest do
+      use SelectoNorthwind.DataCase
       
       describe "#{domain} domain queries" do
         test "basic selection works" do
           #{domain} = insert(:#{domain})
           
           result = 
-            Selecto.select(#{domain}_domain(), [:id, :name])
-            |> Selecto.filter(:id, :eq, #{domain}.id)
-            |> Selecto.execute(MyApp.Repo)
+            selecto
+    |> Selecto.select( [:id, :name])
+            |> Selecto.filter([{:id, {:eq, #{domain}.id}}])
+            |> Selecto.execute(SelectoNorthwind.Repo)
           
           assert [found_#{domain}] = result
           assert found_#{domain}.id == #{domain}.id
@@ -809,10 +1029,11 @@ defmodule SelectoMix.DocsGenerator do
           _non_matching = insert(:#{domain}, status: "inactive", priority: "high")
           
           result = 
-            Selecto.select(#{domain}_domain(), [:id])
-            |> Selecto.filter(:status, :eq, "active")
-            |> Selecto.filter(:priority, :eq, "high")
-            |> Selecto.execute(MyApp.Repo)
+            selecto
+    |> Selecto.select( [:id])
+            |> Selecto.filter([{:status, {:eq, "active"}}])
+            |> Selecto.filter([{:priority, {:eq, "high"}}])
+            |> Selecto.execute(SelectoNorthwind.Repo)
           
           assert length(result) == 1
           assert hd(result).id == matching_#{domain}.id
@@ -829,11 +1050,12 @@ defmodule SelectoMix.DocsGenerator do
       limit = Keyword.get(options, :limit, 50)
       fields = Keyword.get(options, :fields, [:id, :name])
       
-      Selecto.select(#{domain}_domain(), fields)
+      selecto
+    |> Selecto.select( fields)
       |> add_search_filters(search_term)
       |> Selecto.order_by([{:name, :asc}])
       |> Selecto.limit(limit)
-      |> Selecto.execute(MyApp.Repo)
+      |> Selecto.execute(SelectoNorthwind.Repo)
     end
     
     defp add_search_filters(query, search_term) when is_binary(search_term) do
@@ -859,18 +1081,21 @@ defmodule SelectoMix.DocsGenerator do
     end
     
     defp get_total_#{domain}_count do
-      Selecto.select(#{domain}_domain(), [:count])
-      |> Selecto.aggregate(:count, :id)
-      |> Selecto.execute(MyApp.Repo)
-      |> hd()
-      |> Map.get(:count)
+      selecto
+      |> Selecto.select([{:field, {:count, "id"}, "count"}])
+      |> Selecto.execute(SelectoNorthwind.Repo)
+      |> case do
+        {:ok, {[[count]], _, _}} -> count
+        _ -> 0
+      end
     end
     
     defp get_recent_#{domain}s(limit) do
-      Selecto.select(#{domain}_domain(), [:id, :name, :created_at])
+      selecto
+    |> Selecto.select( [:id, :name, :created_at])
       |> Selecto.order_by([{:created_at, :desc}])
       |> Selecto.limit(limit)
-      |> Selecto.execute(MyApp.Repo)
+      |> Selecto.execute(SelectoNorthwind.Repo)
     end
     ```
 
@@ -969,28 +1194,33 @@ defmodule SelectoMix.DocsGenerator do
     ### Efficient Field Selection
     ```elixir
     # Good - select only needed fields
-    Selecto.select(#{domain}_domain(), [:id, :name, :status])
+    selecto
+    |> Selecto.select( [:id, :name, :status])
     
     # Avoid - selecting all fields
-    Selecto.select(#{domain}_domain(), :all)  # Can be slow with many columns
+    selecto
+    |> Selecto.select( :all)  # Can be slow with many columns
     ```
 
     ### Filter Optimization
     ```elixir
     # Good - use indexed fields for filtering
-    Selecto.select(#{domain}_domain(), [:id, :name])
-    |> Selecto.filter(:status, :eq, "active")  # Uses index
+    selecto
+    |> Selecto.select( [:id, :name])
+    |> Selecto.filter([{:status, {:eq, "active"}}])  # Uses index
     
     # Less efficient - function calls in filters
-    Selecto.select(#{domain}_domain(), [:id, :name])
-    |> Selecto.filter("UPPER(name)", :like, "PATTERN%")  # No index usage
+    selecto
+    |> Selecto.select( [:id, :name])
+    |> Selecto.filter([{"UPPER(name)", {:like, "PATTERN%"}}])  # No index usage
     ```
 
     ### Join Optimization
     ```elixir
     # Efficient join order - most selective first
-    Selecto.select(#{domain}_domain(), [:id, :name])
-    |> Selecto.filter(:status, :eq, "active")          # Reduces result set first
+    selecto
+    |> Selecto.select( [:id, :name])
+    |> Selecto.filter([{:status, {:eq, "active"}}])          # Reduces result set first
     |> Selecto.join(:inner, :categories, :category_id, :id)  # Then join
     
     # Use appropriate join types
@@ -1005,11 +1235,12 @@ defmodule SelectoMix.DocsGenerator do
     def get_#{domain}_page(page, per_page \\\\ 25) do
       offset = (page - 1) * per_page
       
-      Selecto.select(#{domain}_domain(), [:id, :name])
+      selecto
+    |> Selecto.select( [:id, :name])
       |> Selecto.order_by([{:created_at, :desc}])
       |> Selecto.limit(per_page)
       |> Selecto.offset(offset)
-      |> Selecto.execute(MyApp.Repo)
+      |> Selecto.execute(SelectoNorthwind.Repo)
     end
     ```
 
@@ -1018,7 +1249,8 @@ defmodule SelectoMix.DocsGenerator do
     # Better for large datasets
     def get_#{domain}_page_cursor(cursor_id \\\\ nil, limit \\\\ 25) do
       base_query = 
-        Selecto.select(#{domain}_domain(), [:id, :name, :created_at])
+        selecto
+    |> Selecto.select( [:id, :name, :created_at])
         |> Selecto.order_by([{:created_at, :desc}, {:id, :desc}])
       
       query = case cursor_id do
@@ -1026,11 +1258,11 @@ defmodule SelectoMix.DocsGenerator do
         id -> 
           # Get the timestamp of the cursor record for proper ordering
           cursor_time = get_#{domain}_timestamp(id)
-          Selecto.filter(base_query, :created_at, :lte, cursor_time)
-          |> Selecto.filter(:id, :lt, id)
+          Selecto.filter(base_query, [{:created_at, {:lte, cursor_time}}])
+          |> Selecto.filter([{:id, {:lt, id}}])
       end
       
-      query |> Selecto.limit(limit) |> Selecto.execute(MyApp.Repo)
+      query |> Selecto.limit(limit) |> Selecto.execute(SelectoNorthwind.Repo)
     end
     ```
 
@@ -1039,22 +1271,24 @@ defmodule SelectoMix.DocsGenerator do
     ### Efficient Grouping
     ```elixir
     # Good - group by indexed fields
-    Selecto.select(#{domain}_domain(), [:status, :count])
+    selecto
+    |> Selecto.select([:status, {:field, {:count, "id"}, "count"}])
     |> Selecto.group_by([:status])
-    |> Selecto.aggregate(:count, :id)
+    |> Selecto.execute()
     
     # Consider materialized views for complex aggregations
     Selecto.select("#{domain}_daily_stats", [:date, :total_count, :avg_score])
-    |> Selecto.filter(:date, :gte, Date.add(Date.utc_today(), -30))
+    |> Selecto.filter([{:date, {:gte, Date.add(Date.utc_today(), -30)}}])
     ```
 
     ### Memory-Efficient Aggregations
     ```elixir
     # Stream large aggregations to avoid memory issues
     def calculate_#{domain}_stats do
-      MyApp.Repo.transaction(fn ->
-        Selecto.select(#{domain}_domain(), [:category, :score])
-        |> Selecto.stream(MyApp.Repo)
+      SelectoNorthwind.Repo.transaction(fn ->
+        selecto
+    |> Selecto.select( [:category, :score])
+        |> Selecto.stream(SelectoNorthwind.Repo)
         |> Stream.chunk_every(1000)
         |> Enum.reduce(%{}, &process_#{domain}_chunk/2)
       end)
@@ -1082,9 +1316,10 @@ defmodule SelectoMix.DocsGenerator do
     # Use prepared statements for repeated queries
     def get_#{domain}_by_status(status) do
       # This query will be prepared and cached by PostgreSQL
-      Selecto.select(#{domain}_domain(), [:id, :name])
-      |> Selecto.filter(:status, :eq, status)
-      |> Selecto.execute(MyApp.Repo)
+      selecto
+    |> Selecto.select( [:id, :name])
+      |> Selecto.filter([{:status, {:eq, status}}])
+      |> Selecto.execute(SelectoNorthwind.Repo)
     end
     ```
 
@@ -1093,8 +1328,9 @@ defmodule SelectoMix.DocsGenerator do
     ### Streaming Large Results
     ```elixir
     def process_all_#{domain}s do
-      Selecto.select(#{domain}_domain(), [:id, :name, :data])
-      |> Selecto.stream(MyApp.Repo, max_rows: 500)
+      selecto
+    |> Selecto.select( [:id, :name, :data])
+      |> Selecto.stream(SelectoNorthwind.Repo, max_rows: 500)
       |> Stream.map(&process_single_#{domain}/1)
       |> Stream.run()
     end
@@ -1106,10 +1342,11 @@ defmodule SelectoMix.DocsGenerator do
       #{domain}_ids
       |> Enum.chunk_every(100)
       |> Enum.each(fn batch ->
-        Selecto.select(#{domain}_domain(), [:id])
-        |> Selecto.filter(:id, :in, batch)
+        selecto
+    |> Selecto.select( [:id])
+        |> Selecto.filter([{:id, {:in, batch}}])
         |> Selecto.update(updates)
-        |> Selecto.execute(MyApp.Repo)
+        |> Selecto.execute(SelectoNorthwind.Repo)
       end)
     end
     ```
@@ -1136,7 +1373,7 @@ defmodule SelectoMix.DocsGenerator do
     ```elixir
     # Monitor query patterns and performance
     def log_query_metrics(query, execution_time) do
-      MyApp.Telemetry.execute([:#{domain}, :query], %{
+      SelectoNorthwind.Telemetry.execute([:#{domain}, :query], %{
         duration: execution_time,
         result_count: length(query.result)
       }, %{
@@ -1151,7 +1388,7 @@ defmodule SelectoMix.DocsGenerator do
     ### Connection Pool Tuning
     ```elixir
     # In config/prod.exs
-    config :my_app, MyApp.Repo,
+    config :my_app, SelectoNorthwind.Repo,
       pool_size: 20,              # Adjust based on concurrent users
       queue_target: 50,           # Queue time before spawning new connection
       queue_interval: 1000,       # Check queue every second
@@ -1180,10 +1417,11 @@ defmodule SelectoMix.DocsGenerator do
       test "#{domain} query performance under load" do
         tasks = for i <- 1..100 do
           Task.async(fn ->
-            Selecto.select(#{domain}_domain(), [:id, :name])
-            |> Selecto.filter(:status, :eq, "active")
+            selecto
+    |> Selecto.select( [:id, :name])
+            |> Selecto.filter([{:status, {:eq, "active"}}])
             |> Selecto.limit(50)
-            |> Selecto.execute(MyApp.Repo)
+            |> Selecto.execute(SelectoNorthwind.Repo)
           end)
         end
         
@@ -1204,23 +1442,26 @@ defmodule SelectoMix.DocsGenerator do
     def benchmark_#{domain}_operations do
       Benchee.run(%{
         "simple_select" => fn ->
-          Selecto.select(#{domain}_domain(), [:id, :name])
+          selecto
+    |> Selecto.select( [:id, :name])
           |> Selecto.limit(100)
-          |> Selecto.execute(MyApp.Repo)
+          |> Selecto.execute(SelectoNorthwind.Repo)
         end,
         
         "filtered_select" => fn ->
-          Selecto.select(#{domain}_domain(), [:id, :name])
-          |> Selecto.filter(:status, :eq, "active")
+          selecto
+    |> Selecto.select( [:id, :name])
+          |> Selecto.filter([{:status, {:eq, "active"}}])
           |> Selecto.limit(100)
-          |> Selecto.execute(MyApp.Repo)
+          |> Selecto.execute(SelectoNorthwind.Repo)
         end,
         
         "join_query" => fn ->
-          Selecto.select(#{domain}_domain(), [:id, :name, "categories.name"])
+          selecto
+    |> Selecto.select( [:id, :name, "categories.name"])
           |> Selecto.join(:inner, :categories, :category_id, :id)
           |> Selecto.limit(100)
-          |> Selecto.execute(MyApp.Repo)
+          |> Selecto.execute(SelectoNorthwind.Repo)
         end
       })
     end
@@ -1370,7 +1611,7 @@ defmodule SelectoMix.DocsGenerator do
     # Apply filters based on the filter builder above
     filtered_query = 
       Selecto.select(#{domain}_domain, [:id, :name, :created_at])
-      |> Selecto.filter(:name, :like, "%example%")
+      |> Selecto.filter([{:name, {:like, "%example%"}}])
       |> Selecto.limit(25)
 
     filtered_results = Selecto.execute(filtered_query, conn)
@@ -1381,10 +1622,9 @@ defmodule SelectoMix.DocsGenerator do
 
     ### Basic Aggregations
     ```elixir
-    # Count total records
+    # Count total records using proper Selecto syntax
     count_query = 
-      Selecto.select(#{domain}_domain, [:count])
-      |> Selecto.aggregate(:count, :id)
+      Selecto.select(#{domain}_domain, [{:field, {:count, "id"}, "count"}])
 
     count_result = Selecto.execute(count_query, conn)
     IO.inspect(count_result, label: "Total #{domain} count")
@@ -1394,10 +1634,9 @@ defmodule SelectoMix.DocsGenerator do
     ```elixir
     # Group by a field and count
     grouped_query = 
-      Selecto.select(#{domain}_domain, [:category, :count])
+      Selecto.select(#{domain}_domain, [:category, {:field, {:count, "id"}, "count"}])
       |> Selecto.group_by([:category])
-      |> Selecto.aggregate(:count, :id)
-      |> Selecto.order_by([{:count, :desc}])
+      |> Selecto.order_by([{:desc, "count"}])
 
     grouped_results = Selecto.execute(grouped_query, conn)
     Kino.DataTable.new(grouped_results)
@@ -1437,9 +1676,8 @@ defmodule SelectoMix.DocsGenerator do
       end},
       
       {"Aggregation", fn -> 
-        Selecto.select(#{domain}_domain, [:category, :count])
+        Selecto.select(#{domain}_domain, [:category, {:field, {:count, "id"}, "count"}])
         |> Selecto.group_by([:category])
-        |> Selecto.aggregate(:count, :id)
         |> Selecto.execute(conn)
       end}
     ]
@@ -1461,7 +1699,7 @@ defmodule SelectoMix.DocsGenerator do
     # Get data for visualization
     viz_data = 
       Selecto.select(#{domain}_domain, [:created_at, :status])
-      |> Selecto.filter(:created_at, :gte, Date.add(Date.utc_today(), -30))
+      |> Selecto.filter([{:created_at, {:gte, Date.add(Date.utc_today(), -30)}}])
       |> Selecto.execute(conn)
 
     # Group by date and status
@@ -1500,8 +1738,8 @@ defmodule SelectoMix.DocsGenerator do
     |> Kino.animate(fn %{data: %{limit: limit, search: search, status_filter: status}} ->
       query = Selecto.select(#{domain}_domain, [:id, :name, :status, :created_at])
       
-      query = if search != "", do: Selecto.filter(query, :name, :ilike, "%\#{search}%"), else: query
-      query = if status, do: Selecto.filter(query, :status, :eq, status), else: query
+      query = if search != "", do: Selecto.filter(query, [{:name, {:ilike, "%\#{search}%"}}]), else: query
+      query = if status, do: Selecto.filter(query, [{:status, {:eq, status}}]), else: query
       query = Selecto.limit(query, limit)
       
       results = Selecto.execute(query, conn)
@@ -1529,13 +1767,13 @@ defmodule SelectoMix.DocsGenerator do
 
     ### Custom Aggregation Functions
     ```elixir
-    # Example of custom SQL in aggregations
+    # Multiple aggregation functions using proper Selecto syntax
     advanced_stats = 
       Selecto.select(#{domain}_domain, [
-        "COUNT(*) as total_count",
-        "COUNT(DISTINCT status) as status_variety", 
-        "MIN(created_at) as oldest_record",
-        "MAX(created_at) as newest_record"
+        {:field, {:count, "id"}, "total_count"},
+        {:field, {:count_distinct, "status"}, "status_variety"}, 
+        {:field, {:min, "created_at"}, "oldest_record"},
+        {:field, {:max, "created_at"}, "newest_record"}
       ])
       |> Selecto.execute(conn)
 
@@ -1719,16 +1957,17 @@ defmodule SelectoMix.DocsGenerator do
                     results: [],
                     
                     get generatedQuery() {
-                        let query = `Selecto.select(#{domain}_domain(), [\${this.selectedFields.map(f => ':' + f).join(', ')}])`;
+                        let query = `selecto
+    |> Selecto.select( [\${this.selectedFields.map(f => ':' + f).join(', ')}])`;
                         
                         this.filters.forEach(filter => {
                             if (filter.field && filter.operator && filter.value) {
-                                query += `\\n|> Selecto.filter(:\${filter.field}, :\${filter.operator}, "\${filter.value}")`;
+                                query += `\\n|> Selecto.filter([{:\${filter.field}, {:\${filter.operator}, "\${filter.value}"}}])`;
                             }
                         });
                         
                         query += `\\n|> Selecto.limit(\${this.limit})`;
-                        query += `\\n|> Selecto.execute(MyApp.Repo)`;
+                        query += `\\n|> Selecto.execute(SelectoNorthwind.Repo)`;
                         
                         return query;
                     },
@@ -1779,9 +2018,72 @@ defmodule SelectoMix.DocsGenerator do
 
   # Helper functions for generating content
 
+  defp get_field_type(types, field) do
+    case Map.get(types, field) do
+      %{type: type} -> type
+      type when is_atom(type) -> type
+      _ -> :unknown
+    end
+  end
+  
+  defp get_date_literal_for_field(field, types) do
+    case get_field_type(types, field) do
+      :date -> "~D[2024-01-01]"
+      :datetime -> "~U[2024-01-01 00:00:00Z]"
+      :utc_datetime -> "~U[2024-01-01 00:00:00Z]"
+      :naive_datetime -> "~N[2024-01-01 00:00:00]"
+      _ -> "~N[2024-01-01 00:00:00]"  # Default to naive datetime
+    end
+  end
+  
+  defp find_field_by_type(fields, types, target_type) when is_atom(target_type) do
+    Enum.find(fields, fn field ->
+      get_field_type(types, field) == target_type
+    end)
+  end
+  defp find_field_by_type(fields, types, target_types) when is_list(target_types) do
+    Enum.find(fields, fn field ->
+      field_type = get_field_type(types, field)
+      field_type in target_types
+    end)
+  end
+  
+  defp pick_main_fields(fields, types) do
+    # Try to pick 2-3 meaningful fields for examples
+    # Prioritize: id, name fields, then other string fields
+    main = if :id in fields, do: [:id], else: []
+    
+    # Look for name-like fields
+    name_field = Enum.find(fields, fn f -> 
+      String.contains?(to_string(f), "name") && get_field_type(types, f) == :string
+    end)
+    
+    if name_field do
+      main ++ [name_field]
+    else
+      # Fall back to any string field
+      string_field = find_field_by_type(fields, types, :string)
+      if string_field, do: main ++ [string_field], else: main
+    end
+  end
+  
+  defp get_first_string_field_for_assoc(assoc_table) do
+    # Try to guess a reasonable field name for the associated table
+    # This is a simple heuristic - in real usage, we'd inspect the actual schema
+    case assoc_table do
+      table when table in ["category", "categories"] -> "category_name"
+      table when table in ["supplier", "suppliers"] -> "company_name"
+      table when table in ["customer", "customers"] -> "company_name"
+      table when table in ["order", "orders"] -> "order_date"
+      table when table in ["employee", "employees"] -> "first_name"
+      _ -> "name"  # Default fallback
+    end
+  end
+
   defp generate_field_list(fields, types) do
     Enum.map(fields, fn field ->
-      type = Map.get(types, field, :unknown)
+      type_info = Map.get(types, field, %{})
+      type = if is_map(type_info), do: type_info[:type] || :unknown, else: type_info
       "- **#{field}** (`#{type}`)"
     end)
     |> Enum.join("\n")
@@ -1789,7 +2091,7 @@ defmodule SelectoMix.DocsGenerator do
 
   defp generate_detailed_field_reference(fields, types) do
     Enum.map(fields, fn field ->
-      type = Map.get(types, field, :unknown)
+      type = get_field_type(types, field)
       
       description = case field do
         :id -> "Unique identifier for the record"
@@ -1820,13 +2122,15 @@ defmodule SelectoMix.DocsGenerator do
 
   defp generate_joins_documentation(joins) when length(joins) == 0 do
     """
-    No predefined joins are configured for this domain. You can create custom joins
-    using the Selecto join API:
+    Selecto automatically infers joins based on the fields you select. Simply reference
+    fields from related tables using dot notation, and the necessary joins will be
+    created automatically.
     
     ```elixir
-    # Example custom join
-    Selecto.select(your_domain(), [:id, :name])
-    |> Selecto.join(:inner, :related_table, :foreign_key_id, :id)
+    # Example: Automatic join by field reference
+    selecto
+    |> Selecto.select(["product.name", "category.name"])
+    # Selecto automatically determines and creates the necessary join
     ```
     """
   end
@@ -1843,7 +2147,7 @@ defmodule SelectoMix.DocsGenerator do
       
       ```elixir
       # Usage example
-      Selecto.select(domain(), [:id, :name])
+      selecto
       |> Selecto.join(:#{join.type}, :#{join.target_table}, :#{join.local_key}, :#{join.foreign_key})
       ```
       """
@@ -1871,5 +2175,570 @@ defmodule SelectoMix.DocsGenerator do
 
   defp generate_html_performance(_domain, _domain_info) do
     "<!-- HTML performance guide would be generated here -->"
+  end
+
+  # Executable .exs file generation
+  
+  defp generate_executable_examples(domain, domain_info, _opts) do
+    # Convert domain atom to string for String operations
+    domain_string = to_string(domain)
+    domain_capitalized = String.capitalize(domain_string)
+    
+    # Get actual fields from domain_info
+    fields = domain_info.source.fields
+    
+    # Pick appropriate fields for examples based on type
+    string_field = find_field_by_type(fields, domain_info.source.types, :string) || :name
+    date_field = find_field_by_type(fields, domain_info.source.types, [:date, :datetime, :naive_datetime]) || :inserted_at
+    boolean_field = find_field_by_type(fields, domain_info.source.types, :boolean)
+    numeric_field = find_field_by_type(fields, domain_info.source.types, [:integer, :float, :decimal])
+    
+    # Pick 2-3 main fields for basic examples (prefer name fields)
+    main_fields = pick_main_fields(fields, domain_info.source.types)
+    
+    """
+# #{domain_capitalized} Domain Examples
+# 
+# This is an executable script demonstrating Selecto usage with the #{domain} domain.
+# Run with: mix run docs/selecto/#{domain}_examples.exs
+# Or in IEx: c "docs/selecto/#{domain}_examples.exs"
+
+# Setup and configuration
+IO.puts("\\n==== #{domain_capitalized} Domain Examples ====\\n")
+IO.puts("Setting up domain configuration...")
+
+domain = SelectoNorthwind.SelectoDomains.#{domain_capitalized}Domain.domain()
+selecto = Selecto.configure(domain, SelectoNorthwind.Repo)
+
+IO.puts("✓ Configuration complete\\n")
+
+# ============================================================================
+# Basic Operations
+# ============================================================================
+
+IO.puts("\\n--- Basic Data Retrieval ---\\n")
+
+# Get all records with basic fields
+IO.puts("Fetching records with basic fields (limit 5):")
+selecto
+|> Selecto.select(#{inspect(main_fields)})
+|> Selecto.limit(5)
+|> Selecto.execute()
+|> case do
+  {:ok, {rows, _columns, _aliases}} ->
+    Enum.each(rows, fn row ->
+      IO.inspect(row, label: "  →")
+    end)
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+
+IO.puts("")
+
+# Get single record by ID
+IO.puts("Fetching single record by ID:")
+selecto
+|> Selecto.select(#{inspect(main_fields ++ [date_field])})
+|> Selecto.filter([{:id, {:eq, 1}}])
+|> Selecto.execute()
+|> case do
+  {:ok, {rows, _columns, _aliases}} ->
+    case rows do
+      [row | _] -> IO.inspect(row, label: "  → Record ID=1")
+      [] -> IO.puts("  → No record found with ID=1")
+    end
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+
+# ============================================================================
+# Filtering Examples
+# ============================================================================
+
+IO.puts("\\n--- Filtering Examples ---\\n")
+
+# String filtering
+IO.puts("Filtering by string field (#{inspect(string_field)}):")
+selecto
+|> Selecto.select(#{inspect(main_fields)})
+|> Selecto.filter([{#{inspect(string_field)}, {:like, "%a%"}}])
+|> Selecto.limit(3)
+|> Selecto.execute()
+|> case do
+  {:ok, {rows, _columns, _aliases}} ->
+    IO.puts("  Found \#{length(rows)} matching records")
+    Enum.each(rows, fn row ->
+      IO.inspect(row, label: "  →")
+    end)
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+
+IO.puts("")
+
+# Multiple filters with AND logic
+IO.puts("Multiple filters (AND logic):")
+selecto
+|> Selecto.select(#{inspect(main_fields ++ [date_field])})
+|> Selecto.filter([
+  {#{inspect(string_field)}, {:like, "%a%"}},
+  {#{inspect(date_field)}, {:gte, #{get_date_literal_for_field(date_field, domain_info.source.types)}}}
+])
+|> Selecto.limit(3)
+|> Selecto.execute()
+|> case do
+  {:ok, {rows, _columns, _aliases}} ->
+    IO.puts("  Found \#{length(rows)} matching records")
+    Enum.each(rows, fn row ->
+      IO.inspect(row, label: "  →")
+    end)
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+#{if boolean_field do """
+
+  IO.puts("")
+
+  # Boolean field filtering
+  IO.puts("Filtering by boolean field (#{inspect(boolean_field)}):")
+  selecto
+  |> Selecto.select(#{inspect(main_fields)})
+  |> Selecto.filter([{#{inspect(boolean_field)}, {:eq, true}}])
+  |> Selecto.limit(3)
+  |> Selecto.execute()
+  |> case do
+    {:ok, {rows, _columns, _aliases}} ->
+      IO.puts("  Found \#{length(rows)} records where #{boolean_field} = true")
+      Enum.each(rows, fn row ->
+        IO.inspect(row, label: "  →")
+      end)
+    {:error, error} ->
+      IO.puts("Error: \#{inspect(error)}")
+  end
+  """ else "" end}
+
+# ============================================================================
+# Aggregation Examples
+# ============================================================================
+
+IO.puts("\\n--- Aggregation Examples ---\\n")
+
+# Group by with count using proper Selecto aggregation syntax
+IO.puts("Group by with count:")
+selecto
+|> Selecto.select([#{inspect(string_field)}, {:field, {:count, "id"}, "count"}])
+|> Selecto.group_by([#{inspect(string_field)}])
+|> Selecto.limit(5)
+|> Selecto.execute()
+|> case do
+  {:ok, {rows, _columns, _aliases}} ->
+    IO.puts("  Top 5 groups:")
+    Enum.each(rows, fn row ->
+      IO.inspect(row, label: "  →")
+    end)
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+
+IO.puts("")
+
+# Multiple aggregations with proper syntax
+IO.puts("Multiple aggregation functions:")
+selecto
+|> Selecto.select([
+  #{inspect(string_field)},
+  {:field, {:count, "id"}, "total_count"},
+  {:field, {:min, #{inspect(date_field)}}, "oldest"},
+  {:field, {:max, #{inspect(date_field)}}, "newest"}
+])
+|> Selecto.group_by([#{inspect(string_field)}])
+|> Selecto.limit(3)
+|> Selecto.execute()
+|> case do
+  {:ok, {rows, _columns, _aliases}} ->
+    IO.puts("  Found \#{length(rows)} groups")
+    Enum.each(rows, fn row ->
+      IO.inspect(row, label: "  →")
+    end)
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+
+# ============================================================================
+# Automatic Join Inference
+# ============================================================================
+#{if not Enum.empty?(domain_info.source.associations) do
+  # Get first association for examples
+  {assoc_name, assoc_info} = domain_info.source.associations |> Map.to_list() |> List.first()
+  assoc_table = to_string(assoc_info[:queryable] || assoc_name)
+"""
+
+IO.puts("\\n--- Automatic Join Inference ---\\n")
+
+IO.puts("Accessing related data through automatic joins:")
+
+# Select fields from joined table
+IO.puts("\\nSelecting fields from related #{assoc_table} table:")
+selecto
+|> Selecto.select([
+  #{inspect(List.first(main_fields))},
+  #{inspect(string_field)},
+  "#{assoc_table}.id",
+  "#{assoc_table}.#{get_first_string_field_for_assoc(assoc_table)}"
+])
+|> Selecto.limit(5)
+|> Selecto.execute()
+|> case do
+  {:ok, {rows, columns, _aliases}} ->
+    IO.puts("  Columns: \#{inspect(columns)}")
+    Enum.each(rows, fn row ->
+      IO.inspect(row, label: "  →")
+    end)
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+
+IO.puts("")
+
+# Filter by joined table fields
+IO.puts("Filtering by related #{assoc_table} fields:")
+selecto
+|> Selecto.select([#{inspect(List.first(main_fields))}, #{inspect(string_field)}])
+|> Selecto.filter([{"#{assoc_table}.id", {:gt, 0}}])
+|> Selecto.limit(5)
+|> Selecto.execute()
+|> case do
+  {:ok, {rows, _columns, _aliases}} ->
+    IO.puts("  Found \#{length(rows)} records with associated #{assoc_table}")
+    Enum.each(rows, fn row ->
+      IO.inspect(row, label: "  →")
+    end)
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+
+IO.puts("")
+
+# Aggregate with joins
+IO.puts("Aggregating with joined data:")
+selecto
+|> Selecto.select([
+  "#{assoc_table}.id",
+  {:field, {:count, "id"}, "count"},
+  {:field, {:avg, #{inspect(numeric_field || "id")}}, "average"}
+])
+|> Selecto.group_by(["#{assoc_table}.id"])
+|> Selecto.limit(5)
+|> Selecto.execute()
+|> case do
+  {:ok, {rows, _columns, _aliases}} ->
+    IO.puts("  Top 5 #{assoc_table} by count:")
+    Enum.each(rows, fn row ->
+      IO.inspect(row, label: "  →")
+    end)
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+"""
+else
+"""
+
+IO.puts("\\n--- Automatic Join Inference ---\\n")
+
+IO.puts("No associations found in this domain.")
+IO.puts("Joins are automatically inferred when you reference fields with dot notation.")
+IO.puts("Example: selecting 'category.name' automatically joins to category table")
+"""
+end}
+
+# ============================================================================  
+# Pivot Examples
+# ============================================================================
+#{if map_size(domain_info.joins) > 0 do
+"""
+
+IO.puts("\\n--- Pivot Operations ---\\n")
+
+IO.puts("Pivoting to a related domain:")
+IO.puts("  Note: Pivot allows you to change the primary focus of your query")
+
+# Example pivot operation
+#{if map_size(domain_info.source.associations) > 0 do
+  {assoc_name, assoc_info} = domain_info.source.associations |> Map.to_list() |> List.first()
+  target_table = to_string(assoc_info[:queryable] || assoc_name)
+"""
+# Pivot from #{domain} to #{target_table}
+# This changes the primary table from #{domain} to #{target_table}
+selecto
+|> Selecto.pivot(#{inspect(assoc_name)})
+|> Selecto.select(["#{target_table}.id", "#{target_table}.#{get_first_string_field_for_assoc(target_table)}"])
+|> Selecto.limit(5)
+|> Selecto.execute()
+|> case do
+  {:ok, {rows, _columns, _aliases}} ->
+    IO.puts("  Showing #{target_table} records after pivot:")
+    Enum.each(rows, fn row ->
+      IO.inspect(row, label: "  →")
+    end)
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+
+IO.puts("")
+
+# Pivot preserves the context of your original filters
+IO.puts("Note: Pivot maintains the relationship context from the original table.")
+IO.puts("The query above shows all #{target_table} records that have associated #{domain} records.")
+"""
+else
+  "# No associations available for pivot example"
+end}
+"""
+else
+  ""
+end}
+
+# ============================================================================
+# Subselect Examples (Aggregating Related Data)
+# ============================================================================
+#{if map_size(domain_info.source.associations) > 0 do
+  {assoc_name, assoc_info} = domain_info.source.associations |> Map.to_list() |> List.first()
+  target_table = to_string(assoc_info[:queryable] || assoc_name)
+  target_field = get_first_string_field_for_assoc(target_table)
+  
+  ~s"""
+  
+  IO.puts("\\n--- Subselect Operations ---\\n")
+  
+  IO.puts("Subselect - Getting related data as JSON array:")
+  IO.puts("  Note: Subselect returns related records as aggregated data within each row")
+
+  # Get #{domain} records with related #{target_table} as JSON array
+  selecto
+  |> Selecto.select([#{inspect(List.first(main_fields))}, #{inspect(string_field)}])
+|> Selecto.subselect(["#{target_table}.#{target_field}"], format: :json_agg)
+|> Selecto.limit(3)
+|> Selecto.execute()
+|> case do
+  {:ok, {rows, columns, _aliases}} ->
+    IO.puts("  Columns: \#{inspect(columns)}")
+    
+    Enum.each(rows, fn row ->
+      IO.inspect(row, label: "  →")
+    end)
+    
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+
+IO.puts("")
+
+# Count of related records
+IO.puts("Subselect - Count of related records:")
+
+selecto
+|> Selecto.select([#{inspect(List.first(main_fields))}, #{inspect(string_field)}])
+|> Selecto.subselect(["#{target_table}.id"], format: :count)
+|> Selecto.limit(5)
+|> Selecto.execute()
+|> case do
+  {:ok, {rows, _columns, _aliases}} ->
+    IO.puts("  Found \#{length(rows)} records with counts")
+    
+    Enum.each(rows, fn row ->
+      IO.inspect(row, label: "  →")
+    end)
+    
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+  """
+else
+  ""
+end}
+
+# ============================================================================
+# Advanced Filtering Examples
+# ============================================================================
+
+IO.puts("\\n--- Advanced Filtering ---\\n")
+
+# OR conditions
+IO.puts("Using OR conditions in filters:")
+
+selecto
+|> Selecto.select([#{inspect(List.first(main_fields))}, #{inspect(string_field)}])
+|> Selecto.filter([
+  {:or, [
+    {#{inspect(string_field)}, {:like, "%a%"}},
+    {#{inspect(string_field)}, {:like, "%e%"}}
+  ]}
+])
+|> Selecto.limit(5)
+|> Selecto.execute()
+|> case do
+  {:ok, {rows, _columns, _aliases}} ->
+    IO.puts("  Found \#{length(rows)} records matching 'a' OR 'e'")
+    
+    Enum.each(rows, fn row ->
+      IO.inspect(row, label: "  →")
+    end)
+    
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+
+IO.puts("")
+
+# IN clause
+IO.puts("Using IN clause for multiple values:")
+
+selecto
+|> Selecto.select([#{inspect(List.first(main_fields))}, #{inspect(string_field)}])
+|> Selecto.filter([
+  {#{inspect(List.first(main_fields))}, {:in, [1, 2, 3, 5, 8]}}
+])
+|> Selecto.execute()
+|> case do
+  {:ok, {rows, _columns, _aliases}} ->
+    IO.puts("  Found \#{length(rows)} records with ID in [1, 2, 3, 5, 8]")
+    
+    Enum.each(rows, fn row ->
+      IO.inspect(row, label: "  →")
+    end)
+    
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+
+IO.puts("")
+
+# Boolean field filtering
+IO.puts("Filtering by boolean field:")
+
+selecto
+|> Selecto.select([#{inspect(List.first(main_fields))}, #{inspect(string_field)}])
+|> Selecto.filter([
+  {:discontinued, {:eq, false}}
+])
+|> Selecto.limit(3)
+|> Selecto.execute()
+|> case do
+  {:ok, {rows, _columns, _aliases}} ->
+    IO.puts("  Found \#{length(rows)} records where discontinued = false")
+    
+    Enum.each(rows, fn row ->
+      IO.inspect(row, label: "  →")
+    end)
+    
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+
+#{if map_size(domain_info.source.associations) > 0 do
+  {assoc_name, assoc_info} = domain_info.source.associations |> Map.to_list() |> List.first()
+  target_table = to_string(assoc_info[:queryable] || assoc_name)
+  
+  ~s"""
+    # ============================================================================
+    # Related Data Filtering Examples
+    # ============================================================================
+    
+    IO.puts("\\n--- Filtering by Related Data ---\\n")
+
+    IO.puts("Filter where related #{target_table} exists:")
+    IO.puts("  Note: You can filter by related data using join syntax")
+
+  # Find #{domain} records that have a specific related #{target_table}
+  selecto
+  |> Selecto.select([#{inspect(List.first(main_fields))}, #{inspect(string_field)}])
+  |> Selecto.filter([
+    {"#{target_table}.id", {:gt, 0}}
+  ])
+  |> Selecto.limit(5)
+  |> Selecto.execute()
+  |> case do
+    {:ok, {rows, _columns, _aliases}} ->
+      IO.puts("  Found \#{length(rows)} records with related #{target_table}")
+      
+      Enum.each(rows, fn row ->
+        IO.inspect(row, label: "  →")
+      end)
+      
+    {:error, error} ->
+      IO.puts("Error: \#{inspect(error)}")
+  end
+    """
+else
+  ""
+end}
+
+# ============================================================================
+# Pagination Examples
+# ============================================================================
+
+IO.puts("\\n--- Pagination ---\\n")
+
+IO.puts("Page 1 (first 5 records):")
+selecto
+|> Selecto.select(#{inspect(main_fields)})
+|> Selecto.order_by([{#{inspect(List.first(main_fields))}, :asc}])
+|> Selecto.limit(5)
+|> Selecto.offset(0)
+|> Selecto.execute()
+|> case do
+  {:ok, {rows, _columns, _aliases}} ->
+    Enum.each(rows, fn row ->
+      IO.inspect(Enum.at(row, 0), label: "  → ID")
+    end)
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+
+IO.puts("")
+
+IO.puts("Page 2 (next 5 records):")
+selecto
+|> Selecto.select(#{inspect(main_fields)})
+|> Selecto.order_by([{#{inspect(List.first(main_fields))}, :asc}])
+|> Selecto.limit(5)
+|> Selecto.offset(5)
+|> Selecto.execute()
+|> case do
+  {:ok, {rows, _columns, _aliases}} ->
+    Enum.each(rows, fn row ->
+      IO.inspect(Enum.at(row, 0), label: "  → ID")
+    end)
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+
+# ============================================================================
+# Advanced Patterns
+# ============================================================================
+
+IO.puts("\\n--- Advanced Patterns ---\\n")
+
+# Combining multiple operations
+IO.puts("Complex query with multiple operations:")
+selecto
+|> Selecto.select(#{inspect(main_fields)})
+|> Selecto.filter([{#{inspect(string_field)}, {:like, "%a%"}}])
+|> Selecto.order_by([{#{inspect(date_field)}, :desc}])
+|> Selecto.limit(5)
+|> Selecto.execute()
+|> case do
+  {:ok, {rows, columns, _aliases}} ->
+    IO.puts("  Columns: \#{inspect(columns)}")
+    IO.puts("  Found \#{length(rows)} records (newest first)")
+    Enum.each(rows, fn row ->
+      IO.inspect(row, label: "  →")
+    end)
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+
+IO.puts("\\n==== Examples Complete ====\\n")
+"""
   end
 end

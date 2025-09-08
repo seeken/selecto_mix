@@ -383,43 +383,43 @@ defmodule SelectoMix.DomainGenerator do
   defp simplify_ecto_type(type) when is_atom(type), do: type
   defp simplify_ecto_type(_), do: :string
   
-  defp discover_basic_associations(schema_module) do
-    try do
-      # This is a simplified version - in a full implementation, 
-      # we would introspect associations from the schema
-      associations = schema_module.__schema__(:associations)
-      
-      Enum.into(associations, %{}, fn assoc_name ->
-        assoc = schema_module.__schema__(:association, assoc_name)
-        
-        {assoc_name, %{
-          queryable: get_association_queryable(assoc),
-          field: assoc_name,
-          owner_key: assoc.owner_key,
-          related_key: assoc.related_key
-        }}
-      end)
-    rescue
-      _ -> %{}
-    end
-  end
+  # defp discover_basic_associations(schema_module) do
+  #   try do
+  #     # This is a simplified version - in a full implementation, 
+  #     # we would introspect associations from the schema
+  #     associations = schema_module.__schema__(:associations)
+  #     
+  #     Enum.into(associations, %{}, fn assoc_name ->
+  #       assoc = schema_module.__schema__(:association, assoc_name)
+  #       
+  #       {assoc_name, %{
+  #         queryable: get_association_queryable(assoc),
+  #         field: assoc_name,
+  #         owner_key: assoc.owner_key,
+  #         related_key: assoc.related_key
+  #       }}
+  #     end)
+  #   rescue
+  #     _ -> %{}
+  #   end
+  # end
   
-  defp get_association_queryable(assoc) do
-    case assoc.queryable do
-      module when is_atom(module) ->
-        # For now, we'll just exclude associations that point back to the main schema
-        # This is a temporary fix - a proper solution would handle self-referential associations
-        module_name = module
-        |> Module.split()
-        |> List.last()
-        |> Macro.underscore()
-        
-        # Return nil for associations we want to skip
-        # The calling code should filter these out
-        String.to_atom(module_name)
-      other -> other
-    end
-  end
+  # defp get_association_queryable(assoc) do
+  #   case assoc.queryable do
+  #     module when is_atom(module) ->
+  #       # For now, we'll just exclude associations that point back to the main schema
+  #       # This is a temporary fix - a proper solution would handle self-referential associations
+  #       module_name = module
+  #       |> Module.split()
+  #       |> List.last()
+  #       |> Macro.underscore()
+  #       
+  #       # Return nil for associations we want to skip
+  #       # The calling code should filter these out
+  #       String.to_atom(module_name)
+  #     other -> other
+  #   end
+  # end
   
   defp generate_nested_associations_config(associations) do
     if Enum.empty?(associations) do
@@ -838,12 +838,12 @@ defmodule SelectoMix.DomainGenerator do
 
 
   # Unused - kept for future VALUES clause support
-  defp generate_values_clauses_config(_config) do
-    ""
-  end
+  # defp generate_values_clauses_config(_config) do
+  #   ""
+  # end
 
   # Unused helper - kept for future use
-  defp generate_window_function_helpers(_config) do
-    ""
-  end
+  # defp generate_window_function_helpers(_config) do
+  #   ""
+  # end
 end
