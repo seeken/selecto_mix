@@ -579,7 +579,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
     #{saved_views_code}
 
-        {:ok, assign(socket, state)}
+        {:ok, assign(socket, state), layout: {#{web_module}.Layouts, :root}}
       end
 
       @impl true
