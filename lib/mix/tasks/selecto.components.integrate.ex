@@ -411,7 +411,19 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
     end
   end
 
+  defp get_selecto_components_path() do
+    vendor_path = Path.join([File.cwd!(), "vendor", "selecto_components"])
+    deps_path = Path.join([File.cwd!(), "deps", "selecto_components"])
+
+    cond do
+      File.dir?(vendor_path) -> "../../vendor/selecto_components/lib/**/*.{ex,heex}"
+      File.dir?(deps_path) -> "../../deps/selecto_components/lib/**/*.{ex,heex}"
+      true -> "../../deps/selecto_components/lib/**/*.{ex,heex}"  # default to deps
+    end
+  end
+
   defp patch_app_css(content) do
+    selecto_path = get_selecto_components_path()
     cond do
       # If there are already @source directives, add after the last one
       String.contains?(content, "@source") ->
@@ -424,10 +436,10 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
         
         if length(source_indices) > 0 do
           last_index = List.last(source_indices)
-          List.insert_at(lines, last_index + 1, "@source \"../../deps/selecto_components/lib/**/*.{ex,heex}\";")
+          List.insert_at(lines, last_index + 1, "@source \"#{selecto_path}\";")
           |> Enum.join("\n")
         else
-          content <> "\n@source \"../../deps/selecto_components/lib/**/*.{ex,heex}\";\n"
+          content <> "\n@source \"#{selecto_path}\";\n"
         end
         
       # If there's @import "tailwindcss/utilities", add after it
@@ -435,12 +447,12 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
         String.replace(
           content,
           ~r/(@import "tailwindcss\/utilities";)/,
-          "\\1\n\n/* SelectoComponents styles */\n@source \"../../deps/selecto_components/lib/**/*.{ex,heex}\";"
+          "\\1\n\n/* SelectoComponents styles */\n@source \"#{selecto_path}\";"
         )
         
       # Otherwise, append at the end
       true ->
-        content <> "\n\n/* SelectoComponents styles */\n@source \"../../deps/selecto_components/lib/**/*.{ex,heex}\";\n"
+        content <> "\n\n/* SelectoComponents styles */\n@source \"#{selecto_path}\";\n"
     end
   end
 
@@ -482,7 +494,7 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
          hooks: { ...selectoComponentsHooks }
       
       2. In assets/css/app.css, add:
-         @source "../../deps/selecto_components/lib/**/*.{ex,heex}";
+         @source "#{get_selecto_components_path()}";
       """)
     end
   end

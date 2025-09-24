@@ -10,7 +10,7 @@ defmodule SelectoMix.DocsGenerator do
   """
   def generate_overview(domain, format \\ :markdown) do
     domain_info = analyze_domain(domain)
-    
+
     case format do
       :markdown -> generate_markdown_overview(domain, domain_info)
       :html -> generate_html_overview(domain, domain_info)

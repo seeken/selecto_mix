@@ -39,6 +39,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     * `--saved-views` - Generate saved views implementation (requires --live)
     * `--expand-schemas` - Comma-separated list of associated schemas to fully expand with columns and associations
     * `--parameterized-joins` - Generate example parameterized join configurations
+    * `--path` - Custom path for the LiveView route (e.g., /products instead of /product)
 
   ## File Generation
 
@@ -87,7 +88,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         live: :boolean,
         saved_views: :boolean,
         expand_schemas: :string,
-        parameterized_joins: :boolean
+        parameterized_joins: :boolean,
+        path: :string
       ],
       aliases: [
         a: :all,
@@ -427,7 +429,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     |> generate_live_view_html_file(schema, html_file, opts)
     |> add_success_message("Generated LiveView files for #{schema}")
     |> maybe_run_assets_integration()
-    |> add_route_suggestion(schema)
+    |> add_route_suggestion(schema, opts)
   end
 
   defp generate_saved_views_if_needed(igniter, opts) do
@@ -497,6 +499,12 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     app_name = List.first(clean_parts)
     schema_name = List.last(clean_parts)
     schema_underscore = Macro.underscore(schema_name)
+
+    # Use custom path if provided, otherwise use singular form
+    route_path = opts[:path] || "/#{schema_underscore}"
+    # Ensure path starts with /
+    route_path = if String.starts_with?(route_path, "/"), do: route_path, else: "/#{route_path}"
+
     domain_module = "#{app_name}.SelectoDomains.#{schema_name}Domain"
     web_module = "#{app_name}Web"
 
@@ -541,7 +549,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       
       2. Add to Tailwind in `assets/css/app.css`:
          ```css
-         @source "../../deps/selecto_components/lib/**/*.{ex,heex}";
+         @source "../../#{get_selecto_components_location()}/selecto_components/lib/**/*.{ex,heex}";
          ```
       
       3. Run `mix assets.build`
@@ -556,7 +564,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       def mount(_params, _session, socket) do
         # Configure the domain and path
         domain = #{domain_module}.domain()
-        path = "/#{schema_underscore}"
+        path = "#{route_path}"
 
         # Configure Selecto to use the main Repo connection pool
         selecto = Selecto.configure(domain, #{app_name}.Repo)
@@ -678,7 +686,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     app_name
   end
 
-  defp add_route_suggestion(igniter, schema) do
+  defp add_route_suggestion(igniter, schema, opts) do
     schema_parts = schema |> to_string() |> String.split(".")
     # Remove Elixir prefix if present
     clean_parts = case schema_parts do
@@ -688,12 +696,18 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     app_name = List.first(clean_parts)
     schema_name = List.last(clean_parts)
     schema_underscore = Macro.underscore(schema_name)
-    live_module = "#{app_name}Web.#{schema_name}Live"
+
+    # Use custom path if provided
+    route_path = opts[:path] || schema_underscore
+    # Remove leading slash if present for the route suggestion
+    route_path = String.replace_prefix(route_path, "/", "")
+
+    _live_module = "#{app_name}Web.#{schema_name}Live"
 
     route_suggestion = """
 
     Add this route to your router.ex:
-      live "/#{schema_underscore}", #{live_module}, :index
+      live "/#{route_path}", #{schema_name}Live, :index
     """
 
     Igniter.add_notice(igniter, route_suggestion)
@@ -723,5 +737,15 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     end
     
     igniter
+  end
+
+  defp get_selecto_components_location() do
+    vendor_path = Path.join([File.cwd!(), "vendor", "selecto_components"])
+
+    if File.dir?(vendor_path) do
+      "vendor"
+    else
+      "deps"
+    end
   end
 end
