@@ -161,27 +161,29 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
   
   defp integrate_app_js(opts) do
     app_js_path = "assets/js/app.js"
-    
+
     case File.read(app_js_path) do
       {:ok, content} ->
         cond do
-          String.contains?(content, "phoenix-colocated/selecto_components") && !opts[:force] ->
+          String.contains?(content, "phoenix-colocated/selecto_components") &&
+          String.contains?(content, "selectoHooks") &&
+          !opts[:force] ->
             if opts[:check] do
               :already_configured
             else
               Mix.shell().info("✓ app.js: SelectoComponents hooks already configured")
               :already_configured
             end
-            
+
           opts[:check] ->
             :needs_update
-            
+
           true ->
             updated_content = patch_app_js(content)
-            
+
             if updated_content != content do
               File.write!(app_js_path, updated_content)
-              Mix.shell().info("✓ app.js: Added SelectoComponents hooks")
+              Mix.shell().info("✓ app.js: Added SelectoComponents hooks and selecto_hooks")
               :updated
             else
               Mix.shell().error("✗ app.js: Could not automatically add hooks (manual configuration needed)")
@@ -241,15 +243,18 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
 
   defp patch_app_js(content) do
     # First, add the import statement if not present
-    content_with_import = 
+    content_with_import =
       if String.contains?(content, "selectoComponentsHooks") do
         content
       else
         add_import_to_js(content)
       end
-    
+
+    # Add selecto_hooks import if needed
+    content_with_selecto_hooks = add_selecto_hooks_import(content_with_import)
+
     # Now add hooks to the LiveSocket configuration
-    add_hooks_to_livesocket(content_with_import)
+    add_hooks_to_livesocket(content_with_selecto_hooks)
   end
   
   defp add_import_to_js(content) do
@@ -334,6 +339,235 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
     end
   end
   
+  defp add_selecto_hooks_import(content) do
+    # Check if selecto_hooks is already imported
+    if String.contains?(content, "selectoHooks") do
+      content
+    else
+      # Create selecto_hooks.js if it doesn't exist
+      create_selecto_hooks_file()
+
+      # Find where to add the import
+      cond do
+        String.contains?(content, "selectoComponentsHooks") ->
+          # Add after selectoComponentsHooks import
+          String.replace(
+            content,
+            ~r/(import {hooks as selectoComponentsHooks} from[^\n]+)/,
+            "\\1\nimport selectoHooks from \"./selecto_hooks\""
+          )
+
+        String.contains?(content, "import topbar") ->
+          # Add after topbar import
+          String.replace(
+            content,
+            ~r/(import topbar from[^\n]+)/,
+            "\\1\nimport selectoHooks from \"./selecto_hooks\""
+          )
+
+        String.contains?(content, "import") ->
+          # Find last import and add after it
+          lines = String.split(content, "\n")
+          import_lines = Enum.filter(lines, &String.starts_with?(&1, "import"))
+
+          if length(import_lines) > 0 do
+            last_import = List.last(import_lines)
+            String.replace(
+              content,
+              last_import,
+              last_import <> "\nimport selectoHooks from \"./selecto_hooks\""
+            )
+          else
+            content
+          end
+
+        true ->
+          content
+      end
+    end
+  end
+
+  defp create_selecto_hooks_file() do
+    hooks_path = "assets/js/selecto_hooks.js"
+
+    if !File.exists?(hooks_path) do
+      hooks_content = """
+      // Custom Phoenix LiveView hooks for Selecto Components
+
+      export const DebugClipboard = {
+        mounted() {
+          this.handleCopyEvent = (e) => {
+            const button = e.target.closest('button[phx-click="copy_sql"]');
+            if (button) {
+              const sqlQuery = this.el.querySelector('[data-sql-query]')?.textContent ||
+                              this.el.querySelector('pre')?.textContent || '';
+
+              if (sqlQuery) {
+                navigator.clipboard.writeText(sqlQuery).then(() => {
+                  const originalText = button.innerHTML;
+                  button.innerHTML = '✓ Copied!';
+                  button.classList.add('bg-green-500');
+                  button.classList.remove('bg-blue-500');
+
+                  setTimeout(() => {
+                    button.innerHTML = originalText;
+                    button.classList.remove('bg-green-500');
+                    button.classList.add('bg-blue-500');
+                  }, 2000);
+                });
+              }
+            }
+          };
+
+          this.el.addEventListener('click', this.handleCopyEvent);
+        },
+
+        destroyed() {
+          if (this.handleCopyEvent) {
+            this.el.removeEventListener('click', this.handleCopyEvent);
+          }
+        }
+      };
+
+      export const RowClickable = {
+        mounted() {
+          this.handleRowClick = (e) => {
+            const row = e.target.closest('tr[data-row-id]');
+            if (row && !e.target.closest('a, button, input, select, textarea')) {
+              const rowId = row.dataset.rowId;
+              const action = row.dataset.clickAction || 'row_clicked';
+
+              this.pushEvent(action, { row_id: rowId });
+            }
+          };
+
+          this.el.addEventListener('click', this.handleRowClick);
+
+          // Add hover effect
+          const rows = this.el.querySelectorAll('tr[data-row-id]');
+          rows.forEach(row => {
+            row.style.cursor = 'pointer';
+            row.addEventListener('mouseenter', () => {
+              row.classList.add('bg-gray-50', 'transition-colors');
+            });
+            row.addEventListener('mouseleave', () => {
+              row.classList.remove('bg-gray-50');
+            });
+          });
+        },
+
+        destroyed() {
+          if (this.handleRowClick) {
+            this.el.removeEventListener('click', this.handleRowClick);
+          }
+        }
+      };
+
+      export const ColumnResize = {
+        mounted() {
+          const columnId = this.el.dataset.columnId;
+          let startX = 0;
+          let startWidth = 0;
+          let currentTable = null;
+          let currentColumn = null;
+
+          const handleMouseDown = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            currentTable = this.el.closest('table');
+            if (!currentTable) return;
+
+            // Find the column header
+            currentColumn = currentTable.querySelector(`th[data-column-id="${columnId}"]`) ||
+                           this.el.closest('th');
+
+            if (!currentColumn) return;
+
+            startX = e.pageX;
+            startWidth = currentColumn.offsetWidth;
+
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+
+            // Add active state
+            this.el.classList.add('bg-blue-500');
+
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+          };
+
+          const handleMouseMove = (e) => {
+            if (!currentColumn) return;
+
+            const diff = e.pageX - startX;
+            const newWidth = Math.max(50, Math.min(500, startWidth + diff));
+
+            currentColumn.style.width = `${newWidth}px`;
+            currentColumn.style.minWidth = `${newWidth}px`;
+            currentColumn.style.maxWidth = `${newWidth}px`;
+
+            // Update all cells in this column
+            const columnIndex = Array.from(currentColumn.parentElement.children).indexOf(currentColumn);
+            const rows = currentTable.querySelectorAll('tbody tr');
+            rows.forEach(row => {
+              const cell = row.children[columnIndex];
+              if (cell) {
+                cell.style.width = `${newWidth}px`;
+                cell.style.minWidth = `${newWidth}px`;
+                cell.style.maxWidth = `${newWidth}px`;
+              }
+            });
+          };
+
+          const handleMouseUp = (e) => {
+            if (currentColumn) {
+              const newWidth = currentColumn.offsetWidth;
+
+              // Send the new width to the server
+              this.pushEvent('column_resized', {
+                column_id: columnId,
+                width: newWidth
+              });
+            }
+
+            // Reset
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            this.el.classList.remove('bg-blue-500');
+
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+
+            currentColumn = null;
+            currentTable = null;
+          };
+
+          this.el.addEventListener('mousedown', handleMouseDown);
+
+          // Store for cleanup
+          this.handleMouseDown = handleMouseDown;
+        },
+
+        destroyed() {
+          if (this.handleMouseDown) {
+            this.el.removeEventListener('mousedown', this.handleMouseDown);
+          }
+        }
+      };
+
+      export default {
+        DebugClipboard,
+        RowClickable,
+        ColumnResize
+      };
+      """
+
+      File.write!(hooks_path, hooks_content)
+      Mix.shell().info("✓ Created selecto_hooks.js with required LiveView hooks")
+    end
+  end
+
   defp add_alpine_js_import(content) do
     # Find a good place to add Alpine.js import
     cond do
@@ -376,36 +610,47 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
   
   defp add_hooks_to_livesocket(content) do
     cond do
-      # Check if selectoComponentsHooks is actually IN the hooks object, not just imported
-      String.contains?(content, "hooks:") && String.contains?(content, "...selectoComponentsHooks") ->
-        # Already configured
+      # Check if both hooks are already configured
+      String.contains?(content, "hooks:") &&
+      String.contains?(content, "...selectoComponentsHooks") &&
+      String.contains?(content, "...selectoHooks") ->
+        # Already fully configured
         content
-        
+
+      # Check if selectoComponentsHooks is in the hooks object but not selectoHooks
+      String.contains?(content, "hooks:") && String.contains?(content, "...selectoComponentsHooks") ->
+        # Add selectoHooks to existing hooks
+        String.replace(
+          content,
+          ~r/hooks:\s*{\s*([^}]+)}/,
+          "hooks: {\\1, ...selectoHooks}"
+        )
+
       String.contains?(content, "hooks:") && String.contains?(content, "...") ->
         # Hooks object exists with spread operator, add our hooks
         # This handles cases like: hooks: {...colocatedHooks}
         String.replace(
           content,
           ~r/hooks:\s*{\s*([^}]+)}/,
-          "hooks: {\\1, ...selectoComponentsHooks}"
+          "hooks: {\\1, ...selectoComponentsHooks, ...selectoHooks}"
         )
-        
+
       String.contains?(content, "hooks:") ->
         # Hooks object exists without spread, add with spread to preserve existing
         String.replace(
           content,
           ~r/hooks:\s*{([^}]*)}/,
-          "hooks: {...selectoComponentsHooks,\\1}"
+          "hooks: {...selectoComponentsHooks, ...selectoHooks,\\1}"
         )
-        
+
       String.contains?(content, "new LiveSocket") ->
         # No hooks object, add one
         String.replace(
           content,
           ~r/(const liveSocket = new LiveSocket\([^,]+,\s*Socket,\s*{)([^}]*)(})/,
-          "\\1\\2,\n  hooks: { ...selectoComponentsHooks }\\3"
+          "\\1\\2,\n  hooks: { ...selectoComponentsHooks, ...selectoHooks }\\3"
         )
-        
+
       true ->
         content
     end
@@ -484,17 +729,20 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
   defp report_integration_status(js_status, css_status) do
     if js_status == :failed || css_status == :failed do
       Mix.shell().info("""
-      
+
       ⚠️  Manual configuration needed:
-      
+
       1. In assets/js/app.js, add:
          import {hooks as selectoComponentsHooks} from "phoenix-colocated/selecto_components"
-         
+         import selectoHooks from "./selecto_hooks"
+
          // In your LiveSocket configuration:
-         hooks: { ...selectoComponentsHooks }
-      
+         hooks: { ...selectoComponentsHooks, ...selectoHooks }
+
       2. In assets/css/app.css, add:
          @source "#{get_selecto_components_path()}";
+
+      3. Make sure assets/js/selecto_hooks.js exists with the required hooks
       """)
     end
   end
