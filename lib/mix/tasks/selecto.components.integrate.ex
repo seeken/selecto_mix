@@ -281,7 +281,7 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
         String.replace(
           content_with_alpine,
           ~r/(import {LiveSocket} from "phoenix_live_view")/,
-          "\\1\nimport {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\""
+          "\\1\nimport {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\"\nimport selectoHooks from \"../../vendor/selecto_components/assets/js/hooks\""
         )
         
       String.contains?(content_with_alpine, "import") ->
@@ -294,16 +294,16 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
           String.replace(
             content_with_alpine,
             last_import,
-            last_import <> "\nimport {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\""
+            last_import <> "\nimport {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\"\nimport selectoHooks from \"../../vendor/selecto_components/assets/js/hooks\""
           )
         else
           # Add at the beginning
-          "import {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\"\n" <> content_with_alpine
+          "import {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\"\nimport selectoHooks from \"../../vendor/selecto_components/assets/js/hooks\"\n" <> content_with_alpine
         end
         
       true ->
         # Add at the beginning
-        "import {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\"\n" <> content_with_alpine
+        "import {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\"\nimport selectoHooks from \"../../vendor/selecto_components/assets/js/hooks\"\n" <> content_with_alpine
     end
   end
   
@@ -734,11 +734,11 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
 
       1. In assets/js/app.js, add:
          import {hooks as selectoComponentsHooks} from "phoenix-colocated/selecto_components"
-         import selectoHooks from "./selecto_hooks"
+         import selectoHooks from "../../vendor/selecto_components/assets/js/hooks"
 
          // In your LiveSocket configuration:
          hooks: { ...selectoComponentsHooks, ...selectoHooks }
-
+      
       2. In assets/css/app.css, add:
          @source "#{get_selecto_components_path()}";
 
