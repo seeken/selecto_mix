@@ -40,6 +40,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     * `--expand-schemas` - Comma-separated list of associated schemas to fully expand with columns and associations
     * `--parameterized-joins` - Generate example parameterized join configurations
     * `--path` - Custom path for the LiveView route (e.g., /products instead of /product)
+    * `--enable-modal` - Enable modal detail view for row clicks in LiveView (requires --live)
 
   ## File Generation
 
@@ -89,7 +90,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         saved_views: :boolean,
         expand_schemas: :string,
         parameterized_joins: :boolean,
-        path: :string
+        path: :string,
+        enable_modal: :boolean
       ],
       aliases: [
         a: :all,
@@ -587,13 +589,14 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         ~H\"\"\"
         <div class="container mx-auto px-4 py-8">
           <h1 class="text-3xl font-bold mb-6">#{schema_name} Explorer</h1>
-          
+
           <.live_component
             module={SelectoComponents.Form}
             id="#{schema_underscore}-form"
+            #{if opts[:enable_modal], do: "enable_modal_detail={true}", else: ""}
             {assigns}
           />
-          
+
           <.live_component
             module={SelectoComponents.Results}
             id="#{schema_underscore}-results"
@@ -651,7 +654,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         executed={@executed}
         applied_view={nil}
         active_tab={@active_tab}
-        views={@views}#{saved_view_assigns}
+        views={@views}
+        #{if opts[:enable_modal], do: "enable_modal_detail={true}", else: ""}#{saved_view_assigns}
       />
     </div>
 
