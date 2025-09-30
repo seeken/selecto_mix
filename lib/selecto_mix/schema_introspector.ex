@@ -1,26 +1,46 @@
 defmodule SelectoMix.SchemaIntrospector do
   @moduledoc """
-  Introspects Ecto schemas to extract information for Selecto domain generation.
-  
-  This module analyzes Ecto schemas and builds the necessary metadata for
-  generating Selecto domain configurations, including fields, types, associations,
-  and recommended default configurations.
+  Unified interface for introspecting schemas from any source.
+
+  Supports both Ecto schemas and direct database connections via Postgrex.
+  This module provides backward compatibility with the original Ecto-only
+  interface while delegating to the new protocol-based introspector system.
+
+  ## Usage
+
+      # Ecto schema (original interface - still works)
+      config = SelectoMix.SchemaIntrospector.introspect_schema(MyApp.User)
+
+      # Postgrex connection (new interface)
+      {:ok, conn} = Postgrex.start_link(...)
+      config = SelectoMix.SchemaIntrospector.introspect_schema(
+        {:postgrex, conn, "users"}
+      )
   """
 
   @doc """
-  Introspect an Ecto schema and return Selecto domain configuration data.
-  
+  Introspect a schema source and return Selecto domain configuration data.
+
+  Accepts either an Ecto schema module or a Postgrex connection tuple.
+
+  ## Parameters
+
+  - `source` - Either:
+    - Ecto schema module (e.g., `MyApp.User`)
+    - `{:postgrex, conn, table_name}` tuple
+    - `{:postgrex, conn, table_name, schema}` tuple
+
   ## Options
-  
+
     * `:include_associations` - Include schema associations as joins (default: true)
     * `:redact_fields` - List of field names to mark as redacted
     * `:default_limit` - Default limit for queries (default: 50)
     * `:include_timestamps` - Include timestamp fields in default selects (default: false)
-  
+
   ## Returns
-  
+
   A map containing:
-  - `:schema_module` - The Ecto schema module
+  - `:schema_module` - The source module or table name
   - `:table_name` - Database table name
   - `:primary_key` - Primary key field name
   - `:fields` - List of all available fields
@@ -29,27 +49,42 @@ defmodule SelectoMix.SchemaIntrospector do
   - `:suggested_defaults` - Recommended default configuration
   - `:redacted_fields` - Fields that should be excluded from queries
   """
-  def introspect_schema(schema_module, opts \\ []) do
+  def introspect_schema(source, opts \\ []) do
     include_associations = Keyword.get(opts, :include_associations, true)
     redact_fields = Keyword.get(opts, :redact_fields, [])
-    
-    try do
-      %{
-        schema_module: schema_module,
-        table_name: get_table_name(schema_module),
-        primary_key: get_primary_key(schema_module),
-        fields: get_schema_fields(schema_module),
-        field_types: get_field_types(schema_module),
-        associations: if(include_associations, do: get_associations(schema_module), else: %{}),
-        suggested_defaults: generate_suggested_defaults(schema_module, opts),
-        redacted_fields: redact_fields,
-        metadata: extract_metadata(schema_module)
-      }
-    rescue
-      error ->
+
+    # Use new introspector protocol
+    case SelectoMix.Introspector.introspect(source, opts) do
+      {:ok, metadata} ->
+        # Filter associations if not requested
+        associations = if include_associations, do: metadata.associations, else: %{}
+
+        # Generate suggested defaults based on metadata
+        suggested_defaults = generate_suggested_defaults_from_metadata(
+          metadata.fields,
+          metadata.field_types,
+          opts
+        )
+
+        # Extract additional metadata
+        extra_metadata = extract_metadata_from_source(source, metadata)
+
         %{
-          error: "Failed to introspect schema #{schema_module}: #{inspect(error)}",
-          schema_module: schema_module
+          schema_module: Map.get(metadata, :schema_module, source),
+          table_name: metadata.table_name,
+          primary_key: metadata.primary_key,
+          fields: metadata.fields,
+          field_types: metadata.field_types,
+          associations: associations,
+          suggested_defaults: suggested_defaults,
+          redacted_fields: redact_fields,
+          metadata: extra_metadata
+        }
+
+      {:error, reason} ->
+        %{
+          error: "Failed to introspect schema #{inspect(source)}: #{inspect(reason)}",
+          schema_module: source
         }
     end
   end
@@ -110,17 +145,22 @@ defmodule SelectoMix.SchemaIntrospector do
   def generate_suggested_defaults(schema_module, opts) do
     fields = get_schema_fields(schema_module)
     field_types = get_field_types(schema_module)
+    generate_suggested_defaults_from_metadata(fields, field_types, opts)
+  end
+
+  # Generate suggested defaults from field metadata (works with any source)
+  defp generate_suggested_defaults_from_metadata(fields, field_types, opts) do
     include_timestamps = Keyword.get(opts, :include_timestamps, false)
-    
+
     # Suggest reasonable default selected fields
     default_selected = suggest_default_selected_fields(fields, field_types, include_timestamps)
-    
+
     # Suggest default filters based on common patterns
     default_filters = suggest_default_filters(fields, field_types)
-    
+
     # Suggest ordering
     default_order = suggest_default_ordering(fields, field_types)
-    
+
     %{
       default_selected: default_selected,
       default_filters: default_filters,
@@ -139,6 +179,63 @@ defmodule SelectoMix.SchemaIntrospector do
       has_timestamps: has_timestamps?(schema_module),
       estimated_complexity: estimate_schema_complexity(schema_module)
     }
+  end
+
+  # Extract metadata from any source type
+  defp extract_metadata_from_source(source, metadata) when is_atom(source) do
+    # Ecto schema module
+    %{
+      module_name: get_module_name(source),
+      context_name: get_context_name(source),
+      has_timestamps: has_timestamps_in_fields?(metadata.fields),
+      estimated_complexity: estimate_complexity_from_metadata(metadata)
+    }
+  end
+
+  defp extract_metadata_from_source({:postgrex, _conn, table_name}, metadata) do
+    # Postgrex connection
+    %{
+      module_name: Macro.camelize(table_name),
+      context_name: "Database",
+      has_timestamps: has_timestamps_in_fields?(metadata.fields),
+      estimated_complexity: estimate_complexity_from_metadata(metadata)
+    }
+  end
+
+  defp extract_metadata_from_source({:postgrex, _conn, table_name, _schema}, metadata) do
+    %{
+      module_name: Macro.camelize(table_name),
+      context_name: "Database",
+      has_timestamps: has_timestamps_in_fields?(metadata.fields),
+      estimated_complexity: estimate_complexity_from_metadata(metadata)
+    }
+  end
+
+  defp extract_metadata_from_source(_source, metadata) do
+    %{
+      module_name: "Unknown",
+      context_name: "Unknown",
+      has_timestamps: has_timestamps_in_fields?(metadata.fields),
+      estimated_complexity: estimate_complexity_from_metadata(metadata)
+    }
+  end
+
+  defp has_timestamps_in_fields?(fields) do
+    Enum.any?(fields, fn field ->
+      field_str = to_string(field)
+      String.contains?(field_str, ["inserted_at", "updated_at"])
+    end)
+  end
+
+  defp estimate_complexity_from_metadata(metadata) do
+    field_count = length(metadata.fields)
+    assoc_count = map_size(metadata.associations)
+
+    cond do
+      field_count <= 5 and assoc_count <= 2 -> :simple
+      field_count <= 15 and assoc_count <= 5 -> :moderate
+      true -> :complex
+    end
   end
 
   # Private helper functions
