@@ -610,7 +610,7 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
   
   defp add_hooks_to_livesocket(content) do
     cond do
-      # Check if both hooks are already configured
+      # Check if both hooks are already configured in the hooks object
       String.contains?(content, "hooks:") &&
       String.contains?(content, "...selectoComponentsHooks") &&
       String.contains?(content, "...selectoHooks") ->
