@@ -22,6 +22,9 @@ defmodule Mix.Tasks.Selecto.Gen.Domain.Postgrex do
       mix selecto.gen.domain.postgrex --table products \\
         --live --saved-views --path products_postgrex
 
+      # With expanded associations (introspect related tables)
+      mix selecto.gen.domain.postgrex --table products --expand
+
   ## Options
 
     * `--table` - Table name to introspect (required)
@@ -35,6 +38,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain.Postgrex do
     * `--saved-views` - Generate saved views implementation (requires --live)
     * `--path` - Custom path for the LiveView route
     * `--output` - Specify output directory (default: lib/APP_NAME/selecto_domains)
+    * `--expand` - Introspect related tables and include as nested schemas
 
   ## Connection
 
@@ -63,7 +67,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain.Postgrex do
         live: :boolean,
         saved_views: :boolean,
         path: :string,
-        output: :string
+        output: :string,
+        expand: :boolean
       ]
     )
 
@@ -87,8 +92,15 @@ defmodule Mix.Tasks.Selecto.Gen.Domain.Postgrex do
     try do
       table_info = introspect_table(conn, schema_name, table_name)
 
+      # If expand flag is set, introspect related tables
+      expanded_tables = if opts[:expand] do
+        expand_related_tables(conn, schema_name, table_info)
+      else
+        %{}
+      end
+
       # Generate domain file
-      generate_domain_file(table_info, opts)
+      generate_domain_file(table_info, Keyword.put(opts, :expanded_tables, expanded_tables))
 
       # Generate LiveView if requested
       if opts[:live] do
@@ -190,11 +202,29 @@ defmodule Mix.Tasks.Selecto.Gen.Domain.Postgrex do
     content = SelectoMix.DomainGenerator.Postgrex.generate_domain(
       table_info,
       app_module,
-      module_name
+      module_name,
+      opts
     )
 
     File.write!(file_path, content)
     Mix.shell().info("✓ Generated #{file_path}")
+  end
+
+  defp expand_related_tables(conn, schema, table_info) do
+    Mix.shell().info("Expanding related tables...")
+
+    # Get unique list of foreign table names
+    foreign_table_names =
+      table_info.foreign_keys
+      |> Enum.map(& &1.foreign_table_name)
+      |> Enum.uniq()
+
+    # Introspect each foreign table
+    Enum.reduce(foreign_table_names, %{}, fn foreign_table, acc ->
+      Mix.shell().info("  - Introspecting #{foreign_table}...")
+      foreign_table_info = introspect_table(conn, schema, foreign_table)
+      Map.put(acc, foreign_table, foreign_table_info)
+    end)
   end
 
   defp generate_liveview_file(table_info, opts) do
