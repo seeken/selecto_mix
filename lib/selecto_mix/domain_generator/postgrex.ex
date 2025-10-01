@@ -37,7 +37,9 @@ defmodule SelectoMix.DomainGenerator.Postgrex do
 
   defp format_columns(columns) do
     columns_map = Enum.map(columns, fn col ->
-      "        #{col.column_name}: %{\n" <>
+      # Use string keys for Postgrex compatibility
+      col_str = col.column_name |> Atom.to_string()
+      "        \"#{col_str}\" => %{\n" <>
       "          type: #{inspect(elixir_type(col.data_type))},\n" <>
       "          display_name: \"#{format_display_name(col.column_name)}\"\n" <>
       "        }"
