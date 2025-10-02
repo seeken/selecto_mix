@@ -9,12 +9,18 @@ defmodule SelectoMix.DomainGenerator.Postgrex do
     # Convert fields to strings for SelectoComponents compatibility
     fields = inspect(Enum.map(table_info.columns, &(&1.column_name |> Atom.to_string())))
     columns = format_columns(table_info.columns)
-    default_selected = format_default_selected(table_info.columns)
 
     # Generate associations from foreign keys
     associations = format_associations(table_info.foreign_keys)
     # Generate nested schemas if expand option is provided
-    schemas = format_schemas(Keyword.get(opts, :expanded_tables, %{}))
+    expanded_tables = Keyword.get(opts, :expanded_tables, %{})
+    schemas = format_schemas(expanded_tables)
+
+    # Generate joins from foreign keys (when expanded tables are provided)
+    joins = format_joins(table_info.foreign_keys, expanded_tables)
+
+    # Generate default_selected with joined fields if expanded
+    default_selected = format_default_selected(table_info.columns, table_info.foreign_keys, expanded_tables)
 
     "defmodule #{app_module}.SelectoDomains.#{module_name}PostgrexDomain do\n" <>
     "  @moduledoc \"\"\"\n" <>
@@ -28,10 +34,13 @@ defmodule SelectoMix.DomainGenerator.Postgrex do
     "        source_table: \"#{table_info.table_name}\",\n" <>
     "        primary_key: #{primary_key},\n" <>
     "        fields: #{fields},\n" <>
+    "        joins: %{},\n" <>
     "        columns: #{columns},\n" <>
     "        associations: #{associations}\n" <>
     "      },\n" <>
     "      schemas: #{schemas},\n" <>
+    "      joins: #{joins},\n" <>
+    "      redact_fields: [],\n" <>
     "      default_selected: #{default_selected},\n" <>
     "      default_sort: [%{field: \"#{first_column}\", direction: :asc}],\n" <>
     "      default_page_size: 25\n" <>
@@ -54,14 +63,44 @@ defmodule SelectoMix.DomainGenerator.Postgrex do
     "%{\n#{columns_map}\n      }"
   end
 
-  defp format_default_selected(columns) do
-    # Select first 4 columns as default
-    # Convert atoms to strings for SelectoComponents compatibility
-    default_cols = columns
-    |> Enum.take(4)
+  defp format_default_selected(columns, foreign_keys, expanded_tables) do
+    # Select first 2 columns from main table
+    main_cols = columns
+    |> Enum.take(2)
     |> Enum.map(& &1.column_name |> Atom.to_string())
 
-    inspect(default_cols)
+    # If we have expanded tables, add representative fields from joined tables
+    joined_cols = if map_size(expanded_tables) > 0 do
+      foreign_keys
+      |> Enum.flat_map(fn fk ->
+        table_info = Map.get(expanded_tables, fk.foreign_table_name)
+        if table_info do
+          # Get the first meaningful column (skip id, inserted_at, updated_at)
+          meaningful_col = table_info.columns
+          |> Enum.find(fn col ->
+            col_str = col.column_name |> Atom.to_string()
+            !String.contains?(col_str, "id") &&
+            !String.contains?(col_str, "inserted_at") &&
+            !String.contains?(col_str, "updated_at")
+          end)
+
+          if meaningful_col do
+            join_name = singularize(fk.foreign_table_name)
+            col_name = meaningful_col.column_name |> Atom.to_string()
+            ["#{join_name}.#{col_name}"]
+          else
+            []
+          end
+        else
+          []
+        end
+      end)
+    else
+      []
+    end
+
+    all_cols = main_cols ++ joined_cols
+    inspect(all_cols)
   end
 
   defp format_display_name(column_name) do
@@ -80,10 +119,12 @@ defmodule SelectoMix.DomainGenerator.Postgrex do
       col_name_str = fk.column_name |> Atom.to_string()
       foreign_col_str = fk.foreign_column_name |> Atom.to_string()
 
+      # Use atom keys for associations (not strings) - Selecto expects atoms
       # queryable must match the schema key in schemas map (which is the table name)
-      "      \"#{assoc_name}\" => %{\n" <>
+      # field must be an atom to match join keys
+      "      #{assoc_name}: %{\n" <>
       "        queryable: \"#{fk.foreign_table_name}\",\n" <>
-      "        field: \"#{assoc_name}\",\n" <>
+      "        field: :#{assoc_name},\n" <>
       "        owner_key: \"#{col_name_str}\",\n" <>
       "        related_key: \"#{foreign_col_str}\"\n" <>
       "      }"
@@ -111,12 +152,45 @@ defmodule SelectoMix.DomainGenerator.Postgrex do
       "        primary_key: #{primary_key},\n" <>
       "        fields: #{fields},\n" <>
       "        columns: #{columns},\n" <>
-      "        associations: #{associations}\n" <>
+      "        associations: #{associations},\n" <>
+      "        joins: %{},\n" <>
+      "        redact_fields: []\n" <>
       "      }"
     end)
     |> Enum.join(",\n")
 
     "%{\n#{schemas}\n      }"
+  end
+
+  defp format_joins([], _expanded_tables), do: "%{}"
+  defp format_joins(_foreign_keys, expanded_tables) when map_size(expanded_tables) == 0, do: "%{}"
+  defp format_joins(foreign_keys, expanded_tables) do
+    joins = Enum.map(foreign_keys, fn fk ->
+      # Only create joins for tables that were expanded
+      if Map.has_key?(expanded_tables, fk.foreign_table_name) do
+        join_name = singularize(fk.foreign_table_name)
+        col_name_str = fk.column_name |> Atom.to_string()
+        foreign_col_str = fk.foreign_column_name |> Atom.to_string()
+
+        # Use atom keys for joins (not strings) - Selecto expects atoms
+        # The join name must match the association field name
+        "        #{join_name}: %{\n" <>
+        "          type: :left,\n" <>
+        "          source: :\"#{fk.foreign_table_name}\",\n" <>
+        "          on: [%{left: \"#{col_name_str}\", right: \"#{foreign_col_str}\"}]\n" <>
+        "        }"
+      else
+        nil
+      end
+    end)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(",\n")
+
+    if joins == "" do
+      "%{}"
+    else
+      "%{\n#{joins}\n      }"
+    end
   end
 
   defp singularize(table_name) do
