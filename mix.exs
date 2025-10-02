@@ -21,7 +21,7 @@ defmodule SelectoMix.MixProject do
 
   defp deps do
     [
-      {:igniter, "~> 0.4"},
+      {:igniter, "~> 0.6"},
       {:ecto, "~> 3.10"},
       {:jason, "~> 1.4"},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false}

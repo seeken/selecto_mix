@@ -134,7 +134,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     validated_igniter = validate_flags(igniter, parsed_args)
 
     if Enum.empty?(schemas) do
-      Igniter.add_warning(validated_igniter, """
+      validated_igniter
+      |> Igniter.add_warning("""
       No schemas specified. Use one of:
         mix selecto.gen.domain MyApp.Schema
         mix selecto.gen.domain MyApp.Context.*
@@ -152,7 +153,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   defp validate_flags(igniter, parsed_args) do
     cond do
       parsed_args[:saved_views] && !parsed_args[:live] ->
-        Igniter.add_warning(igniter, "--saved-views flag requires --live flag to be set")
+        igniter
+        |> Igniter.add_warning("--saved-views flag requires --live flag to be set")
       true ->
         igniter
     end
@@ -724,23 +726,23 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   defp maybe_run_assets_integration(igniter) do
     # Check if integration is needed
     Mix.Task.run("selecto.components.integrate", ["--check"])
-    
+
     # Ask user if they want to run integration
     if Mix.shell().yes?("\nWould you like to automatically integrate SelectoComponents?") do
       Mix.Task.rerun("selecto.components.integrate", [])
+      igniter
     else
-      Igniter.add_notice(igniter, """
-      
+      igniter
+      |> Igniter.add_notice("""
+
       To complete SelectoComponents setup, run:
           mix selecto.components.integrate
-      
+
       Or manually configure:
       1. Import hooks in assets/js/app.js
       2. Add @source directive in assets/css/app.css
       """)
     end
-    
-    igniter
   end
 
   defp get_selecto_components_location() do
