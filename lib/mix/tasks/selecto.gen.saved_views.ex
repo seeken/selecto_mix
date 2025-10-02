@@ -84,11 +84,12 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViews do
   @impl Igniter.Mix.Task
   def igniter(igniter) do
     {parsed_args, remaining_args} = OptionParser.parse!(igniter.args.argv, strict: info(igniter.args.argv, nil).schema)
-    
+
     app_name_arg = List.first(remaining_args)
-    
+
     if is_nil(app_name_arg) or app_name_arg == "" do
-      Igniter.add_warning(igniter, """
+      igniter
+      |> Igniter.add_warning("""
       App name is required. Usage:
         mix selecto.gen.saved_views MyApp
       """)
