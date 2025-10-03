@@ -25,6 +25,10 @@ defmodule Mix.Tasks.Selecto.Gen.Domain.Postgrex do
       # With expanded associations (introspect related tables)
       mix selecto.gen.domain.postgrex --table products --expand
 
+      # With specialized join types
+      mix selecto.gen.domain.postgrex --table products --expand \\
+        --dimension category,supplier --tagging tags
+
   ## Options
 
     * `--table` - Table name to introspect (required)
@@ -39,6 +43,11 @@ defmodule Mix.Tasks.Selecto.Gen.Domain.Postgrex do
     * `--path` - Custom path for the LiveView route
     * `--output` - Specify output directory (default: lib/APP_NAME/selecto_domains)
     * `--expand` - Introspect related tables and include as nested schemas
+    * `--dimension` - Specify associations to configure as dimension joins (e.g., --dimension category,supplier)
+    * `--tagging` - Specify associations to configure as tagging joins (e.g., --tagging tags)
+    * `--hierarchical` - Specify associations to configure as hierarchical joins (e.g., --hierarchical parent)
+    * `--star-dimension` - Specify associations to configure as star dimension joins
+    * `--snowflake-dimension` - Specify associations to configure as snowflake dimension joins
 
   ## Connection
 
@@ -68,7 +77,12 @@ defmodule Mix.Tasks.Selecto.Gen.Domain.Postgrex do
         saved_views: :boolean,
         path: :string,
         output: :string,
-        expand: :boolean
+        expand: :boolean,
+        dimension: :string,
+        tagging: :string,
+        hierarchical: :string,
+        star_dimension: :string,
+        snowflake_dimension: :string
       ]
     )
 
@@ -79,6 +93,9 @@ defmodule Mix.Tasks.Selecto.Gen.Domain.Postgrex do
 
     table_name = opts[:table]
     schema_name = opts[:schema] || "public"
+
+    # Parse join type specifications
+    join_type_config = parse_join_types(opts)
 
     # Get connection config
     conn_config = get_connection_config(opts)
@@ -99,8 +116,12 @@ defmodule Mix.Tasks.Selecto.Gen.Domain.Postgrex do
         %{}
       end
 
-      # Generate domain file
-      generate_domain_file(table_info, Keyword.put(opts, :expanded_tables, expanded_tables))
+      # Generate domain file with join type configuration
+      opts_with_joins = opts
+        |> Keyword.put(:expanded_tables, expanded_tables)
+        |> Keyword.put(:join_types, join_type_config)
+
+      generate_domain_file(table_info, opts_with_joins)
 
       # Generate LiveView if requested
       if opts[:live] do
@@ -136,6 +157,55 @@ defmodule Mix.Tasks.Selecto.Gen.Domain.Postgrex do
     after
       GenServer.stop(conn)
     end
+  end
+
+  defp parse_join_types(opts) do
+    # Parse comma-separated association names for each join type
+    # Returns a map: %{association_name => join_type}
+    join_types = %{}
+
+    join_types = if opts[:dimension] do
+      parse_associations(opts[:dimension], :dimension, join_types)
+    else
+      join_types
+    end
+
+    join_types = if opts[:tagging] do
+      parse_associations(opts[:tagging], :tagging, join_types)
+    else
+      join_types
+    end
+
+    join_types = if opts[:hierarchical] do
+      parse_associations(opts[:hierarchical], :hierarchical, join_types)
+    else
+      join_types
+    end
+
+    join_types = if opts[:star_dimension] do
+      parse_associations(opts[:star_dimension], :star_dimension, join_types)
+    else
+      join_types
+    end
+
+    join_types = if opts[:snowflake_dimension] do
+      parse_associations(opts[:snowflake_dimension], :snowflake_dimension, join_types)
+    else
+      join_types
+    end
+
+    join_types
+  end
+
+  defp parse_associations(assoc_string, join_type, acc) do
+    assoc_string
+    |> String.split(",")
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.map(&String.to_atom/1)
+    |> Enum.reduce(acc, fn assoc, acc_map ->
+      Map.put(acc_map, assoc, join_type)
+    end)
   end
 
   defp get_connection_config(opts) do

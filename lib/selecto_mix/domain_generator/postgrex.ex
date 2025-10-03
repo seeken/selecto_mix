@@ -16,8 +16,11 @@ defmodule SelectoMix.DomainGenerator.Postgrex do
     expanded_tables = Keyword.get(opts, :expanded_tables, %{})
     schemas = format_schemas(expanded_tables)
 
+    # Get join type configuration
+    join_types = Keyword.get(opts, :join_types, %{})
+
     # Generate joins from foreign keys (when expanded tables are provided)
-    joins = format_joins(table_info.foreign_keys, expanded_tables)
+    joins = format_joins(table_info.foreign_keys, expanded_tables, join_types)
 
     # Generate default_selected with joined fields if expanded
     default_selected = format_default_selected(table_info.columns, table_info.foreign_keys, expanded_tables)
@@ -162,23 +165,62 @@ defmodule SelectoMix.DomainGenerator.Postgrex do
     "%{\n#{schemas}\n      }"
   end
 
-  defp format_joins([], _expanded_tables), do: "%{}"
-  defp format_joins(_foreign_keys, expanded_tables) when map_size(expanded_tables) == 0, do: "%{}"
-  defp format_joins(foreign_keys, expanded_tables) do
+  defp format_joins([], _expanded_tables, _join_types), do: "%{}"
+  defp format_joins(_foreign_keys, expanded_tables, _join_types) when map_size(expanded_tables) == 0, do: "%{}"
+  defp format_joins(foreign_keys, expanded_tables, join_types) do
     joins = Enum.map(foreign_keys, fn fk ->
       # Only create joins for tables that were expanded
       if Map.has_key?(expanded_tables, fk.foreign_table_name) do
         join_name = singularize(fk.foreign_table_name)
+        join_name_atom = String.to_atom(join_name)
         col_name_str = fk.column_name |> Atom.to_string()
         foreign_col_str = fk.foreign_column_name |> Atom.to_string()
 
+        # Determine join type from configuration or use default :left
+        join_type = Map.get(join_types, join_name_atom, :left)
+
         # Use atom keys for joins (not strings) - Selecto expects atoms
         # The join name must match the association field name
-        "        #{join_name}: %{\n" <>
-        "          type: :left,\n" <>
-        "          source: :\"#{fk.foreign_table_name}\",\n" <>
-        "          on: [%{left: \"#{col_name_str}\", right: \"#{foreign_col_str}\"}]\n" <>
-        "        }"
+        base_config = "        #{join_name}: %{\n" <>
+                      "          type: #{inspect(join_type)},\n" <>
+                      "          source: :\"#{fk.foreign_table_name}\",\n" <>
+                      "          on: [%{left: \"#{col_name_str}\", right: \"#{foreign_col_str}\"}]"
+
+        # Add specialized join configuration based on type
+        additional_config = case join_type do
+          :dimension ->
+            # For dimension joins, we need to specify which field to display
+            table_info = Map.get(expanded_tables, fk.foreign_table_name)
+            dimension_field = find_dimension_field(table_info)
+            ",\n          dimension: :\"#{dimension_field}\""
+
+          :tagging ->
+            # For tagging joins, specify the tag field
+            table_info = Map.get(expanded_tables, fk.foreign_table_name)
+            tag_field = find_tag_field(table_info)
+            ",\n          tag_field: :\"#{tag_field}\""
+
+          :hierarchical ->
+            # For hierarchical joins, specify the hierarchy type
+            ",\n          hierarchy_type: :adjacency_list,\n          depth_limit: 5"
+
+          :star_dimension ->
+            # For star dimension joins
+            table_info = Map.get(expanded_tables, fk.foreign_table_name)
+            display_field = find_dimension_field(table_info)
+            ",\n          display_field: :\"#{display_field}\""
+
+          :snowflake_dimension ->
+            # For snowflake dimension joins
+            table_info = Map.get(expanded_tables, fk.foreign_table_name)
+            display_field = find_dimension_field(table_info)
+            ",\n          display_field: :\"#{display_field}\",\n          normalization_joins: []"
+
+          _ ->
+            ""
+        end
+
+        base_config <> additional_config <> "\n        }"
       else
         nil
       end
@@ -191,6 +233,37 @@ defmodule SelectoMix.DomainGenerator.Postgrex do
     else
       "%{\n#{joins}\n      }"
     end
+  end
+
+  # Helper function to find a good field for dimension display (e.g., name, title, label)
+  defp find_dimension_field(table_info) do
+    # Look for common name-like fields
+    name_candidates = [:name, :title, :label, :description]
+
+    found_field = Enum.find(table_info.columns, fn col ->
+      col.column_name in name_candidates
+    end)
+
+    if found_field do
+      found_field.column_name |> Atom.to_string()
+    else
+      # Fallback to first non-id field
+      first_field = Enum.find(table_info.columns, fn col ->
+        col_str = col.column_name |> Atom.to_string()
+        !String.ends_with?(col_str, "_id")
+      end)
+
+      if first_field do
+        first_field.column_name |> Atom.to_string()
+      else
+        "id"
+      end
+    end
+  end
+
+  # Helper function to find tag field (similar to dimension field)
+  defp find_tag_field(table_info) do
+    find_dimension_field(table_info)
   end
 
   defp singularize(table_name) do
