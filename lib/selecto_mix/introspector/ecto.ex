@@ -21,7 +21,10 @@ defmodule SelectoMix.Introspector.Ecto do
   """
   def introspect(schema_module, opts \\ []) do
     try do
-      # Ensure module is loaded and is an Ecto schema
+      # Ensure module is loaded
+      Code.ensure_loaded!(schema_module)
+
+      # Check if it's an Ecto schema
       unless function_exported?(schema_module, :__schema__, 1) do
         raise ArgumentError, "#{inspect(schema_module)} is not an Ecto schema"
       end
