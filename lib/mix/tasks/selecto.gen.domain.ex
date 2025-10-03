@@ -208,12 +208,27 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     |> Enum.filter(&(&1 != ""))
   end
 
-  defp parse_expand_schemas(expand_arg) do
+  defp parse_expand_schemas(expand_arg) when is_list(expand_arg) do
+    # Already a list from :keep option - just return it
+    expand_arg
+    |> Enum.flat_map(fn item ->
+      # Each item might still be comma-separated
+      item
+      |> String.split(",")
+      |> Enum.map(&String.trim/1)
+    end)
+    |> Enum.filter(&(&1 != ""))
+  end
+
+  defp parse_expand_schemas(expand_arg) when is_binary(expand_arg) do
+    # Single string - split by comma
     expand_arg
     |> String.split(",")
     |> Enum.map(&String.trim/1)
     |> Enum.filter(&(&1 != ""))
   end
+
+  defp parse_expand_schemas(_), do: []
 
   defp schema_matches_exclude?(schema, exclude_patterns) do
     schema_str = to_string(schema)
