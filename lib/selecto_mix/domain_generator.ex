@@ -282,13 +282,19 @@ defmodule SelectoMix.DomainGenerator do
   defp should_expand_schema?(schema_name, related_schema, expand_schemas_list) do
     schema_name_str = to_string(schema_name)
     related_schema_str = to_string(related_schema)
-    
-      # Remove debug output
+
     result = Enum.any?(expand_schemas_list || [], fn expand_name ->
-      String.contains?(String.downcase(schema_name_str), String.downcase(expand_name)) or
-      String.contains?(String.downcase(related_schema_str), String.downcase(expand_name))
+      expand_name_lower = String.downcase(expand_name)
+      schema_name_lower = String.downcase(schema_name_str)
+      related_schema_lower = String.downcase(related_schema_str)
+
+      # Match by exact schema name, or if expand_name contains schema_name, or vice versa
+      expand_name_lower == schema_name_lower ||
+      expand_name_lower == related_schema_lower ||
+      String.contains?(expand_name_lower, schema_name_lower) ||
+      String.contains?(related_schema_lower, expand_name_lower)
     end)
-    
+
     result
   end
   
@@ -689,39 +695,93 @@ defmodule SelectoMix.DomainGenerator do
     associations
     |> Enum.reject(fn {_name, assoc} -> assoc[:is_through] end)
     |> Enum.into(%{}, fn {assoc_name, assoc_config} ->
+      # Determine the source table/schema name
+      queryable = assoc_config[:queryable] || assoc_name
+
+      # Build complete join configuration
       join_config = %{
         name: humanize_name(assoc_name),
         type: assoc_config[:join_type] || :left,
+        source: queryable,
+        on: build_join_on_clause(assoc_config),
         is_custom: assoc_config[:is_custom] == true
       }
+
+      # Add many-to-many specific configuration
+      join_config = if assoc_config[:association_type] == :many_to_many do
+        Map.merge(join_config, %{
+          join_through: assoc_config[:join_through],
+          owner_key: assoc_config[:owner_key] || :id,
+          assoc_key: assoc_config[:related_key] || :id
+        })
+      else
+        join_config
+      end
+
       {assoc_name, join_config}
     end)
+  end
+
+  # Build the ON clause for a join based on association configuration
+  defp build_join_on_clause(assoc_config) do
+    owner_key = assoc_config[:owner_key] || :id
+    related_key = assoc_config[:related_key] || :id
+
+    # Convert to strings for Selecto
+    [%{
+      left: to_string(owner_key),
+      right: to_string(related_key)
+    }]
   end
   
   defp format_single_join(join_name, join_config) do
     is_custom = Map.get(join_config, :is_custom, false)
     is_parameterized = Map.has_key?(join_config, :parameters)
-    
+    is_many_to_many = Map.has_key?(join_config, :join_through)
+
     custom_marker = cond do
       is_custom and is_parameterized -> " # CUSTOM PARAMETERIZED JOIN"
       is_custom -> " # CUSTOM JOIN"
       is_parameterized -> " # PARAMETERIZED JOIN"
+      is_many_to_many -> " # MANY-TO-MANY"
       true -> ""
     end
-    
+
     join_type = inspect(Map.get(join_config, :type, :left))
     join_name_str = Map.get(join_config, :name, humanize_name(join_name))
-    
+
     base_config = "#{inspect(join_name)} => %{\n" <>
                   "              name: \"#{join_name_str}\",\n" <>
                   "              type: #{join_type}"
-    
+
+    # Add source and on clause (required for all joins)
+    source_config = if source = Map.get(join_config, :source) do
+      on_clause = Map.get(join_config, :on, [])
+      ",\n              source: #{inspect(source)},\n" <>
+      "              on: #{inspect(on_clause)}"
+    else
+      ""
+    end
+
+    # Add many-to-many specific configuration
+    many_to_many_config = if is_many_to_many do
+      join_through = Map.get(join_config, :join_through)
+      owner_key = Map.get(join_config, :owner_key, :id)
+      assoc_key = Map.get(join_config, :assoc_key, :id)
+
+      ",\n              join_through: #{inspect(join_through)},\n" <>
+      "              owner_key: #{inspect(owner_key)},\n" <>
+      "              assoc_key: #{inspect(assoc_key)}"
+    else
+      ""
+    end
+
     # Add parameterized join specific configurations
     parameterized_config = if is_parameterized do
       parameters_config = format_parameters_config(join_config[:parameters])
       source_table = inspect(Map.get(join_config, :source_table, to_string(join_name)))
       fields_config = format_join_fields_config(Map.get(join_config, :fields, %{}))
-      
+
       ",\n              \n              # Parameterized join configuration\n" <>
       "              source_table: #{source_table},\n" <>
       "              parameters: #{parameters_config},\n" <>
@@ -729,13 +789,13 @@ defmodule SelectoMix.DomainGenerator do
     else
       ""
     end
-    
+
     join_condition_config = case Map.get(join_config, :join_condition) do
       nil -> ""
       condition -> ",\n              join_condition: #{inspect(condition)}"
     end
-    
-    base_config <> parameterized_config <> join_condition_config <> "\n            }#{custom_marker}"
+
+    base_config <> source_config <> many_to_many_config <> parameterized_config <> join_condition_config <> "\n            }#{custom_marker}"
   end
   
   defp format_parameters_config(parameters) when is_list(parameters) do

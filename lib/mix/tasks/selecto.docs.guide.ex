@@ -86,8 +86,9 @@ defmodule Mix.Tasks.Selecto.Docs.Guide do
 
   @impl Igniter.Mix.Task
   def igniter(igniter) do
-    {parsed_args, _remaining_args} = OptionParser.parse!(igniter.args.argv, strict: info(igniter.args.argv, nil).schema)
-    
+    # Get parsed options from Igniter
+    parsed_args = Keyword.new(igniter.args.options)
+
     guide_types = cond do
       parsed_args[:all] -> @guide_types
       parsed_args[:type] -> parse_guide_types(parsed_args[:type])

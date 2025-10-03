@@ -83,9 +83,12 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViews do
 
   @impl Igniter.Mix.Task
   def igniter(igniter) do
-    {parsed_args, remaining_args} = OptionParser.parse!(igniter.args.argv, strict: info(igniter.args.argv, nil).schema)
+    # Get parsed options and positional args from Igniter
+    parsed_args = igniter.args.options
+    positional = igniter.args.positional
 
-    app_name_arg = List.first(remaining_args)
+    # Get the app_name positional argument
+    app_name_arg = Map.get(positional, :app_name)
 
     if is_nil(app_name_arg) or app_name_arg == "" do
       igniter

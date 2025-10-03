@@ -88,8 +88,9 @@ defmodule Mix.Tasks.Selecto.Docs.Generate do
 
   @impl Igniter.Mix.Task
   def igniter(igniter) do
-    {parsed_args, _remaining_args} = OptionParser.parse!(igniter.args.argv, strict: info(igniter.args.argv, nil).schema)
-    
+    # Get parsed options from Igniter
+    parsed_args = Keyword.new(igniter.args.options)
+
     domains = cond do
       parsed_args[:all] -> discover_all_domains(igniter)
       parsed_args[:domain] -> [parsed_args[:domain]]

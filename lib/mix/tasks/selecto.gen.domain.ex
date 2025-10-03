@@ -110,13 +110,16 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   def igniter(igniter) do
     # Ensure all modules are compiled first
     Mix.Task.run("compile", [])
-    
-    {parsed_args_list, remaining_args} = OptionParser.parse!(igniter.args.argv, strict: info(igniter.args.argv, nil).schema)
-    
-    # Convert keyword list to map for easier manipulation
-    parsed_args = Map.new(parsed_args_list)
 
-    schemas_arg = List.first(remaining_args) || ""
+    # Get parsed options and positional args from Igniter
+    options = igniter.args.options
+    positional = igniter.args.positional
+
+    # Convert keyword list to map for easier manipulation
+    parsed_args = Map.new(options)
+
+    # Get the schemas positional argument
+    schemas_arg = Map.get(positional, :schemas, "")
 
     schemas = cond do
       parsed_args[:all] -> discover_all_schemas(igniter)
@@ -336,7 +339,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     # Convert map opts to keyword list for SchemaIntrospector
     opts_list = Map.to_list(opts)
     domain_config = SelectoMix.SchemaIntrospector.introspect_schema(schema, opts_list)
-    
+
     # Expand associated schemas if requested
     expanded_config = if opts[:expand_schemas_list] && is_list(opts[:expand_schemas_list]) do
       domain_config
@@ -383,11 +386,20 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   
   defp expand_associated_schemas(domain_config, expand_list) do
     associations = domain_config[:associations] || %{}
-    
+
     expanded_schemas = Enum.reduce(expand_list, %{}, fn schema_name, acc ->
-      # Find matching association by name
-      matching_assoc = Enum.find(associations, fn {assoc_name, _assoc_data} ->
-        String.downcase(to_string(assoc_name)) == String.downcase(schema_name)
+      # Find matching association by name or by related schema module
+      matching_assoc = Enum.find(associations, fn {assoc_name, assoc_data} ->
+        # Match by association name (e.g., "tags", "category")
+        assoc_name_match = String.downcase(to_string(assoc_name)) == String.downcase(schema_name)
+
+        # Match by related schema module (e.g., "SelectoNorthwind.Catalog.Tag")
+        related_schema = assoc_data[:related_schema]
+        schema_module_match = related_schema &&
+          (to_string(related_schema) == schema_name ||
+           String.ends_with?(to_string(related_schema), ".#{schema_name}"))
+
+        assoc_name_match || schema_module_match
       end)
       
       case matching_assoc do
@@ -448,9 +460,10 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         false ->
           # Generate saved views implementation by updating the igniter's args
           # and calling the saved views task
+          app_name_string = to_string(Macro.camelize(to_string(app_name)))
           updated_igniter = %{igniter |
             args: %{igniter.args |
-              argv: [to_string(Macro.camelize(to_string(app_name)))]
+              positional: %{app_name: app_name_string}
             }
           }
           Mix.Tasks.Selecto.Gen.SavedViews.igniter(updated_igniter)
