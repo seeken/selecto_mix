@@ -9,7 +9,7 @@ defmodule SelectoMix.DomainGenerator do
 
   @doc """
   Generate a complete Selecto domain file.
-  
+
   Creates a comprehensive domain configuration file with:
   - Schema-based field and type definitions
   - Association configurations for joins
@@ -17,9 +17,10 @@ defmodule SelectoMix.DomainGenerator do
   - Customization markers for user modifications
   - Documentation and usage examples
   """
-  def generate_domain_file(schema_module, config) do
+  def generate_domain_file(schema_module, config, opts \\ []) do
     module_name = get_domain_module_name(schema_module, config)
-    
+    saved_views_use = generate_saved_views_use(opts)
+
     """
     defmodule #{module_name} do
       @moduledoc \"\"\"
@@ -108,7 +109,7 @@ defmodule SelectoMix.DomainGenerator do
           
       Your customizations will be preserved during regeneration (unless --force is used).
       \"\"\"
-
+#{saved_views_use}
       @doc \"\"\"
       Returns the Selecto domain configuration for #{inspect(schema_module)}.
       \"\"\"
@@ -250,15 +251,16 @@ defmodule SelectoMix.DomainGenerator do
   defp generate_schemas_config(config) do
     associations = config[:associations] || %{}
     expand_schemas_list = config[:expand_schemas_list] || []
-    
+
     # Generate schema configurations for associations
-    schema_configs = 
+    schema_configs =
       associations
       |> Enum.reject(fn {_name, assoc} -> assoc[:is_through] end)
       |> Enum.map(fn {_assoc_name, assoc_config} ->
-        schema_name = get_queryable_name(assoc_config)
-        table_name = guess_table_name(assoc_config[:related_schema])
+        # Use the singular schema name, not the queryable/association name
         related_schema = assoc_config[:related_schema]
+        schema_name = get_schema_name_from_module(related_schema)
+        table_name = guess_table_name(related_schema)
         related_schema_string = inspect(related_schema)
         
         # Check if this schema should be expanded
@@ -906,4 +908,32 @@ defmodule SelectoMix.DomainGenerator do
   # defp generate_window_function_helpers(_config) do
   #   ""
   # end
+
+  defp generate_saved_views_use(opts) do
+    if opts[:saved_views] do
+      app_name = opts[:app_name] || infer_app_name_from_schema(opts[:schema_module])
+      saved_view_context = "#{app_name}.SavedViewContext"
+      "\n      use #{saved_view_context}\n"
+    else
+      ""
+    end
+  end
+
+  defp infer_app_name_from_schema(schema_module) when is_atom(schema_module) do
+    schema_module
+    |> Module.split()
+    |> List.first()
+  end
+
+  defp infer_app_name_from_schema(_), do: "MyApp"
+
+  defp get_schema_name_from_module(schema_module) when is_atom(schema_module) do
+    schema_module
+    |> Module.split()
+    |> List.last()
+    |> Macro.underscore()
+    |> String.to_atom()
+  end
+
+  defp get_schema_name_from_module(_), do: :unknown
 end

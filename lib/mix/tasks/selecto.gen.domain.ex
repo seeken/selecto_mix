@@ -108,8 +108,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
   @impl Igniter.Mix.Task
   def igniter(igniter) do
-    # Ensure all modules are compiled first
-    Mix.Task.run("compile", [])
+    # Note: Don't call Mix.Task.run from within Igniter tasks (causes conflicts in Igniter 0.6.x)
+    # Compilation will happen automatically before the task runs
 
     # Get parsed options and positional args from Igniter
     options = igniter.args.options
@@ -244,16 +244,18 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       show_dry_run_summary(schemas, output_dir, opts)
       igniter
     else
-      igniter_after_schemas = Enum.reduce(schemas, igniter, fn schema, acc_igniter ->
+      # Generate saved views implementation FIRST if requested and not already present
+      # This must happen before domain generation to avoid circular compilation dependencies
+      igniter_with_saved_views = if opts[:saved_views] do
+        generate_saved_views_if_needed(igniter, opts)
+      else
+        igniter
+      end
+
+      # Now generate domain files
+      Enum.reduce(schemas, igniter_with_saved_views, fn schema, acc_igniter ->
         generate_domain_for_schema(acc_igniter, schema, output_dir, opts)
       end)
-
-      # Generate saved views implementation if requested and not already present
-      if opts[:saved_views] do
-        generate_saved_views_if_needed(igniter_after_schemas, opts)
-      else
-        igniter_after_schemas
-      end
     end
   end
 
@@ -370,7 +372,10 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       SelectoMix.ConfigMerger.merge_with_existing(expanded_config, existing_content)
     end
 
-    content = SelectoMix.DomainGenerator.generate_domain_file(schema, merged_config)
+    # Add schema_module to opts for saved views context inference
+    opts_with_schema = Map.put(opts, :schema_module, schema)
+
+    content = SelectoMix.DomainGenerator.generate_domain_file(schema, merged_config, opts_with_schema)
 
     # For now, delete the existing file and create a new one
     # This is a workaround until we figure out the proper Igniter API
@@ -473,15 +478,24 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         true ->
           igniter
         false ->
-          # Generate saved views implementation by updating the igniter's args
-          # and calling the saved views task
+          # Generate saved views implementation before the domain
+          # This must happen in a separate Mix task to avoid circular compilation issues
           app_name_string = to_string(Macro.camelize(to_string(app_name)))
-          updated_igniter = %{igniter |
-            args: %{igniter.args |
-              positional: %{app_name: app_name_string}
-            }
-          }
-          Mix.Tasks.Selecto.Gen.SavedViews.igniter(updated_igniter)
+
+          IO.puts("\nGenerating SavedViews implementation...")
+          case System.cmd("mix", ["selecto.gen.saved_views", app_name_string, "--yes"], stderr_to_stdout: true) do
+            {output, 0} ->
+              IO.puts(output)
+              igniter
+            {output, _exit_code} ->
+              IO.puts(output)
+              igniter
+              |> Igniter.add_warning("""
+              Failed to auto-generate saved views. Please run manually:
+
+                  mix selecto.gen.saved_views #{app_name_string}
+              """)
+          end
       end
     else
       igniter
@@ -752,25 +766,18 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   end
 
   defp maybe_run_assets_integration(igniter) do
-    # Check if integration is needed
-    Mix.Task.run("selecto.components.integrate", ["--check"])
+    # Don't call Mix tasks from within Igniter tasks (causes conflicts in Igniter 0.6.x)
+    # Instead, just add a notice for the user to run it manually if needed
+    igniter
+    |> Igniter.add_notice("""
 
-    # Ask user if they want to run integration
-    if Mix.shell().yes?("\nWould you like to automatically integrate SelectoComponents?") do
-      Mix.Task.rerun("selecto.components.integrate", [])
-      igniter
-    else
-      igniter
-      |> Igniter.add_notice("""
+    To integrate SelectoComponents assets (if not already done), run:
+        mix selecto.components.integrate
 
-      To complete SelectoComponents setup, run:
-          mix selecto.components.integrate
-
-      Or manually configure:
+    Or manually configure:
       1. Import hooks in assets/js/app.js
       2. Add @source directive in assets/css/app.css
       """)
-    end
   end
 
   defp get_selecto_components_location() do
