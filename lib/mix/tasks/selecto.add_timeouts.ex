@@ -257,7 +257,7 @@ defmodule Mix.Tasks.Selecto.AddTimeouts do
     else
       Mix.shell().info("🌳 Adding QueryTimeoutMonitor to supervision tree...")
 
-      app_module_path = Module.concat(app_module, Application)
+      _app_module_path = Module.concat(app_module, Application)
       monitor_module = Module.concat(app_module, QueryTimeoutMonitor)
 
       Igniter.Project.Application.add_new_child(

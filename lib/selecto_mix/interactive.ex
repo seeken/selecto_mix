@@ -413,15 +413,15 @@ defmodule SelectoMix.Interactive do
     response in ["y", "yes", "Y", "YES"]
   end
   
-  defp prompt_select(message, options, opts \\ []) do
+  defp prompt_select(message, options, opts) do
     IO.puts("\n#{message}:")
-    
+
     Enum.each(options, fn {key, label, _value} ->
       IO.puts("  #{key}) #{label}")
     end)
-    
-    choice = prompt("Your choice", opts)
-    
+
+    choice = prompt("Your choice")
+
     case Enum.find(options, fn {key, _, _} -> key == choice end) do
       {_, _, value} -> value
       nil ->

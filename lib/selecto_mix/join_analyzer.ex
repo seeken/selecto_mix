@@ -406,16 +406,16 @@ defmodule SelectoMix.JoinAnalyzer do
 
   defp adjust_for_adapter(config, _adapter), do: config
 
-  defp is_many_to_many?(assoc_name) do
-    # Check if association name indicates many-to-many relationship
-    # This is a heuristic based on common naming patterns
-    assoc_str = to_string(assoc_name)
-    Enum.any?([
-      String.ends_with?(assoc_str, "s"),  # plural forms like "groups", "roles"
-      String.contains?(assoc_str, "_"),   # junction table patterns
-      assoc_str in ["categories", "tags", "groups", "roles", "permissions"]
-    ])
-  end
+  # defp is_many_to_many?(assoc_name) do
+  #   # Check if association name indicates many-to-many relationship
+  #   # This is a heuristic based on common naming patterns
+  #   assoc_str = to_string(assoc_name)
+  #   Enum.any?([
+  #     String.ends_with?(assoc_str, "s"),  # plural forms like "groups", "roles"
+  #     String.contains?(assoc_str, "_"),   # junction table patterns
+  #     assoc_str in ["categories", "tags", "groups", "roles", "permissions"]
+  #   ])
+  # end
 
   defp get_junction_fields(junction_module) do
     try do
