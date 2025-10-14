@@ -27,6 +27,9 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       # Expand associated schemas with full columns/associations
       mix selecto.gen.domain Blog.Post --expand-schemas categories,tags,authors
 
+      # Use special join modes for optimized queries
+      mix selecto.gen.domain Product --expand-tag Tags:name --expand-star Category:category_name
+
   ## Options
 
     * `--all` - Generate domains for all discovered Ecto schemas
@@ -38,6 +41,9 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     * `--live` - Generate LiveView files for the domain
     * `--saved-views` - Generate saved views implementation (requires --live)
     * `--expand-schemas` - Comma-separated list of associated schemas to fully expand with columns and associations
+    * `--expand-tag` - Many-to-many tag mode: TableName:display_field (uses IDs, prevents denormalization)
+    * `--expand-star` - Star schema mode: TableName:display_field (lookup table with ID-based filtering)
+    * `--expand-lookup` - Lookup table mode: TableName:display_field (small reference tables)
     * `--parameterized-joins` - Generate example parameterized join configurations
     * `--path` - Custom path for the LiveView route (e.g., /products instead of /product)
     * `--enable-modal` - Enable modal detail view for row clicks in LiveView (requires --live)
@@ -89,6 +95,9 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         live: :boolean,
         saved_views: :boolean,
         expand_schemas: :string,
+        expand_tag: :keep,
+        expand_star: :keep,
+        expand_lookup: :keep,
         parameterized_joins: :boolean,
         path: :string,
         enable_modal: :boolean
@@ -133,6 +142,13 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     # Parse expand-schemas parameter
     expand_schemas = parse_expand_schemas(parsed_args[:expand_schemas] || "")
 
+    # Parse special join mode parameters
+    expand_modes = parse_expand_modes(parsed_args)
+
+    # Auto-add schemas with join modes to expand list
+    schemas_from_modes = Map.keys(expand_modes)
+    expand_schemas = Enum.uniq(expand_schemas ++ schemas_from_modes)
+
     # Validate flags
     validated_igniter = validate_flags(igniter, parsed_args)
 
@@ -145,8 +161,10 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         mix selecto.gen.domain --all
       """)
     else
-      # Add expand_schemas to parsed_args
-      updated_args = Map.put(parsed_args, :expand_schemas_list, expand_schemas)
+      # Add expand_schemas and expand_modes to parsed_args
+      updated_args = parsed_args
+        |> Map.put(:expand_schemas_list, expand_schemas)
+        |> Map.put(:expand_modes, expand_modes)
       process_schemas(validated_igniter, schemas, updated_args)
     end
   end
@@ -229,6 +247,40 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   end
 
   defp parse_expand_schemas(_), do: []
+
+  # Parse expand mode parameters like --expand-tag Tags:name --expand-star Category:category_name
+  # Returns a map like: %{"Tags" => {:tag, "name"}, "Category" => {:star, "category_name"}}
+  defp parse_expand_modes(parsed_args) do
+    modes = [:expand_tag, :expand_star, :expand_lookup]
+
+    Enum.reduce(modes, %{}, fn mode, acc ->
+      mode_type = mode |> to_string() |> String.replace("expand_", "") |> String.to_atom()
+
+      case Map.get(parsed_args, mode) do
+        nil -> acc
+        specs when is_list(specs) ->
+          # :keep option returns a list of all occurrences
+          Enum.reduce(specs, acc, fn spec, mode_acc ->
+            parse_expand_mode_spec(spec, mode_type, mode_acc)
+          end)
+        spec when is_binary(spec) ->
+          parse_expand_mode_spec(spec, mode_type, acc)
+        _ -> acc
+      end
+    end)
+  end
+
+  defp parse_expand_mode_spec(spec, mode_type, acc) do
+    case String.split(spec, ":") do
+      [table_name, display_field] ->
+        # Store both singular and plural forms to match flexibly
+        table_key = String.trim(table_name)
+        Map.put(acc, table_key, {mode_type, String.trim(display_field)})
+      _ ->
+        # Invalid format, skip
+        acc
+    end
+  end
 
   defp schema_matches_exclude?(schema, exclude_patterns) do
     schema_str = to_string(schema)
@@ -366,10 +418,17 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       domain_config
     end
 
-    merged_config = if opts[:force] do
-      expanded_config
+    # Add expand_modes to config if present
+    config_with_modes = if opts[:expand_modes] && map_size(opts[:expand_modes]) > 0 do
+      Map.put(expanded_config, :expand_modes, opts[:expand_modes])
     else
-      SelectoMix.ConfigMerger.merge_with_existing(expanded_config, existing_content)
+      expanded_config
+    end
+
+    merged_config = if opts[:force] do
+      config_with_modes
+    else
+      SelectoMix.ConfigMerger.merge_with_existing(config_with_modes, existing_content)
     end
 
     # Add schema_module to opts for saved views context inference

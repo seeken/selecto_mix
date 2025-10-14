@@ -195,16 +195,87 @@ defmodule SelectoMix.DomainGenerator do
       type = Map.get(field_types, field, :string)
       {field, %{type: type}}
     end)
-    
+
     # Format the map with nice indentation
-    formatted_columns = 
+    formatted_columns =
       columns_map
       |> Enum.map(fn {field, type_map} ->
         "          #{inspect(field)} => #{inspect(type_map)}"
       end)
       |> Enum.join(",\n")
-    
+
     "%{\n#{formatted_columns}\n        }"
+  end
+
+  # Generate columns config with special join mode handling
+  defp generate_columns_config_with_mode(fields, field_types, join_mode, primary_key, assoc_config) do
+    case join_mode do
+      {mode_type, display_field} when mode_type in [:tag, :star, :lookup] ->
+        display_field_atom = String.to_atom(display_field)
+
+        # Start with ALL fields to satisfy validator
+        columns_map = Enum.into(fields, %{}, fn field ->
+          type = Map.get(field_types, field, :string)
+          {field, %{type: type}}
+        end)
+
+        # Extract the foreign key field from association config
+        # This allows filtering on the local foreign key instead of joining
+        foreign_key_field = case assoc_config do
+          %{owner_key: owner_key} -> Atom.to_string(owner_key)
+          _ -> nil
+        end
+
+        # Build metadata map for the display field
+        metadata = %{
+          join_mode: mode_type,
+          id_field: primary_key,
+          display_field: display_field_atom,
+          prevent_denormalization: true,
+          filter_type: :multi_select_id
+        }
+
+        # Add group_by_filter if we have a foreign key to filter on
+        metadata = if foreign_key_field do
+          Map.put(metadata, :group_by_filter, foreign_key_field)
+        else
+          metadata
+        end
+
+        # Enhance the display field with special metadata
+        columns_map = Map.update!(columns_map, display_field_atom, fn col ->
+          Map.merge(col, metadata)
+        end)
+
+        # Mark ID field as hidden if it's not the display field
+        columns_map = if display_field_atom != primary_key && Map.has_key?(columns_map, primary_key) do
+          Map.update!(columns_map, primary_key, fn col ->
+            Map.put(col, :hidden, true)
+          end)
+        else
+          columns_map
+        end
+
+        # Format with nice indentation and helpful comments
+        formatted_columns =
+          columns_map
+          |> Enum.map(fn {field, config_map} ->
+            comment = if field == display_field_atom do
+              "# #{mode_type} mode: displays name, filters by ID"
+            else
+              ""
+            end
+            comment_line = if comment != "", do: "          #{comment}\n", else: ""
+            "#{comment_line}          #{inspect(field)} => #{inspect(config_map)}"
+          end)
+          |> Enum.join(",\n")
+
+        "%{\n#{formatted_columns}\n        }"
+
+      _ ->
+        # No special mode, use standard column generation
+        generate_columns_config(fields, field_types)
+    end
   end
 
   defp generate_source_associations(config) do
@@ -251,6 +322,7 @@ defmodule SelectoMix.DomainGenerator do
   defp generate_schemas_config(config) do
     associations = config[:associations] || %{}
     expand_schemas_list = config[:expand_schemas_list] || []
+    expand_modes = config[:expand_modes] || %{}
 
     # Generate schema configurations for associations
     schema_configs =
@@ -262,12 +334,15 @@ defmodule SelectoMix.DomainGenerator do
         schema_name = get_schema_name_from_module(related_schema)
         table_name = guess_table_name(related_schema)
         related_schema_string = inspect(related_schema)
-        
+
         # Check if this schema should be expanded
         should_expand = should_expand_schema?(schema_name, related_schema, expand_schemas_list)
-        
+
+        # Check if there's a special join mode for this schema
+        join_mode = get_join_mode_for_schema(schema_name, expand_modes)
+
         if should_expand do
-          generate_expanded_schema_config(schema_name, related_schema, table_name)
+          generate_expanded_schema_config(schema_name, related_schema, table_name, join_mode, assoc_config)
         else
           generate_placeholder_schema_config(schema_name, related_schema_string, table_name)
         end
@@ -299,6 +374,37 @@ defmodule SelectoMix.DomainGenerator do
 
     result
   end
+
+  # Get join mode configuration for a schema if specified
+  # Returns {mode, display_field} tuple or nil
+  defp get_join_mode_for_schema(schema_name, expand_modes) do
+    schema_name_str = to_string(schema_name)
+    schema_name_lower = String.downcase(schema_name_str)
+
+    # Try multiple matching strategies
+    Enum.find_value(expand_modes, fn {key, value} ->
+      key_lower = String.downcase(key)
+
+      cond do
+        # Exact match (case-insensitive)
+        key_lower == schema_name_lower -> value
+
+        # Plural form match (Tags matches Tag, Categories matches Category)
+        key_lower == schema_name_lower <> "s" -> value
+        key_lower <> "s" == schema_name_lower -> value
+
+        # Remove common plural suffixes for matching
+        String.ends_with?(key_lower, "ies") && String.replace_suffix(key_lower, "ies", "y") == schema_name_lower -> value
+        String.ends_with?(schema_name_lower, "ies") && String.replace_suffix(schema_name_lower, "ies", "y") == key_lower -> value
+
+        # Partial match (if key contains schema name or vice versa)
+        String.contains?(key_lower, schema_name_lower) && String.length(key_lower) < String.length(schema_name_lower) + 3 -> value
+        String.contains?(schema_name_lower, key_lower) && String.length(schema_name_lower) < String.length(key_lower) + 3 -> value
+
+        true -> nil
+      end
+    end)
+  end
   
   defp generate_placeholder_schema_config(schema_name, related_schema_string, table_name) do
     "#{inspect(schema_name)} => %{\n" <>
@@ -315,7 +421,7 @@ defmodule SelectoMix.DomainGenerator do
     "          }"
   end
   
-  defp generate_expanded_schema_config(schema_name, related_schema, table_name) do
+  defp generate_expanded_schema_config(schema_name, related_schema, table_name, join_mode, assoc_config) do
     # Attempt to introspect the related schema
     case introspect_related_schema(related_schema) do
       {:ok, schema_config} ->
@@ -323,12 +429,22 @@ defmodule SelectoMix.DomainGenerator do
         field_types = schema_config[:field_types] || %{}
         primary_key = schema_config[:primary_key] || :id
         associations = schema_config[:associations] || %{}
-        
-        columns_config = generate_columns_config(fields, field_types)
+
+        # Generate columns config with join mode awareness
+        columns_config = generate_columns_config_with_mode(fields, field_types, join_mode, primary_key, assoc_config)
         associations_config = generate_nested_associations_config(associations)
-        
+
+        # Add join mode metadata if present
+        mode_comment = case join_mode do
+          {:tag, _} -> "            # Join mode: tag (many-to-many with ID-based filtering)\n"
+          {:star, _} -> "            # Join mode: star (lookup table with ID-based filtering)\n"
+          {:lookup, _} -> "            # Join mode: lookup (small reference table)\n"
+          _ -> ""
+        end
+
         "#{inspect(schema_name)} => %{\n" <>
         "            # Expanded schema configuration for #{inspect(related_schema)}\n" <>
+        mode_comment <>
         "            source_table: \"#{table_name}\",\n" <>
         "            primary_key: #{inspect(primary_key)},\n" <>
         "            fields: #{inspect(fields)},\n" <>
