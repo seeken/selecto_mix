@@ -44,6 +44,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     * `--expand-tag` - Many-to-many tag mode: TableName:display_field (uses IDs, prevents denormalization)
     * `--expand-star` - Star schema mode: TableName:display_field (lookup table with ID-based filtering)
     * `--expand-lookup` - Lookup table mode: TableName:display_field (small reference tables)
+    * `--expand-polymorphic` - Polymorphic association: field_name:type_field,id_field:Type1,Type2,Type3
     * `--parameterized-joins` - Generate example parameterized join configurations
     * `--path` - Custom path for the LiveView route (e.g., /products instead of /product)
     * `--enable-modal` - Enable modal detail view for row clicks in LiveView (requires --live)
@@ -98,6 +99,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         expand_tag: :keep,
         expand_star: :keep,
         expand_lookup: :keep,
+        expand_polymorphic: :keep,
         parameterized_joins: :boolean,
         path: :string,
         enable_modal: :boolean
@@ -251,7 +253,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   # Parse expand mode parameters like --expand-tag Tags:name --expand-star Category:category_name
   # Returns a map like: %{"Tags" => {:tag, "name"}, "Category" => {:star, "category_name"}}
   defp parse_expand_modes(parsed_args) do
-    modes = [:expand_tag, :expand_star, :expand_lookup]
+    modes = [:expand_tag, :expand_star, :expand_lookup, :expand_polymorphic]
 
     Enum.reduce(modes, %{}, fn mode, acc ->
       mode_type = mode |> to_string() |> String.replace("expand_", "") |> String.to_atom()
@@ -271,14 +273,40 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   end
 
   defp parse_expand_mode_spec(spec, mode_type, acc) do
-    case String.split(spec, ":") do
-      [table_name, display_field] ->
-        # Store both singular and plural forms to match flexibly
-        table_key = String.trim(table_name)
-        Map.put(acc, table_key, {mode_type, String.trim(display_field)})
-      _ ->
-        # Invalid format, skip
-        acc
+    cond do
+      # Polymorphic format: field_name:type_field,id_field:Type1,Type2,Type3
+      mode_type == :polymorphic ->
+        case String.split(spec, ":") do
+          [field_name, fields, types] ->
+            case String.split(fields, ",") do
+              [type_field, id_field] ->
+                entity_types = String.split(types, ",") |> Enum.map(&String.trim/1)
+                poly_config = %{
+                  field_name: String.trim(field_name),
+                  type_field: String.trim(type_field),
+                  id_field: String.trim(id_field),
+                  entity_types: entity_types
+                }
+                # Use field_name as the key
+                Map.put(acc, String.trim(field_name), {:polymorphic, poly_config})
+              _ ->
+                acc
+            end
+          _ ->
+            acc
+        end
+
+      # Standard format for tag/star/lookup: TableName:display_field
+      true ->
+        case String.split(spec, ":") do
+          [table_name, display_field] ->
+            # Store both singular and plural forms to match flexibly
+            table_key = String.trim(table_name)
+            Map.put(acc, table_key, {mode_type, String.trim(display_field)})
+          _ ->
+            # Invalid format, skip
+            acc
+        end
     end
   end
 
@@ -425,10 +453,26 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       expanded_config
     end
 
-    merged_config = if opts[:force] do
-      config_with_modes
+    # Extract polymorphic config if present (for direct schema generation, not associations)
+    config_with_poly = if opts[:expand_modes] do
+      poly_config = Enum.find_value(opts[:expand_modes], fn
+        {_key, {:polymorphic, config}} -> config
+        _ -> nil
+      end)
+
+      if poly_config do
+        Map.put(config_with_modes, :polymorphic_config, poly_config)
+      else
+        config_with_modes
+      end
     else
-      SelectoMix.ConfigMerger.merge_with_existing(config_with_modes, existing_content)
+      config_with_modes
+    end
+
+    merged_config = if opts[:force] do
+      config_with_poly
+    else
+      SelectoMix.ConfigMerger.merge_with_existing(config_with_poly, existing_content)
     end
 
     # Add schema_module to opts for saved views context inference

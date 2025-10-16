@@ -1,0 +1,37 @@
+<h1>Customer Data View</h1>
+
+<.button phx-click="toggle_show_view_configurator">Toggle View Controller</.button>
+
+Saved Views:
+<.intersperse :let={v} enum={@available_saved_views}>
+  <:separator>,</:separator>
+  <.link href={"#{@path}?saved_view=#{v}"}>[<%= v %>]</.link>
+</.intersperse>
+
+
+<div :if={@show_view_configurator}>
+  <.live_component
+    module={SelectoComponents.Form}
+    id="config"
+    view_config={@view_config}
+    selecto={@selecto}
+    executed={@executed}
+    applied_view={nil}
+    active_tab={@active_tab}
+    views={@views}
+        saved_view_module={@saved_view_module}
+    saved_view_context={@saved_view_context}
+
+  />
+</div>
+
+<.live_component
+  module={SelectoComponents.Results}
+  selecto={@selecto}
+  query_results={@query_results}
+  applied_view={@applied_view}
+  executed={@executed}
+  views={@views}
+  view_meta={@view_meta}
+  id="results"
+/>

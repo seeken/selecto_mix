@@ -156,14 +156,14 @@ defmodule SelectoMix.DomainGenerator do
   # Private generation functions
 
   defp get_domain_module_name(schema_module, config) do
-    base_name = config[:metadata][:module_name] || 
+    base_name = config[:metadata][:module_name] ||
                 Module.split(schema_module) |> List.last()
-    
+
     _context_name = config[:metadata][:context_name] || "Domains"
-    
-    # Generate appropriate module name
-    app_name = Application.get_env(:selecto_mix, :app_name) || 
-               detect_app_name() || 
+
+    # Generate appropriate module name - use schema module as source of truth
+    app_name = Application.get_env(:selecto_mix, :app_name) ||
+               infer_app_name_from_schema(schema_module) ||  # KEY FIX: Use schema module
                "MyApp"
     "#{app_name}.SelectoDomains.#{base_name}Domain"
   end
@@ -174,6 +174,7 @@ defmodule SelectoMix.DomainGenerator do
     fields = config[:fields] || []
     redacted_fields = config[:redacted_fields] || []
     field_types = config[:field_types] || %{}
+    polymorphic_config = config[:polymorphic_config]
     
     redacted_line = if redacted_fields != [], do: "\n        redact_fields: #{inspect(redacted_fields)},", else: ""
     
@@ -185,20 +186,56 @@ defmodule SelectoMix.DomainGenerator do
     "        # Fields to exclude from queries#{redacted_line}\n" <>
     "        redact_fields: [],\n        \n" <>
     "        # Field type definitions (contains the same info as fields above)\n" <>
-    "        columns: #{generate_columns_config(fields, field_types)},\n        \n" <>
+    "        columns: #{generate_columns_config(fields, field_types, polymorphic_config)},\n        \n" <>
     "        # Schema associations\n" <>
     "        associations: #{generate_source_associations(config)}\n      }"
   end
 
-  defp generate_columns_config(fields, field_types) do
+  defp generate_columns_config(fields, field_types, polymorphic_config \\ nil) do
+    # Detect polymorphic associations (auto-detect OR use provided config)
+    polymorphic_assocs = if polymorphic_config do
+      # Use provided config from --expand-polymorphic
+      [polymorphic_config]
+    else
+      # Auto-detect from field patterns
+      detect_polymorphic_associations(fields, field_types)
+    end
+
     columns_map = Enum.into(fields, %{}, fn field ->
       type = Map.get(field_types, field, :string)
       {field, %{type: type}}
     end)
 
+    # Add polymorphic virtual column for each detected polymorphic association
+    polymorphic_columns = Enum.into(polymorphic_assocs, %{}, fn assoc ->
+      # Handle both auto-detected format and CLI-provided format
+      {virtual_field, type_field, id_field, entity_types, display_name} = case assoc do
+        # CLI-provided format from --expand-polymorphic
+        %{field_name: field_name, type_field: tf, id_field: idf, entity_types: types} ->
+          {String.to_atom(field_name), tf, idf, types, String.capitalize(field_name)}
+
+        # Auto-detected format
+        %{base_name: base, type_field: tf, id_field: idf, suggested_types: types} ->
+          {String.to_atom(base), to_string(tf), to_string(idf), types, String.capitalize(base)}
+      end
+
+      {virtual_field, %{
+        type: :string,
+        join_mode: :polymorphic,
+        filter_type: :polymorphic,
+        type_field: type_field,
+        id_field: id_field,
+        entity_types: entity_types,
+        display_name: display_name
+      }}
+    end)
+
+    # Merge regular columns with polymorphic virtual columns
+    all_columns = Map.merge(columns_map, polymorphic_columns)
+
     # Format the map with nice indentation
     formatted_columns =
-      columns_map
+      all_columns
       |> Enum.map(fn {field, type_map} ->
         "          #{inspect(field)} => #{inspect(type_map)}"
       end)
@@ -280,28 +317,30 @@ defmodule SelectoMix.DomainGenerator do
 
   defp generate_source_associations(config) do
     associations = config[:associations] || %{}
-    
+
     if Enum.empty?(associations) do
       "%{}"
     else
-      formatted_assocs = 
+      formatted_assocs =
         associations
         |> Enum.reject(fn {_name, assoc} -> assoc[:is_through] end)  # Skip through associations for now
         |> Enum.map(fn {assoc_name, assoc_config} ->
           custom_marker = if assoc_config[:is_custom], do: " # CUSTOM", else: ""
-          queryable_name = inspect(get_queryable_name(assoc_config))
-          owner_key = inspect(assoc_config[:owner_key])
-          related_key = inspect(assoc_config[:related_key])
-          
-          "#{inspect(assoc_name)} => %{\n" <>
+          # Ensure all values are properly inspected for valid Elixir syntax
+          queryable_name = get_queryable_name(assoc_config) |> inspect()
+          owner_key = assoc_config[:owner_key] |> inspect()
+          related_key = assoc_config[:related_key] |> inspect()
+          assoc_name_key = assoc_name |> inspect()  # KEY FIX: Store inspected value
+
+          "#{assoc_name_key} => %{\n" <>  # Use stored variable instead of inline inspect
           "              queryable: #{queryable_name},\n" <>
-          "              field: #{inspect(assoc_name)},\n" <>
+          "              field: #{assoc_name_key},\n" <>
           "              owner_key: #{owner_key},\n" <>
           "              related_key: #{related_key}#{custom_marker}\n" <>
           "            }"
         end)
         |> Enum.join(",\n        ")
-      
+
       "%{\n        #{formatted_assocs}\n        }"
     end
   end
@@ -407,7 +446,10 @@ defmodule SelectoMix.DomainGenerator do
   end
   
   defp generate_placeholder_schema_config(schema_name, related_schema_string, table_name) do
-    "#{inspect(schema_name)} => %{\n" <>
+    # Use proper atom syntax for map key
+    schema_name_key = schema_name |> inspect()  # KEY FIX
+
+    "#{schema_name_key} => %{\n" <>
     "            # TODO: Add proper schema configuration for #{related_schema_string}\n" <>
     "            # This will be auto-generated when you run:\n" <>
     "            # mix selecto.gen.domain #{related_schema_string}\n" <>
@@ -442,7 +484,10 @@ defmodule SelectoMix.DomainGenerator do
           _ -> ""
         end
 
-        "#{inspect(schema_name)} => %{\n" <>
+        # Use proper atom syntax for map key
+        schema_name_key = schema_name |> inspect()  # KEY FIX
+
+        "#{schema_name_key} => %{\n" <>
         "            # Expanded schema configuration for #{inspect(related_schema)}\n" <>
         mode_comment <>
         "            source_table: \"#{table_name}\",\n" <>
@@ -506,6 +551,50 @@ defmodule SelectoMix.DomainGenerator do
   defp simplify_ecto_type(:utc_datetime), do: :utc_datetime
   defp simplify_ecto_type(type) when is_atom(type), do: type
   defp simplify_ecto_type(_), do: :string
+
+  # Detect polymorphic associations in a schema.
+  #
+  # Looks for patterns like:
+  # - commentable_type + commentable_id
+  # - taggable_type + taggable_id
+  # - attachable_type + attachable_id
+  #
+  # Returns a list of polymorphic associations:
+  # [
+  #   %{
+  #     base_name: "commentable",
+  #     type_field: :commentable_type,
+  #     id_field: :commentable_id,
+  #     suggested_types: ["Product", "Order", "Customer"]  # From seed data or manual
+  #   }
+  # ]
+  defp detect_polymorphic_associations(fields, _field_types) do
+    # Find all fields ending in _type
+    type_fields = Enum.filter(fields, fn field ->
+      field_str = to_string(field)
+      String.ends_with?(field_str, "_type")
+    end)
+
+    # For each type field, check if corresponding _id field exists
+    Enum.flat_map(type_fields, fn type_field ->
+      type_field_str = to_string(type_field)
+      base_name = String.replace_suffix(type_field_str, "_type", "")
+      id_field = String.to_atom(base_name <> "_id")
+
+      if id_field in fields do
+        # Found a polymorphic pair!
+        [%{
+          base_name: base_name,
+          type_field: type_field,
+          id_field: id_field,
+          # Default suggested types - can be overridden by --expand-polymorphic option
+          suggested_types: ["Product", "Order", "Customer"]
+        }]
+      else
+        []
+      end
+    end)
+  end
   
   # defp discover_basic_associations(schema_module) do
   #   try do
@@ -549,22 +638,24 @@ defmodule SelectoMix.DomainGenerator do
     if Enum.empty?(associations) do
       "%{}"
     else
-      formatted_assocs = 
+      formatted_assocs =
         associations
         |> Enum.map(fn {assoc_name, assoc_config} ->
-          queryable_name = inspect(assoc_config[:queryable])
-          owner_key = inspect(assoc_config[:owner_key])
-          related_key = inspect(assoc_config[:related_key])
-          
-          "#{inspect(assoc_name)} => %{\n" <>
+          # Ensure all values are properly inspected for valid Elixir syntax
+          queryable_name = assoc_config[:queryable] |> inspect()
+          owner_key = assoc_config[:owner_key] |> inspect()
+          related_key = assoc_config[:related_key] |> inspect()
+          assoc_name_key = assoc_name |> inspect()  # KEY FIX
+
+          "#{assoc_name_key} => %{\n" <>
           "                queryable: #{queryable_name},\n" <>
-          "                field: #{inspect(assoc_name)},\n" <>
+          "                field: #{assoc_name_key},\n" <>
           "                owner_key: #{owner_key},\n" <>
           "                related_key: #{related_key}\n" <>
           "              }"
         end)
         |> Enum.join(",\n          ")
-      
+
       "%{\n          #{formatted_assocs}\n        }"
     end
   end
