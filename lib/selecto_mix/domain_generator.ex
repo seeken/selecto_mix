@@ -175,16 +175,22 @@ defmodule SelectoMix.DomainGenerator do
     redacted_fields = config[:redacted_fields] || []
     field_types = config[:field_types] || %{}
     polymorphic_config = config[:polymorphic_config]
-    
-    redacted_line = if redacted_fields != [], do: "\n        redact_fields: #{inspect(redacted_fields)},", else: ""
-    
+
+    # Only include redact_fields if there are redacted fields, otherwise use empty list
+    redacted_config = if redacted_fields != [] do
+      "        # Fields to exclude from queries\n" <>
+      "        redact_fields: #{inspect(redacted_fields)},\n        \n"
+    else
+      "        # Fields to exclude from queries\n" <>
+      "        redact_fields: [],\n        \n"
+    end
+
     "%{\n        source_table: \"#{table_name}\",\n" <>
     "        primary_key: #{inspect(primary_key)},\n        \n" <>
     "        # Available fields from schema\n" <>
     "        # NOTE: This is redundant with columns - consider using Map.keys(columns) instead\n" <>
     "        fields: #{inspect(fields)},\n        \n" <>
-    "        # Fields to exclude from queries#{redacted_line}\n" <>
-    "        redact_fields: [],\n        \n" <>
+    redacted_config <>
     "        # Field type definitions (contains the same info as fields above)\n" <>
     "        columns: #{generate_columns_config(fields, field_types, polymorphic_config)},\n        \n" <>
     "        # Schema associations\n" <>
