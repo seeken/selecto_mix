@@ -336,11 +336,12 @@ defmodule SelectoMix.DomainGenerator do
           queryable_name = get_queryable_name(assoc_config) |> inspect()
           owner_key = assoc_config[:owner_key] |> inspect()
           related_key = assoc_config[:related_key] |> inspect()
-          assoc_name_key = assoc_name |> inspect()  # KEY FIX: Store inspected value
+          # Convert to string first, then inspect to get "string" not :atom
+          assoc_name_key = assoc_name |> to_string() |> inspect()
 
-          "#{assoc_name_key} => %{\n" <>  # Use stored variable instead of inline inspect
+          "#{assoc_name_key} => %{\n" <>
           "              queryable: #{queryable_name},\n" <>
-          "              field: #{assoc_name_key},\n" <>
+          "              field: #{inspect(assoc_name)},\n" <>
           "              owner_key: #{owner_key},\n" <>
           "              related_key: #{related_key}#{custom_marker}\n" <>
           "            }"
@@ -651,11 +652,12 @@ defmodule SelectoMix.DomainGenerator do
           queryable_name = assoc_config[:queryable] |> inspect()
           owner_key = assoc_config[:owner_key] |> inspect()
           related_key = assoc_config[:related_key] |> inspect()
-          assoc_name_key = assoc_name |> inspect()  # KEY FIX
+          # Convert to string first, then inspect to get "string" not :atom
+          assoc_name_key = assoc_name |> to_string() |> inspect()
 
           "#{assoc_name_key} => %{\n" <>
           "                queryable: #{queryable_name},\n" <>
-          "                field: #{assoc_name_key},\n" <>
+          "                field: #{inspect(assoc_name)},\n" <>
           "                owner_key: #{owner_key},\n" <>
           "                related_key: #{related_key}\n" <>
           "              }"
