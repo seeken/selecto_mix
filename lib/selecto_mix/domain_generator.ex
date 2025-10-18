@@ -336,8 +336,8 @@ defmodule SelectoMix.DomainGenerator do
           queryable_name = get_queryable_name(assoc_config) |> inspect()
           owner_key = assoc_config[:owner_key] |> inspect()
           related_key = assoc_config[:related_key] |> inspect()
-          # Convert to string first, then inspect to get "string" not :atom
-          assoc_name_key = assoc_name |> to_string() |> inspect()
+          # Use proper atom syntax for map key
+          assoc_name_key = assoc_name |> inspect()
 
           "#{assoc_name_key} => %{\n" <>
           "              queryable: #{queryable_name},\n" <>
@@ -652,8 +652,8 @@ defmodule SelectoMix.DomainGenerator do
           queryable_name = assoc_config[:queryable] |> inspect()
           owner_key = assoc_config[:owner_key] |> inspect()
           related_key = assoc_config[:related_key] |> inspect()
-          # Convert to string first, then inspect to get "string" not :atom
-          assoc_name_key = assoc_name |> to_string() |> inspect()
+          # Use proper atom syntax for map key
+          assoc_name_key = assoc_name |> inspect()
 
           "#{assoc_name_key} => %{\n" <>
           "                queryable: #{queryable_name},\n" <>
