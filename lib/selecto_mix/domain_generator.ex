@@ -331,7 +331,8 @@ defmodule SelectoMix.DomainGenerator do
         associations
         |> Enum.reject(fn {_name, assoc} -> assoc[:is_through] end)  # Skip through associations for now
         |> Enum.map(fn {assoc_name, assoc_config} ->
-          custom_marker = if assoc_config[:is_custom], do: " # CUSTOM", else: ""
+          # Note: Custom markers disabled due to Sourceror parsing issues
+          # _custom_marker = if assoc_config[:is_custom], do: " # CUSTOM", else: ""
           # Ensure all values are properly inspected for valid Elixir syntax
           queryable_name = get_queryable_name(assoc_config) |> inspect()
           owner_key = assoc_config[:owner_key] |> inspect()
@@ -343,7 +344,7 @@ defmodule SelectoMix.DomainGenerator do
           "              queryable: #{queryable_name},\n" <>
           "              field: #{inspect(assoc_name)},\n" <>
           "              owner_key: #{owner_key},\n" <>
-          "              related_key: #{related_key}#{custom_marker}\n" <>
+          "              related_key: #{related_key}\n" <>
           "            }"
         end)
         |> Enum.join(",\n        ")
@@ -956,7 +957,9 @@ defmodule SelectoMix.DomainGenerator do
     is_parameterized = Map.has_key?(join_config, :parameters)
     is_many_to_many = Map.has_key?(join_config, :join_through)
 
-    custom_marker = cond do
+    # Note: Custom markers are disabled for now due to Sourceror parsing issues with inline comments
+    # TODO: Re-enable once we find a parser-safe format
+    _custom_marker = cond do
       is_custom and is_parameterized -> " # CUSTOM PARAMETERIZED JOIN"
       is_custom -> " # CUSTOM JOIN"
       is_parameterized -> " # PARAMETERIZED JOIN"
@@ -1012,7 +1015,7 @@ defmodule SelectoMix.DomainGenerator do
       condition -> ",\n              join_condition: #{inspect(condition)}"
     end
 
-    base_config <> source_config <> many_to_many_config <> parameterized_config <> join_condition_config <> "\n            }#{custom_marker}"
+    base_config <> source_config <> many_to_many_config <> parameterized_config <> join_condition_config <> "\n            }"
   end
   
   defp format_parameters_config(parameters) when is_list(parameters) do
