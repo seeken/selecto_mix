@@ -398,6 +398,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     igniter_with_domain = igniter
     |> ensure_directory_exists(output_dir)
     |> generate_domain_file(schema, domain_file, opts)
+    |> generate_overlay_file(schema, domain_file, opts)
     # Skip queries file generation for now due to backslash escaping issue
     # |> generate_queries_file(schema, queries_file, opts)
     |> add_success_message("Generated Selecto domain for #{schema}")
@@ -498,6 +499,54 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   #     igniter
   #   end
   # end
+
+  defp generate_overlay_file(igniter, schema, domain_file_path, opts) do
+    # Only generate overlay file if it doesn't already exist
+    # Never overwrite an existing overlay file
+    overlay_path = SelectoMix.OverlayGenerator.overlay_file_path(domain_file_path)
+
+    if File.exists?(overlay_path) do
+      # Overlay already exists, don't overwrite it
+      igniter
+    else
+      # Generate overlay template
+      opts_list = Map.to_list(opts)
+      domain_config = SelectoMix.SchemaIntrospector.introspect_schema(schema, opts_list)
+
+      # Get the domain module name
+      domain_module_name = get_domain_module_name_from_schema(schema)
+
+      # Generate overlay content
+      content = SelectoMix.OverlayGenerator.generate_overlay_file(
+        domain_module_name,
+        domain_config,
+        opts
+      )
+
+      # Ensure overlays directory exists
+      overlay_dir = Path.dirname(overlay_path)
+      igniter
+      |> ensure_directory_exists(overlay_dir)
+      |> Igniter.create_new_file(overlay_path, content)
+      |> add_success_message("Generated overlay template at #{overlay_path}")
+    end
+  end
+
+  defp get_domain_module_name_from_schema(schema) do
+    base_name = Module.split(schema) |> List.last()
+    app_name = Application.get_env(:selecto_mix, :app_name) ||
+               infer_app_name_from_schema(schema) ||
+               "MyApp"
+    "#{app_name}.SelectoDomains.#{base_name}Domain"
+  end
+
+  defp infer_app_name_from_schema(schema_module) when is_atom(schema_module) do
+    schema_module
+    |> Module.split()
+    |> List.first()
+  end
+
+  defp infer_app_name_from_schema(_), do: "MyApp"
 
   defp read_existing_domain_file(_igniter, file_path) do
     case File.read(file_path) do

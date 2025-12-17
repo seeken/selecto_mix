@@ -19,42 +19,47 @@ defmodule SelectoMix.DomainGenerator do
   """
   def generate_domain_file(schema_module, config, opts \\ []) do
     module_name = get_domain_module_name(schema_module, config)
+    overlay_module_name = SelectoMix.OverlayGenerator.overlay_module_name(module_name)
     saved_views_use = generate_saved_views_use(opts)
 
     """
     defmodule #{module_name} do
       @moduledoc \"\"\"
       Selecto domain configuration for #{inspect(schema_module)}.
-      
+
       This file was automatically generated from the Ecto schema.
-      You can customize this configuration by modifying the domain map below.
-      
+
+      ## Customization with Overlay Files
+
+      This domain uses an overlay configuration system for customization.
+      Instead of editing this file directly, customize the domain by editing:
+
+          lib/*/selecto_domains/overlays/*_overlay.ex
+
+      The overlay file allows you to:
+      - Customize column display properties (labels, formats, aggregations)
+      - Add redaction to sensitive fields
+      - Define custom filters
+      - Add domain-specific validations (future)
+
+      Your overlay customizations are preserved when you regenerate this file.
+
       ## Usage
-      
+
           # Basic usage
           selecto = Selecto.configure(#{module_name}.domain(), MyApp.Repo)
-          
+
           # With Ecto integration
           selecto = Selecto.from_ecto(MyApp.Repo, #{inspect(schema_module)})
-          
+
           # Execute queries
           {:ok, {rows, columns, aliases}} = Selecto.execute(selecto)
-      
-      ## Customization
-      
-      You can customize this domain by:
-      - Adding custom fields to the fields list
-      - Modifying default selections and filters
-      - Adjusting join configurations
-      - Adding parameterized joins with dynamic parameters
-      - Configuring subfilters for relationship-based filtering (Selecto 0.3.0+)
-      - Setting up window functions for advanced analytics (Selecto 0.3.0+)
-      - Defining pivot table configurations (Selecto 0.3.0+)
-      - Customizing pagination settings with LIMIT/OFFSET support
-      - Adding custom domain metadata
-      
-      Fields, filters, and joins marked with "# CUSTOM" comments will be
-      preserved when this file is regenerated.
+
+      ## Legacy Customization (Deprecated)
+
+      Fields, filters, and joins marked with "# CUSTOM" comments will still be
+      preserved when this file is regenerated, but we recommend using the
+      overlay file instead for a cleaner separation of generated vs. custom code.
       
       ## Parameterized Joins
       
@@ -112,9 +117,33 @@ defmodule SelectoMix.DomainGenerator do
 #{saved_views_use}
       @doc \"\"\"
       Returns the Selecto domain configuration for #{inspect(schema_module)}.
+
+      This merges the base domain configuration with any overlay customizations.
       \"\"\"
       def domain do
+        base_domain()
+        |> Selecto.Config.Overlay.merge(overlay())
+      end
+
+      @doc \"\"\"
+      Returns the base domain configuration (without overlay customizations).
+      \"\"\"
+      def base_domain do
         #{generate_domain_map(config)}
+      end
+
+      @doc \"\"\"
+      Returns the overlay configuration if available.
+
+      The overlay file is located at:
+      lib/*/selecto_domains/overlays/*_overlay.ex
+      \"\"\"
+      def overlay do
+        if Code.ensure_loaded?(#{overlay_module_name}) do
+          #{overlay_module_name}.overlay()
+        else
+          %{}
+        end
       end
 
       #{generate_helper_functions(schema_module, config)}

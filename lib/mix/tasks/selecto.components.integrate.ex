@@ -244,7 +244,7 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
   defp patch_app_js(content) do
     # First, add the import statement if not present
     content_with_import =
-      if String.contains?(content, "selectoComponentsHooks") do
+      if String.contains?(content, "TreeBuilderHook") || String.contains?(content, "selectoComponentsHooks") do
         content
       else
         add_import_to_js(content)
@@ -274,36 +274,36 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
         add_alpine_js_import(content_with_chart)
       end
     
-    # Finally add selectoComponentsHooks if needed
+    # Finally add TreeBuilder and selectoHooks imports if needed
     cond do
       String.contains?(content_with_alpine, "import {LiveSocket}") ->
         # Add import after LiveSocket import
         String.replace(
           content_with_alpine,
           ~r/(import {LiveSocket} from "phoenix_live_view")/,
-          "\\1\nimport {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\"\nimport selectoHooks from \"../../vendor/selecto_components/assets/js/hooks\""
+          "\\1\nimport TreeBuilderHook from \"../../vendor/selecto_components/lib/selecto_components/components/tree_builder.hooks\"\nimport selectoHooks from \"../../vendor/selecto_components/assets/js/hooks\""
         )
-        
+
       String.contains?(content_with_alpine, "import") ->
         # Find last import and add after it
         lines = String.split(content_with_alpine, "\n")
         import_lines = Enum.filter(lines, &String.starts_with?(&1, "import"))
-        
+
         if length(import_lines) > 0 do
           last_import = List.last(import_lines)
           String.replace(
             content_with_alpine,
             last_import,
-            last_import <> "\nimport {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\"\nimport selectoHooks from \"../../vendor/selecto_components/assets/js/hooks\""
+            last_import <> "\nimport TreeBuilderHook from \"../../vendor/selecto_components/lib/selecto_components/components/tree_builder.hooks\"\nimport selectoHooks from \"../../vendor/selecto_components/assets/js/hooks\""
           )
         else
           # Add at the beginning
-          "import {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\"\nimport selectoHooks from \"../../vendor/selecto_components/assets/js/hooks\"\n" <> content_with_alpine
+          "import TreeBuilderHook from \"../../vendor/selecto_components/lib/selecto_components/components/tree_builder.hooks\"\nimport selectoHooks from \"../../vendor/selecto_components/assets/js/hooks\"\n" <> content_with_alpine
         end
-        
+
       true ->
         # Add at the beginning
-        "import {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\"\nimport selectoHooks from \"../../vendor/selecto_components/assets/js/hooks\"\n" <> content_with_alpine
+        "import TreeBuilderHook from \"../../vendor/selecto_components/lib/selecto_components/components/tree_builder.hooks\"\nimport selectoHooks from \"../../vendor/selecto_components/assets/js/hooks\"\n" <> content_with_alpine
     end
   end
   
@@ -612,13 +612,13 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
     cond do
       # Check if both hooks are already configured in the hooks object
       String.contains?(content, "hooks:") &&
-      String.contains?(content, "...selectoComponentsHooks") &&
+      (String.contains?(content, "TreeBuilder: TreeBuilderHook") || String.contains?(content, "...selectoComponentsHooks")) &&
       String.contains?(content, "...selectoHooks") ->
         # Already fully configured
         content
 
-      # Check if selectoComponentsHooks is in the hooks object but not selectoHooks
-      String.contains?(content, "hooks:") && String.contains?(content, "...selectoComponentsHooks") ->
+      # Check if TreeBuilderHook is in the hooks object but not selectoHooks
+      String.contains?(content, "hooks:") && (String.contains?(content, "TreeBuilder: TreeBuilderHook") || String.contains?(content, "...selectoComponentsHooks")) ->
         # Add selectoHooks to existing hooks
         String.replace(
           content,
@@ -632,7 +632,7 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
         String.replace(
           content,
           ~r/hooks:\s*{\s*([^}]+)}/,
-          "hooks: {\\1, ...selectoComponentsHooks, ...selectoHooks}"
+          "hooks: {\\1, TreeBuilder: TreeBuilderHook, ...selectoHooks}"
         )
 
       String.contains?(content, "hooks:") ->
@@ -640,7 +640,7 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
         String.replace(
           content,
           ~r/hooks:\s*{([^}]*)}/,
-          "hooks: {...selectoComponentsHooks, ...selectoHooks,\\1}"
+          "hooks: {TreeBuilder: TreeBuilderHook, ...selectoHooks,\\1}"
         )
 
       String.contains?(content, "new LiveSocket") ->
@@ -648,7 +648,7 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
         String.replace(
           content,
           ~r/(const liveSocket = new LiveSocket\([^,]+,\s*Socket,\s*{)([^}]*)(})/,
-          "\\1\\2,\n  hooks: { ...selectoComponentsHooks, ...selectoHooks }\\3"
+          "\\1\\2,\n  hooks: { TreeBuilder: TreeBuilderHook, ...selectoHooks }\\3"
         )
 
       true ->
