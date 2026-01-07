@@ -52,7 +52,7 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
     # Get the base module from the Mix project
     app_module = Mix.Project.config()[:app]
       |> to_string()
-      |> Phoenix.Naming.camelize()
+      |> Macro.camelize()
 
     web_module = Module.concat([app_module, "Web"])
 

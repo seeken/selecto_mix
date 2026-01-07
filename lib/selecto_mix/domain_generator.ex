@@ -1108,22 +1108,6 @@ defmodule SelectoMix.DomainGenerator do
     |> Enum.join(" ")
   end
 
-  defp detect_app_name do
-    # Try to detect the app name from the current Mix project
-    case Mix.Project.get() do
-      nil -> nil
-      project -> 
-        app_name = project.project()[:app]
-        if app_name do
-          app_name
-          |> to_string()
-          |> Macro.camelize()
-        else
-          nil
-        end
-    end
-  end
-
   # New helper functions for advanced Selecto features
 
 
