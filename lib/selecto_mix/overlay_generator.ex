@@ -24,6 +24,7 @@ defmodule SelectoMix.OverlayGenerator do
     column_examples = generate_column_examples_dsl(config)
     filter_examples = generate_filter_examples_dsl(config)
     redaction_example = generate_redaction_example(config)
+    jsonb_examples = generate_jsonb_schema_examples(config)
 
     """
     defmodule #{overlay_module_name} do
@@ -39,6 +40,7 @@ defmodule SelectoMix.OverlayGenerator do
       - Customize column display properties (labels, formats, aggregations)
       - Add redaction to sensitive fields
       - Define custom filters
+      - Define JSONB schemas for structured data columns
       - Add domain-specific validations (future)
       - Configure custom transformations (future)
 
@@ -61,6 +63,14 @@ defmodule SelectoMix.OverlayGenerator do
             name "Price Range"
             type :string
             description "Filter by price range"
+          end
+
+          # JSONB schema definitions with defjsonb_schema
+          defjsonb_schema :attributes do
+            %{
+              "color" => %{type: :string, required: true},
+              "size" => %{type: :string, enum: ["small", "medium", "large"]}
+            }
           end
 
       ## How It Works
@@ -86,6 +96,7 @@ defmodule SelectoMix.OverlayGenerator do
 
       # Uncomment and add custom filters
     #{filter_examples}
+#{jsonb_examples}
     end
     """
   end
@@ -290,5 +301,82 @@ defmodule SelectoMix.OverlayGenerator do
     |> String.split()
     |> Enum.map(&String.capitalize/1)
     |> Enum.join(" ")
+  end
+
+  defp generate_jsonb_schema_examples(config) do
+    columns = get_in(config, [:source, :columns]) || config[:field_types] || %{}
+
+    # Find JSONB columns
+    jsonb_columns =
+      columns
+      |> Enum.filter(fn {_field, col_config} ->
+        type = if is_map(col_config), do: Map.get(col_config, :type), else: col_config
+        type == :jsonb
+      end)
+      |> Enum.map(fn {field_name, _} -> field_name end)
+
+    if Enum.empty?(jsonb_columns) do
+      ""
+    else
+      examples =
+        jsonb_columns
+        |> Enum.map(&generate_jsonb_schema_example/1)
+        |> Enum.join("\n\n")
+
+      """
+
+        # ============================================================================
+        # JSONB Schema Definitions
+        # ============================================================================
+        #
+        # Define the structure of your JSONB columns to enable:
+        # - Type-safe filtering with dot notation (e.g., attributes.color = "red")
+        # - Validation on inserts/updates
+        # - GraphQL type generation
+        #
+        # Uncomment and customize the schema definitions below:
+
+      #{examples}
+      """
+    end
+  end
+
+  defp generate_jsonb_schema_example(field_name) do
+    field_str = to_string(field_name)
+
+    """
+      # defjsonb_schema :#{field_str} do
+      #   %{
+      #     # String field with validation
+      #     "color" => %{type: :string, required: true},
+      #
+      #     # Enum field with allowed values
+      #     "size" => %{type: :string, enum: ["small", "medium", "large", "xl"]},
+      #
+      #     # Numeric field with bounds
+      #     "weight" => %{type: :decimal, min: 0},
+      #
+      #     # Boolean field with default
+      #     "in_stock" => %{type: :boolean, default: true},
+      #
+      #     # Nested object
+      #     "dimensions" => %{
+      #       type: :object,
+      #       schema: %{
+      #         "length" => %{type: :decimal, required: true},
+      #         "width" => %{type: :decimal},
+      #         "height" => %{type: :decimal}
+      #       }
+      #     },
+      #
+      #     # Array of strings
+      #     "tags" => %{
+      #       type: :array,
+      #       items: %{type: :string}
+      #     }
+      #   }
+      # end
+    """
+    |> String.trim_trailing()
   end
 end

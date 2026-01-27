@@ -238,7 +238,16 @@ defmodule SelectoMix.DomainGenerator do
 
     columns_map = Enum.into(fields, %{}, fn field ->
       type = Map.get(field_types, field, :string)
-      {field, %{type: type}}
+      base_config = %{type: type}
+
+      # For JSONB columns, add a placeholder schema that can be customized in the overlay
+      config = if type == :jsonb do
+        Map.put(base_config, :schema, :stub)
+      else
+        base_config
+      end
+
+      {field, config}
     end)
 
     # Add polymorphic virtual column for each detected polymorphic association

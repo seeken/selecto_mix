@@ -253,6 +253,7 @@ defmodule SelectoMix.SchemaIntrospector do
       :time -> :time
       :utc_datetime -> :utc_datetime
       :naive_datetime -> :naive_datetime
+      :map -> :jsonb
       {:array, inner_type} -> {:array, map_ecto_type_to_selecto(inner_type)}
       {Ecto.Enum, _values} -> :string
       _ -> :string  # Default fallback
