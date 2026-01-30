@@ -784,7 +784,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       def render(assigns) do
         ~H\"\"\"
         <div class="container mx-auto px-4 py-8">
-          <h1 class="text-3xl font-bold mb-6">#{schema_name} Explorer</h1>
+          #{render_inline_header(schema_name, schema_underscore, opts)}
 
           <.live_component
             module={SelectoComponents.Form}
@@ -813,13 +813,41 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   defp render_live_view_html_template(schema, opts) do
     schema_name = schema |> to_string() |> String.split(".") |> List.last()
 
-    saved_views_section = if opts[:saved_views] do
+    saved_views_dropdown = if opts[:saved_views] do
       ~S"""
-      Saved Views:
-      <.intersperse :let={v} enum={@available_saved_views}>
-        <:separator>,</:separator>
-        <.link href={"#{@path}?saved_view=#{v}"}>[<%= v %>]</.link>
-      </.intersperse>
+      <div
+        :if={@available_saved_views != []}
+        id="saved-views-dropdown"
+        class="relative"
+        phx-update="ignore"
+        x-data="{ open: false }"
+        x-on:click.outside="open = false"
+      >
+        <button
+          type="button"
+          class="btn btn-sm btn-outline gap-1"
+          x-on:click="open = !open"
+        >
+          Saved Views
+          <svg class="w-4 h-4 transition-transform" x-bind:class="open && 'rotate-180'" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+          </svg>
+        </button>
+        <ul
+          class="absolute left-0 top-full mt-1 z-50 min-w-48 rounded-lg border border-base-300 bg-base-100 shadow-lg py-1"
+          x-show="open"
+          x-cloak
+        >
+          <li :for={v <- @available_saved_views}>
+            <.link
+              href={"#{@path}?saved_view=#{v}"}
+              class="block px-4 py-2 text-sm hover:bg-base-200 transition-colors"
+            >
+              {v}
+            </.link>
+          </li>
+        </ul>
+      </div>
       """
     else
       ""
@@ -835,11 +863,10 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     end
 
     """
-    <h1>#{schema_name} Data View</h1>
-
-    <.button phx-click="toggle_show_view_configurator">Toggle View Controller</.button>
-
-    #{saved_views_section}
+    <div class="flex items-center gap-4 mb-6">
+      <h1 class="text-3xl font-bold">#{schema_name} Data View</h1>
+      #{saved_views_dropdown}
+    </div>
 
     <div :if={@show_view_configurator}>
       <.live_component
@@ -866,6 +893,54 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       id="results"
     />
     """
+  end
+
+  defp render_inline_header(schema_name, _schema_underscore, opts) do
+    if opts[:saved_views] do
+      """
+      <div class="flex items-center gap-4 mb-6">
+            <h1 class="text-3xl font-bold">#{schema_name} Explorer</h1>
+
+            <div
+              :if={@available_saved_views != []}
+              id="saved-views-dropdown"
+              class="relative"
+              phx-update="ignore"
+              x-data="{ open: false }"
+              x-on:click.outside="open = false"
+            >
+              <button
+                type="button"
+                class="btn btn-sm btn-outline gap-1"
+                x-on:click="open = !open"
+              >
+                Saved Views
+                <svg class="w-4 h-4 transition-transform" x-bind:class="open && 'rotate-180'" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                </svg>
+              </button>
+              <ul
+                class="absolute left-0 top-full mt-1 z-50 min-w-48 rounded-lg border border-base-300 bg-base-100 shadow-lg py-1"
+                x-show="open"
+                x-cloak
+              >
+                <li :for={v <- @available_saved_views}>
+                  <.link
+                    href={\"\\#\\{@path\\}?saved_view=\\#\\{v\\}\"}
+                    class="block px-4 py-2 text-sm hover:bg-base-200 transition-colors"
+                  >
+                    {v}
+                  </.link>
+                </li>
+              </ul>
+            </div>
+          </div>
+      """
+    else
+      """
+      <h1 class="text-3xl font-bold mb-6">#{schema_name} Explorer</h1>
+      """
+    end
   end
 
   defp get_app_name_from_schema_parts(schema_parts) do
