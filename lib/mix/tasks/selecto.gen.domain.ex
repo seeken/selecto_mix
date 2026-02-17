@@ -53,7 +53,6 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
   For each schema, generates:
   - `schemas/SCHEMA_NAME_domain.ex` - Selecto domain configuration
-  - `schemas/SCHEMA_NAME_queries.ex` - Common query helpers (optional)
 
   With `--live` flag, additionally generates:
   - `live/SCHEMA_NAME_live.ex` - LiveView module
@@ -365,11 +364,9 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
     Enum.each(schemas, fn schema ->
       domain_file = domain_file_path(output_dir, schema)
-      queries_file = queries_file_path(output_dir, schema)
 
       IO.puts("  • #{schema}")
       IO.puts("    → #{domain_file}")
-      IO.puts("    → #{queries_file}")
 
       if opts[:live] do
         schema_parts = schema |> to_string() |> String.split(".")
@@ -393,14 +390,11 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
   defp generate_domain_for_schema(igniter, schema, output_dir, opts) do
     domain_file = domain_file_path(output_dir, schema)
-    _queries_file = queries_file_path(output_dir, schema)
 
     igniter_with_domain = igniter
     |> ensure_directory_exists(output_dir)
     |> generate_domain_file(schema, domain_file, opts)
     |> generate_overlay_file(schema, domain_file, opts)
-    # Skip queries file generation for now due to backslash escaping issue
-    # |> generate_queries_file(schema, queries_file, opts)
     |> add_success_message("Generated Selecto domain for #{schema}")
 
     # Generate LiveView files if requested
@@ -415,11 +409,6 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   defp domain_file_path(output_dir, schema) do
     filename = schema |> to_string() |> String.split(".") |> List.last() |> Macro.underscore()
     Path.join([output_dir, "#{filename}_domain.ex"])
-  end
-
-  defp queries_file_path(output_dir, schema) do
-    filename = schema |> to_string() |> String.split(".") |> List.last() |> Macro.underscore()
-    Path.join([output_dir, "#{filename}_queries.ex"])
   end
 
   defp ensure_directory_exists(igniter, dir_path) do
@@ -998,12 +987,12 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     igniter
     |> Igniter.add_notice("""
 
-    To integrate SelectoComponents assets (if not already done), run:
+      To integrate SelectoComponents assets (if not already done), run:
         mix selecto.components.integrate
 
-    Or manually configure:
-      1. Import hooks in assets/js/app.js
-      2. Add @source directive in assets/css/app.css
+      Or manually configure:
+        1. Import hooks in assets/js/app.js
+        2. Add @source directive in assets/css/app.css
       """)
   end
 

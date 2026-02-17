@@ -11,7 +11,7 @@ SelectoMix provides utilities to automatically generate Selecto domain configura
 - 🔄 **Customization Preservation** - Maintains user modifications when regenerating files
 - 📈 **Incremental Updates** - Detects schema changes and updates only what's necessary  
 - 🚀 **Igniter Integration** - Uses modern Elixir project modification tools
-- 🧪 **Query Helpers** - Generates common query functions and patterns
+- ✅ **Parameterized Join Validation** - Validates parameterized join definitions and field references
 
 ## Installation
 
@@ -20,12 +20,18 @@ Add `selecto_mix` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:selecto_mix, "~> 0.2.0"},
-    {:selecto, "~> 0.2.0"},
+    {:selecto_mix, "~> 0.3.0"},
+    {:selecto, "~> 0.3.0"},
     {:ecto, "~> 3.10"}
   ]
 end
 ```
+
+## Release Status (0.3.x)
+
+- **Stable**: Domain generation (`mix selecto.gen.domain`), overlay generation/update flows, and customization preservation.
+- **Experimental**: `mix selecto.validate.parameterized_joins` validation coverage is implemented and actively evolving as additional edge cases are standardized.
+- **Not Included**: `selecto_mix` does not generate `*_queries.ex` runtime query helper modules in the current `0.3.x` scope.
 
 ## Quick Start
 
@@ -68,15 +74,6 @@ Complete Selecto domain configuration with:
 - Suggested default selections and filters
 - Customization markers for user modifications
 - Documentation and usage examples
-
-### Query Helpers (`*_queries.ex`)
-Common query functions including:
-- `all/2` - Get all records with optional filters
-- `find/2` - Find by primary key
-- `search/3` - Search with multiple filters
-- `count/2` - Count records
-- `paginate/3` - Paginated results
-- Custom scope functions
 
 ## Usage Examples
 
@@ -187,10 +184,10 @@ end
 defmodule MyAppWeb.PostLive.Index do
   use MyAppWeb, :live_view
   
-  alias MyApp.SelectoDomains.{PostDomain, PostQueries}
+  alias MyApp.SelectoDomains.PostDomain
   
   def handle_event("search", %{"q" => query}, socket) do
-    {:ok, {posts, columns, aliases}} = PostQueries.search_text(MyApp.Repo, query)
+    {:ok, {posts, _columns, _aliases}} = PostDomain.search(MyApp.Repo, %{"title" => query})
     {:noreply, assign(socket, posts: posts)}
   end
 end
@@ -215,4 +212,3 @@ end
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-

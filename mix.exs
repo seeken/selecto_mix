@@ -23,6 +23,7 @@ defmodule SelectoMix.MixProject do
     [
       {:igniter, "~> 0.6"},
       {:ecto, "~> 3.10"},
+      {:postgrex, ">= 0.0.0", optional: true},
       {:jason, "~> 1.4"},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false}
     ]

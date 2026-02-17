@@ -120,10 +120,10 @@ defmodule Mix.Tasks.Selecto.AddTimeouts do
   end
 
   @impl Igniter.Mix.Task
-  def igniter(igniter, argv) do
-    options = info(argv, nil).defaults
-    {opts, _} = OptionParser.parse!(argv, switches: info(argv, nil).schema, aliases: info(argv, nil).aliases)
-    options = Keyword.merge(options, opts)
+  def igniter(igniter) do
+    options =
+      info([], nil).defaults
+      |> Keyword.merge(igniter.args.options)
 
     app_name = Igniter.Project.Application.app_name(igniter)
     app_module = Igniter.Project.Module.module_name(igniter, app_name)

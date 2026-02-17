@@ -46,7 +46,7 @@ defmodule SelectoMix.Introspector.Postgres do
     ORDER BY table_name
     """
 
-    case Postgrex.query(conn, query, [schema]) do
+    case query(conn, query, [schema]) do
       {:ok, %{rows: rows}} ->
         tables = Enum.map(rows, fn [table_name] -> table_name end)
         {:ok, tables}
@@ -169,7 +169,7 @@ defmodule SelectoMix.Introspector.Postgres do
     ORDER BY ordinal_position
     """
 
-    case Postgrex.query(conn, query, [schema, table_name]) do
+    case query(conn, query, [schema, table_name]) do
       {:ok, %{rows: rows, columns: _cols}} ->
         columns =
           rows
@@ -217,7 +217,7 @@ defmodule SelectoMix.Introspector.Postgres do
     ORDER BY a.attnum
     """
 
-    case Postgrex.query(conn, query, [schema, table_name]) do
+    case query(conn, query, [schema, table_name]) do
       {:ok, %{rows: []}} ->
         {:ok, nil}
 
@@ -271,7 +271,7 @@ defmodule SelectoMix.Introspector.Postgres do
       AND tc.table_name = $2
     """
 
-    case Postgrex.query(conn, query, [schema, table_name]) do
+    case query(conn, query, [schema, table_name]) do
       {:ok, %{rows: rows}} ->
         foreign_keys =
           rows
@@ -318,7 +318,7 @@ defmodule SelectoMix.Introspector.Postgres do
     ORDER BY i.relname, a.attnum
     """
 
-    case Postgrex.query(conn, query, [schema, table_name]) do
+    case query(conn, query, [schema, table_name]) do
       {:ok, %{rows: rows}} ->
         indexes =
           rows
@@ -360,7 +360,7 @@ defmodule SelectoMix.Introspector.Postgres do
     ORDER BY e.enumsortorder
     """
 
-    case Postgrex.query(conn, query, [enum_type_name]) do
+    case query(conn, query, [enum_type_name]) do
       {:ok, %{rows: []}} ->
         {:error, :enum_not_found}
 
@@ -370,6 +370,14 @@ defmodule SelectoMix.Introspector.Postgres do
 
       {:error, error} ->
         {:error, {:enum_query_failed, error}}
+    end
+  end
+
+  defp query(conn, sql, params) do
+    if Code.ensure_loaded?(Postgrex) do
+      apply(Postgrex, :query, [conn, sql, params])
+    else
+      {:error, :postgrex_not_available}
     end
   end
 
