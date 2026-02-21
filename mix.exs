@@ -35,9 +35,9 @@ defmodule SelectoMix.MixProject do
 
   defp package do
     [
-      maintainers: ["Selecto Team"],
+      maintainers: ["Chris Rohlfs"],
       licenses: ["MIT"],
-      links: %{"GitHub" => "https://github.com/selectodb/selecto_mix"}
+      links: %{"GitHub" => "https://github.com/seeken/selecto_mix"}
     ]
   end
 end
