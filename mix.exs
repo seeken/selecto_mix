@@ -30,7 +30,7 @@ defmodule SelectoMix.MixProject do
   end
 
   defp description do
-    "Mix tasks and tooling for automatic Selecto configuration generation from Ecto schemas"
+    "ALPHA: Mix tasks for Selecto domain/config generation from Ecto schemas"
   end
 
   defp package do

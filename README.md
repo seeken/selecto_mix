@@ -1,5 +1,10 @@
 # SelectoMix
 
+> ⚠️ **Alpha Quality Software**
+>
+> `selecto_mix` is under active development. Expect breaking changes, behavior
+> changes, incomplete features, and potentially major bugs.
+
 Mix tasks and tooling for automatic Selecto configuration generation from Ecto schemas.
 
 SelectoMix provides utilities to automatically generate Selecto domain configurations from your existing Ecto schemas, preserving user customizations across regenerations and supporting incremental updates when schemas change.
@@ -29,8 +34,8 @@ end
 
 ## Release Status (0.3.x)
 
-- **Stable**: Domain generation (`mix selecto.gen.domain`), overlay generation/update flows, and customization preservation.
-- **Experimental**: `mix selecto.validate.parameterized_joins` validation coverage is implemented and actively evolving as additional edge cases are standardized.
+- **Alpha**: Domain generation (`mix selecto.gen.domain`), overlay generation/update flows, and customization preservation are usable but not yet stable.
+- **High Risk / Experimental**: `mix selecto.validate.parameterized_joins` coverage is implemented and actively evolving as additional edge cases are standardized.
 - **Not Included**: `selecto_mix` does not generate `*_queries.ex` runtime query helper modules in the current `0.3.x` scope.
 
 ## Quick Start
