@@ -9,6 +9,12 @@ Mix tasks and tooling for automatic Selecto configuration generation from Ecto s
 
 SelectoMix provides utilities to automatically generate Selecto domain configurations from your existing Ecto schemas, preserving user customizations across regenerations and supporting incremental updates when schemas change.
 
+## Livebooks, Tutorials, and Demo
+
+- [selecto-elixir/selecto_livebooks](https://github.com/selecto-elixir/selecto_livebooks) contains a Livebook that walks through many Selecto query features.
+- [seeken/selecto_northwind](https://github.com/seeken/selecto_northwind) contains tutorials for building Selecto queries and workflows.
+- [testselecto.fly.dev](https://testselecto.fly.dev) runs the `selecto_test` app as a hosted Selecto demo.
+
 ## Features
 
 - 🔍 **Automatic Schema Discovery** - Finds and introspects all Ecto schemas in your project
