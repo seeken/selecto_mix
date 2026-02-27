@@ -75,7 +75,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   """
 
   use Igniter.Mix.Task
-  
+
   # alias SelectoMix.{AdapterDetector, CLIParser, JoinAnalyzer}
   # alias SelectoMix.{SchemaIntrospector, ConfigMerger, DomainGenerator}
 
@@ -83,7 +83,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   def info(_argv, _composing_task) do
     %Igniter.Mix.Task.Info{
       group: :selecto,
-      example: "mix selecto.gen.domain Blog.Post --include-associations --expand-schemas categories",
+      example:
+        "mix selecto.gen.domain Blog.Post --include-associations --expand-schemas categories",
       positional: [:schemas],
       schema: [
         all: :boolean,
@@ -131,11 +132,12 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     # Get the schemas positional argument
     schemas_arg = Map.get(positional, :schemas, "")
 
-    schemas = cond do
-      parsed_args[:all] -> discover_all_schemas(igniter)
-      schemas_arg != "" -> parse_schema_patterns(schemas_arg)
-      true -> []
-    end
+    schemas =
+      cond do
+        parsed_args[:all] -> discover_all_schemas(igniter)
+        schemas_arg != "" -> parse_schema_patterns(schemas_arg)
+        true -> []
+      end
 
     exclude_patterns = parse_exclude_patterns(parsed_args[:exclude] || "")
     schemas = Enum.reject(schemas, &schema_matches_exclude?(&1, exclude_patterns))
@@ -163,9 +165,11 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       """)
     else
       # Add expand_schemas and expand_modes to parsed_args
-      updated_args = parsed_args
+      updated_args =
+        parsed_args
         |> Map.put(:expand_schemas_list, expand_schemas)
         |> Map.put(:expand_modes, expand_modes)
+
       process_schemas(validated_igniter, schemas, updated_args)
     end
   end
@@ -177,6 +181,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       parsed_args[:saved_views] && !parsed_args[:live] ->
         igniter
         |> Igniter.add_warning("--saved-views flag requires --live flag to be set")
+
       true ->
         igniter
     end
@@ -187,7 +192,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     igniter
     |> Igniter.Project.Module.find_all_matching_modules(fn module_name ->
       String.contains?(to_string(module_name), ["Schema", "Store"]) or
-      module_uses_ecto_schema?(igniter, module_name)
+        module_uses_ecto_schema?(igniter, module_name)
     end)
   end
 
@@ -200,9 +205,13 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
             # This is simplified - in real implementation would parse AST
             # to check for `use Ecto.Schema`
             true
-          _ -> false
+
+          _ ->
+            false
         end
-      {_igniter, false} -> false
+
+      {_igniter, false} ->
+        false
     end
   end
 
@@ -258,15 +267,20 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       mode_type = mode |> to_string() |> String.replace("expand_", "") |> String.to_atom()
 
       case Map.get(parsed_args, mode) do
-        nil -> acc
+        nil ->
+          acc
+
         specs when is_list(specs) ->
           # :keep option returns a list of all occurrences
           Enum.reduce(specs, acc, fn spec, mode_acc ->
             parse_expand_mode_spec(spec, mode_type, mode_acc)
           end)
+
         spec when is_binary(spec) ->
           parse_expand_mode_spec(spec, mode_type, acc)
-        _ -> acc
+
+        _ ->
+          acc
       end
     end)
   end
@@ -280,17 +294,21 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
             case String.split(fields, ",") do
               [type_field, id_field] ->
                 entity_types = String.split(types, ",") |> Enum.map(&String.trim/1)
+
                 poly_config = %{
                   field_name: String.trim(field_name),
                   type_field: String.trim(type_field),
                   id_field: String.trim(id_field),
                   entity_types: entity_types
                 }
+
                 # Use field_name as the key
                 Map.put(acc, String.trim(field_name), {:polymorphic, poly_config})
+
               _ ->
                 acc
             end
+
           _ ->
             acc
         end
@@ -302,6 +320,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
             # Store both singular and plural forms to match flexibly
             table_key = String.trim(table_name)
             Map.put(acc, table_key, {mode_type, String.trim(display_field)})
+
           _ ->
             # Invalid format, skip
             acc
@@ -311,6 +330,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
   defp schema_matches_exclude?(schema, exclude_patterns) do
     schema_str = to_string(schema)
+
     Enum.any?(exclude_patterns, fn pattern ->
       String.contains?(schema_str, pattern)
     end)
@@ -325,11 +345,12 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     else
       # Generate saved views implementation FIRST if requested and not already present
       # This must happen before domain generation to avoid circular compilation dependencies
-      igniter_with_saved_views = if opts[:saved_views] do
-        generate_saved_views_if_needed(igniter, opts)
-      else
-        igniter
-      end
+      igniter_with_saved_views =
+        if opts[:saved_views] do
+          generate_saved_views_if_needed(igniter, opts)
+        else
+          igniter
+        end
 
       # Now generate domain files
       Enum.reduce(schemas, igniter_with_saved_views, fn schema, acc_igniter ->
@@ -343,7 +364,9 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       nil ->
         app_name = Igniter.Project.Application.app_name(igniter)
         "lib/#{app_name}/selecto_domains"
-      custom -> custom
+
+      custom ->
+        custom
     end
   end
 
@@ -391,11 +414,12 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   defp generate_domain_for_schema(igniter, schema, output_dir, opts) do
     domain_file = domain_file_path(output_dir, schema)
 
-    igniter_with_domain = igniter
-    |> ensure_directory_exists(output_dir)
-    |> generate_domain_file(schema, domain_file, opts)
-    |> generate_overlay_file(schema, domain_file, opts)
-    |> add_success_message("Generated Selecto domain for #{schema}")
+    igniter_with_domain =
+      igniter
+      |> ensure_directory_exists(output_dir)
+      |> generate_domain_file(schema, domain_file, opts)
+      |> generate_overlay_file(schema, domain_file, opts)
+      |> add_success_message("Generated Selecto domain for #{schema}")
 
     # Generate LiveView files if requested
     if opts[:live] do
@@ -414,6 +438,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   defp ensure_directory_exists(igniter, dir_path) do
     # Use Igniter to ensure directory exists
     gitkeep_path = Path.join(dir_path, ".gitkeep")
+
     if File.exists?(gitkeep_path) do
       igniter
     else
@@ -428,54 +453,60 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     domain_config = SelectoMix.SchemaIntrospector.introspect_schema(schema, opts_list)
 
     # Expand associated schemas if requested
-    expanded_config = if opts[:expand_schemas_list] && is_list(opts[:expand_schemas_list]) do
-      domain_config
-      |> expand_associated_schemas(opts[:expand_schemas_list])
-      |> Map.put(:expand_schemas_list, opts[:expand_schemas_list])
-    else
-      domain_config
-    end
+    expanded_config =
+      if opts[:expand_schemas_list] && is_list(opts[:expand_schemas_list]) do
+        domain_config
+        |> expand_associated_schemas(opts[:expand_schemas_list])
+        |> Map.put(:expand_schemas_list, opts[:expand_schemas_list])
+      else
+        domain_config
+      end
 
     # Add expand_modes to config if present
-    config_with_modes = if opts[:expand_modes] && map_size(opts[:expand_modes]) > 0 do
-      Map.put(expanded_config, :expand_modes, opts[:expand_modes])
-    else
-      expanded_config
-    end
+    config_with_modes =
+      if opts[:expand_modes] && map_size(opts[:expand_modes]) > 0 do
+        Map.put(expanded_config, :expand_modes, opts[:expand_modes])
+      else
+        expanded_config
+      end
 
     # Extract polymorphic config if present (for direct schema generation, not associations)
-    config_with_poly = if opts[:expand_modes] do
-      poly_config = Enum.find_value(opts[:expand_modes], fn
-        {_key, {:polymorphic, config}} -> config
-        _ -> nil
-      end)
+    config_with_poly =
+      if opts[:expand_modes] do
+        poly_config =
+          Enum.find_value(opts[:expand_modes], fn
+            {_key, {:polymorphic, config}} -> config
+            _ -> nil
+          end)
 
-      if poly_config do
-        Map.put(config_with_modes, :polymorphic_config, poly_config)
+        if poly_config do
+          Map.put(config_with_modes, :polymorphic_config, poly_config)
+        else
+          config_with_modes
+        end
       else
         config_with_modes
       end
-    else
-      config_with_modes
-    end
 
-    merged_config = if opts[:force] do
-      config_with_poly
-    else
-      SelectoMix.ConfigMerger.merge_with_existing(config_with_poly, existing_content)
-    end
+    merged_config =
+      if opts[:force] do
+        config_with_poly
+      else
+        SelectoMix.ConfigMerger.merge_with_existing(config_with_poly, existing_content)
+      end
 
     # Add schema_module to opts for saved views context inference
     opts_with_schema = Map.put(opts, :schema_module, schema)
 
-    content = SelectoMix.DomainGenerator.generate_domain_file(schema, merged_config, opts_with_schema)
+    content =
+      SelectoMix.DomainGenerator.generate_domain_file(schema, merged_config, opts_with_schema)
 
     # For now, delete the existing file and create a new one
     # This is a workaround until we figure out the proper Igniter API
     if File.exists?(file_path) do
       File.rm!(file_path)
     end
-    
+
     Igniter.create_new_file(igniter, file_path, content)
   end
 
@@ -506,14 +537,16 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       domain_module_name = get_domain_module_name_from_schema(schema)
 
       # Generate overlay content
-      content = SelectoMix.OverlayGenerator.generate_overlay_file(
-        domain_module_name,
-        domain_config,
-        opts
-      )
+      content =
+        SelectoMix.OverlayGenerator.generate_overlay_file(
+          domain_module_name,
+          domain_config,
+          opts
+        )
 
       # Ensure overlays directory exists
       overlay_dir = Path.dirname(overlay_path)
+
       igniter
       |> ensure_directory_exists(overlay_dir)
       |> Igniter.create_new_file(overlay_path, content)
@@ -523,9 +556,12 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
   defp get_domain_module_name_from_schema(schema) do
     base_name = Module.split(schema) |> List.last()
-    app_name = Application.get_env(:selecto_mix, :app_name) ||
-               infer_app_name_from_schema(schema) ||
-               "MyApp"
+
+    app_name =
+      Application.get_env(:selecto_mix, :app_name) ||
+        infer_app_name_from_schema(schema) ||
+        "MyApp"
+
     "#{app_name}.SelectoDomains.#{base_name}Domain"
   end
 
@@ -544,52 +580,60 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       {:error, _reason} -> nil
     end
   end
-  
+
   defp expand_associated_schemas(domain_config, expand_list) do
     associations = domain_config[:associations] || %{}
 
-    expanded_schemas = Enum.reduce(expand_list, %{}, fn schema_name, acc ->
-      # Find matching association by name or by related schema module
-      matching_assoc = Enum.find(associations, fn {assoc_name, assoc_data} ->
-        # Match by association name (e.g., "tags", "category")
-        assoc_name_match = String.downcase(to_string(assoc_name)) == String.downcase(schema_name)
+    expanded_schemas =
+      Enum.reduce(expand_list, %{}, fn schema_name, acc ->
+        # Find matching association by name or by related schema module
+        matching_assoc =
+          Enum.find(associations, fn {assoc_name, assoc_data} ->
+            # Match by association name (e.g., "tags", "category")
+            assoc_name_match =
+              String.downcase(to_string(assoc_name)) == String.downcase(schema_name)
 
-        # Match by related schema module (e.g., "SelectoNorthwind.Catalog.Tag")
-        related_schema = assoc_data[:related_schema]
-        schema_module_match = related_schema &&
-          (to_string(related_schema) == schema_name ||
-           String.ends_with?(to_string(related_schema), ".#{schema_name}"))
+            # Match by related schema module (e.g., "SelectoNorthwind.Catalog.Tag")
+            related_schema = assoc_data[:related_schema]
 
-        assoc_name_match || schema_module_match
-      end)
-      
-      case matching_assoc do
-        {assoc_name, assoc_data} ->
-          # Get the related schema module
-          related_schema = assoc_data[:related_schema]
-          if related_schema && Code.ensure_loaded?(related_schema) do
-            # Introspect the related schema
-            related_config = SelectoMix.SchemaIntrospector.introspect_schema(related_schema, [])
-            
-            # Build expanded schema config
-            # We don't include associations in expanded schemas to avoid complexity
-            # and circular reference issues
-            Map.put(acc, assoc_name, %{
-              source_table: related_config[:table_name],
-              primary_key: related_config[:primary_key],
-              fields: related_config[:fields],
-              redact_fields: [],
-              columns: related_config[:field_types] || %{},
-              associations: %{}  # No associations in expanded schemas
-            })
-          else
+            schema_module_match =
+              related_schema &&
+                (to_string(related_schema) == schema_name ||
+                   String.ends_with?(to_string(related_schema), ".#{schema_name}"))
+
+            assoc_name_match || schema_module_match
+          end)
+
+        case matching_assoc do
+          {assoc_name, assoc_data} ->
+            # Get the related schema module
+            related_schema = assoc_data[:related_schema]
+
+            if related_schema && Code.ensure_loaded?(related_schema) do
+              # Introspect the related schema
+              related_config = SelectoMix.SchemaIntrospector.introspect_schema(related_schema, [])
+
+              # Build expanded schema config
+              # We don't include associations in expanded schemas to avoid complexity
+              # and circular reference issues
+              Map.put(acc, assoc_name, %{
+                source_table: related_config[:table_name],
+                primary_key: related_config[:primary_key],
+                fields: related_config[:fields],
+                redact_fields: [],
+                columns: related_config[:field_types] || %{},
+                # No associations in expanded schemas
+                associations: %{}
+              })
+            else
+              acc
+            end
+
+          nil ->
             acc
-          end
-        nil ->
-          acc
-      end
-    end)
-    
+        end
+      end)
+
     # Add expanded schemas to the domain config
     Map.put(domain_config, :expanded_schemas, expanded_schemas)
   end
@@ -618,18 +662,24 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       case File.exists?(saved_view_context_path) do
         true ->
           igniter
+
         false ->
           # Generate saved views implementation before the domain
           # This must happen in a separate Mix task to avoid circular compilation issues
           app_name_string = to_string(Macro.camelize(to_string(app_name)))
 
           IO.puts("\nGenerating SavedViews implementation...")
-          case System.cmd("mix", ["selecto.gen.saved_views", app_name_string, "--yes"], stderr_to_stdout: true) do
+
+          case System.cmd("mix", ["selecto.gen.saved_views", app_name_string, "--yes"],
+                 stderr_to_stdout: true
+               ) do
             {output, 0} ->
               IO.puts(output)
               igniter
+
             {output, _exit_code} ->
               IO.puts(output)
+
               igniter
               |> Igniter.add_warning("""
               Failed to auto-generate saved views. Please run manually:
@@ -679,10 +729,12 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     # Extract app name from the schema module
     schema_parts = schema |> to_string() |> String.split(".")
     # Remove "Elixir" prefix if present
-    clean_parts = case schema_parts do
-      ["Elixir" | rest] -> rest
-      parts -> parts
-    end
+    clean_parts =
+      case schema_parts do
+        ["Elixir" | rest] -> rest
+        parts -> parts
+      end
+
     app_name = List.first(clean_parts)
     schema_name = List.last(clean_parts)
     schema_underscore = Macro.underscore(schema_name)
@@ -695,31 +747,32 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     domain_module = "#{app_name}.SelectoDomains.#{schema_name}Domain"
     web_module = "#{app_name}Web"
 
-    saved_views_code = if opts[:saved_views] do
-      """
-        saved_views = #{domain_module}.get_view_names(path)
+    saved_views_code =
+      if opts[:saved_views] do
+        """
+          saved_views = #{domain_module}.get_view_names(path)
 
-        socket =
-          assign(socket,
-            show_view_configurator: false,
-            views: views,
-            my_path: path,
-            saved_view_module: #{domain_module},
-            saved_view_context: path,
-            path: path,
-            available_saved_views: saved_views
-          )
-      """
-    else
-      """
-        socket =
-          assign(socket,
-            show_view_configurator: false,
-            views: views,
-            my_path: path
-          )
-      """
-    end
+          socket =
+            assign(socket,
+              show_view_configurator: false,
+              views: views,
+              my_path: path,
+              saved_view_module: #{domain_module},
+              saved_view_context: path,
+              path: path,
+              available_saved_views: saved_views
+            )
+        """
+      else
+        """
+          socket =
+            assign(socket,
+              show_view_configurator: false,
+              views: views,
+              my_path: path
+            )
+        """
+      end
 
     """
     defmodule #{web_module}.#{schema_name}Live do
@@ -802,54 +855,31 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   defp render_live_view_html_template(schema, opts) do
     schema_name = schema |> to_string() |> String.split(".") |> List.last()
 
-    saved_views_dropdown = if opts[:saved_views] do
-      ~S"""
-      <div
-        :if={@available_saved_views != []}
-        id="saved-views-dropdown"
-        class="relative"
-        phx-update="ignore"
-        x-data="{ open: false }"
-        x-on:click.outside="open = false"
-      >
-        <button
-          type="button"
-          class="btn btn-sm btn-outline gap-1"
-          x-on:click="open = !open"
-        >
-          Saved Views
-          <svg class="w-4 h-4 transition-transform" x-bind:class="open && 'rotate-180'" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-          </svg>
-        </button>
-        <ul
-          class="absolute left-0 top-full mt-1 z-50 min-w-48 rounded-lg border border-base-300 bg-base-100 shadow-lg py-1"
-          x-show="open"
-          x-cloak
-        >
-          <li :for={v <- @available_saved_views}>
-            <.link
-              href={"#{@path}?saved_view=#{v}"}
-              class="block px-4 py-2 text-sm hover:bg-base-200 transition-colors"
-            >
-              {v}
-            </.link>
-          </li>
-        </ul>
-      </div>
-      """
-    else
-      ""
-    end
+    saved_views_dropdown =
+      if opts[:saved_views] do
+        ~S"""
+        <details :if={@available_saved_views != []} id="saved-views-dropdown" class="dropdown">
+          <summary class="btn btn-sm btn-outline gap-1">Saved Views</summary>
+          <ul class="menu dropdown-content z-[1] mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-2 shadow">
+            <li :for={v <- @available_saved_views}>
+              <.link href={"#{@path}?saved_view=#{v}"}>{v}</.link>
+            </li>
+          </ul>
+        </details>
+        """
+      else
+        ""
+      end
 
-    saved_view_assigns = if opts[:saved_views] do
-      """
-          saved_view_module={@saved_view_module}
-          saved_view_context={@saved_view_context}
-      """
-    else
-      ""
-    end
+    saved_view_assigns =
+      if opts[:saved_views] do
+        """
+            saved_view_module={@saved_view_module}
+            saved_view_context={@saved_view_context}
+        """
+      else
+        ""
+      end
 
     """
     <div class="flex items-center gap-4 mb-6">
@@ -890,39 +920,14 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       <div class="flex items-center gap-4 mb-6">
             <h1 class="text-3xl font-bold">#{schema_name} Explorer</h1>
 
-            <div
-              :if={@available_saved_views != []}
-              id="saved-views-dropdown"
-              class="relative"
-              phx-update="ignore"
-              x-data="{ open: false }"
-              x-on:click.outside="open = false"
-            >
-              <button
-                type="button"
-                class="btn btn-sm btn-outline gap-1"
-                x-on:click="open = !open"
-              >
-                Saved Views
-                <svg class="w-4 h-4 transition-transform" x-bind:class="open && 'rotate-180'" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-                </svg>
-              </button>
-              <ul
-                class="absolute left-0 top-full mt-1 z-50 min-w-48 rounded-lg border border-base-300 bg-base-100 shadow-lg py-1"
-                x-show="open"
-                x-cloak
-              >
+            <details :if={@available_saved_views != []} id="saved-views-dropdown" class="dropdown">
+              <summary class="btn btn-sm btn-outline gap-1">Saved Views</summary>
+              <ul class="menu dropdown-content z-[1] mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-2 shadow">
                 <li :for={v <- @available_saved_views}>
-                  <.link
-                    href={\"\\#\\{@path\\}?saved_view=\\#\\{v\\}\"}
-                    class="block px-4 py-2 text-sm hover:bg-base-200 transition-colors"
-                  >
-                    {v}
-                  </.link>
+                  <.link href={\"\#{@path}?saved_view=\#{v}\"}>{v}</.link>
                 </li>
               </ul>
-            </div>
+            </details>
           </div>
       """
     else
@@ -935,28 +940,36 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   defp get_app_name_from_schema_parts(schema_parts) do
     # For module names like Elixir.SelectoTest.Store.Film, extract "selecto_test"
     # Skip "Elixir" prefix if present
-    relevant_parts = case schema_parts do
-      ["Elixir" | rest] -> rest
-      parts -> parts
-    end
+    relevant_parts =
+      case schema_parts do
+        ["Elixir" | rest] -> rest
+        parts -> parts
+      end
 
-    app_name = case List.first(relevant_parts) do
-      name when is_binary(name) ->
-        name |> Macro.underscore()
-      name when is_atom(name) ->
-        name |> to_string() |> Macro.underscore()
-      _ -> "app"
-    end
+    app_name =
+      case List.first(relevant_parts) do
+        name when is_binary(name) ->
+          name |> Macro.underscore()
+
+        name when is_atom(name) ->
+          name |> to_string() |> Macro.underscore()
+
+        _ ->
+          "app"
+      end
+
     app_name
   end
 
   defp add_route_suggestion(igniter, schema, opts) do
     schema_parts = schema |> to_string() |> String.split(".")
     # Remove Elixir prefix if present
-    clean_parts = case schema_parts do
-      ["Elixir" | rest] -> rest
-      parts -> parts
-    end
+    clean_parts =
+      case schema_parts do
+        ["Elixir" | rest] -> rest
+        parts -> parts
+      end
+
     app_name = List.first(clean_parts)
     schema_name = List.last(clean_parts)
     schema_underscore = Macro.underscore(schema_name)
@@ -987,13 +1000,13 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     igniter
     |> Igniter.add_notice("""
 
-      To integrate SelectoComponents assets (if not already done), run:
-        mix selecto.components.integrate
+    To integrate SelectoComponents assets (if not already done), run:
+      mix selecto.components.integrate
 
-      Or manually configure:
-        1. Import hooks in assets/js/app.js
-        2. Add @source directive in assets/css/app.css
-      """)
+    Or manually configure:
+      1. Import hooks in assets/js/app.js
+      2. Add @source directive in assets/css/app.css
+    """)
   end
 
   defp get_selecto_components_location() do
