@@ -37,7 +37,7 @@ defmodule SelectoMix.MixProject do
     [
       maintainers: ["Chris Rohlfs"],
       licenses: ["MIT"],
-      links: %{"GitHub" => "https://github.com/seeken/selecto_mix"}
+      links: %{"GitHub" => "https://github.com/selecto-elixir/selecto_mix"}
     ]
   end
 end
