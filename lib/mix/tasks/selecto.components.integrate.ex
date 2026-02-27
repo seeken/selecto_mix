@@ -50,8 +50,8 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
     Mix.shell().info("🔧 SelectoComponents Asset Integration")
     Mix.shell().info("=====================================\n")
 
-    # Check if Chart.js is installed
-    check_chart_js_installation()
+    # Check if Chart.js/Alpine.js are configured in package.json
+    check_chart_js_installation(opts)
 
     app_js_status = integrate_app_js(opts)
     app_css_status = integrate_app_css(opts)
@@ -62,18 +62,25 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
       report_integration_status(app_js_status, app_css_status)
 
       if app_js_status == :updated || app_css_status == :updated do
-        Mix.shell().info("""
-
-        ✅ Integration complete!
-
-        Run `mix assets.build` to compile your assets.
-        """)
+        Mix.shell().info("\n✅ Integration complete!")
       end
+
+      print_next_steps()
     end
   end
 
-  defp check_chart_js_installation do
+  defp print_next_steps do
+    Mix.shell().info("""
+
+    Next steps:
+      1. Run `cd assets && npm install`
+      2. Run `mix assets.build`
+    """)
+  end
+
+  defp check_chart_js_installation(opts) do
     package_json_path = "assets/package.json"
+    check_only? = opts[:check] == true
 
     if File.exists?(package_json_path) do
       case File.read(package_json_path) do
@@ -84,12 +91,17 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
 
           if needs_chart || needs_alpine do
             # Add missing dependencies to existing package.json
-            add_dependencies_to_package_json(
-              package_json_path,
-              content,
-              needs_chart,
-              needs_alpine
-            )
+            if check_only? do
+              if needs_chart, do: Mix.shell().info("⚠ Chart.js missing from package.json")
+              if needs_alpine, do: Mix.shell().info("⚠ Alpine.js missing from package.json")
+            else
+              add_dependencies_to_package_json(
+                package_json_path,
+                content,
+                needs_chart,
+                needs_alpine
+              )
+            end
           else
             Mix.shell().info("✓ Chart.js: Already configured in package.json")
             Mix.shell().info("✓ Alpine.js: Already configured in package.json")
@@ -99,8 +111,12 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
           :ok
       end
     else
-      # Create a minimal package.json with Chart.js and Alpine.js
-      create_package_json_with_dependencies(package_json_path)
+      if check_only? do
+        Mix.shell().info("⚠ assets/package.json missing (would create with Chart.js + Alpine.js)")
+      else
+        # Create a minimal package.json with Chart.js and Alpine.js
+        create_package_json_with_dependencies(package_json_path)
+      end
     end
   end
 
@@ -180,9 +196,16 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
 
     case File.read(app_js_path) do
       {:ok, content} ->
+        has_legacy_selecto_hooks_import =
+          String.contains?(content, "/selecto_components/assets/js/hooks")
+
+        has_local_selecto_hooks_import =
+          String.contains?(content, "import selectoHooks from \"./selecto_hooks\"")
+
         cond do
           String.contains?(content, "phoenix-colocated/selecto_components") &&
-            String.contains?(content, "selectoHooks") &&
+            has_local_selecto_hooks_import &&
+            !has_legacy_selecto_hooks_import &&
               !opts[:force] ->
             if opts[:check] do
               :already_configured
@@ -266,22 +289,40 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
   defp patch_app_js(content) do
     # First, add the import statement if not present
     content_with_import =
-      if String.contains?(content, "TreeBuilderHook") ||
+      if String.contains?(content, "TreeBuilderHook") &&
            String.contains?(content, "selectoComponentsHooks") do
         content
       else
         add_import_to_js(content)
       end
 
+    content_with_normalized_hooks_import =
+      normalize_legacy_selecto_hooks_import(content_with_import)
+
     # Add selecto_hooks import if needed
-    content_with_selecto_hooks = add_selecto_hooks_import(content_with_import)
+    content_with_selecto_hooks = add_selecto_hooks_import(content_with_normalized_hooks_import)
 
     # Now add hooks to the LiveSocket configuration
     add_hooks_to_livesocket(content_with_selecto_hooks)
   end
 
+  defp normalize_legacy_selecto_hooks_import(content) do
+    normalized =
+      String.replace(
+        content,
+        ~r/import\s+selectoHooks\s+from\s+["']\.\.\/\.\.\/(?:vendor|deps)\/selecto_components\/assets\/js\/hooks["'];?/,
+        "import selectoHooks from \"./selecto_hooks\""
+      )
+
+    if normalized != content do
+      create_selecto_hooks_file()
+    end
+
+    normalized
+  end
+
   defp add_import_to_js(content) do
-    selecto_components_imports = selecto_components_js_imports()
+    selecto_components_imports = missing_selecto_components_js_imports(content)
 
     # First check if Chart.js is imported
     content_with_chart =
@@ -300,48 +341,74 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
         add_alpine_js_import(content_with_chart)
       end
 
-    # Finally add TreeBuilder and selectoHooks imports if needed
-    cond do
-      String.contains?(content_with_alpine, "import {LiveSocket}") ->
-        # Add import after LiveSocket import
-        String.replace(
-          content_with_alpine,
-          ~r/(import {LiveSocket} from "phoenix_live_view")/,
-          "\\1\n#{selecto_components_imports}"
-        )
-
-      String.contains?(content_with_alpine, "import") ->
-        # Find last import and add after it
-        lines = String.split(content_with_alpine, "\n")
-        import_lines = Enum.filter(lines, &String.starts_with?(&1, "import"))
-
-        if length(import_lines) > 0 do
-          last_import = List.last(import_lines)
-
+    if selecto_components_imports == "" do
+      content_with_alpine
+    else
+      # Finally add TreeBuilder and selecto component hooks imports if needed
+      cond do
+        String.contains?(content_with_alpine, "import {LiveSocket}") ->
+          # Add import after LiveSocket import
           String.replace(
             content_with_alpine,
-            last_import,
-            last_import <> "\n" <> selecto_components_imports
+            ~r/(import {LiveSocket} from "phoenix_live_view")/,
+            "\\1\n#{selecto_components_imports}"
           )
-        else
+
+        String.contains?(content_with_alpine, "import") ->
+          # Find last import and add after it
+          lines = String.split(content_with_alpine, "\n")
+          import_lines = Enum.filter(lines, &String.starts_with?(&1, "import"))
+
+          if length(import_lines) > 0 do
+            last_import = List.last(import_lines)
+
+            String.replace(
+              content_with_alpine,
+              last_import,
+              last_import <> "\n" <> selecto_components_imports
+            )
+          else
+            # Add at the beginning
+            selecto_components_imports <> "\n" <> content_with_alpine
+          end
+
+        true ->
           # Add at the beginning
           selecto_components_imports <> "\n" <> content_with_alpine
-        end
-
-      true ->
-        # Add at the beginning
-        selecto_components_imports <> "\n" <> content_with_alpine
+      end
     end
   end
 
-  defp selecto_components_js_imports do
+  defp missing_selecto_components_js_imports(content) do
     base_path = get_selecto_components_js_base_path()
 
-    """
-    import TreeBuilderHook from "#{base_path}/lib/selecto_components/components/tree_builder.hooks"
-    import selectoHooks from "#{base_path}/assets/js/hooks"
-    """
-    |> String.trim()
+    []
+    |> maybe_add_selecto_components_hooks_import(content)
+    |> maybe_add_tree_builder_import(content, base_path)
+    |> Enum.reverse()
+    |> Enum.join("\n")
+  end
+
+  defp maybe_add_selecto_components_hooks_import(imports, content) do
+    if String.contains?(content, "selectoComponentsHooks") do
+      imports
+    else
+      [
+        "import {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\""
+        | imports
+      ]
+    end
+  end
+
+  defp maybe_add_tree_builder_import(imports, content, base_path) do
+    if String.contains?(content, "TreeBuilderHook") do
+      imports
+    else
+      [
+        "import TreeBuilderHook from \"#{base_path}/lib/selecto_components/components/tree_builder.hooks\""
+        | imports
+      ]
+    end
   end
 
   defp add_chart_js_import(content) do
@@ -652,54 +719,62 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
 
   defp add_hooks_to_livesocket(content) do
     cond do
-      # Check if both hooks are already configured in the hooks object
+      # Check if all hooks are already configured in the hooks object
       String.contains?(content, "hooks:") &&
-        (String.contains?(content, "TreeBuilder: TreeBuilderHook") ||
-           String.contains?(content, "...selectoComponentsHooks")) &&
+        String.contains?(content, "TreeBuilder: TreeBuilderHook") &&
+        String.contains?(content, "...selectoComponentsHooks") &&
           String.contains?(content, "...selectoHooks") ->
         # Already fully configured
         content
 
-      # Check if TreeBuilderHook is in the hooks object but not selectoHooks
-      String.contains?(content, "hooks:") &&
-          (String.contains?(content, "TreeBuilder: TreeBuilderHook") ||
-             String.contains?(content, "...selectoComponentsHooks")) ->
-        # Add selectoHooks to existing hooks
-        String.replace(
-          content,
-          ~r/hooks:\s*{\s*([^}]+)}/,
-          "hooks: {\\1, ...selectoHooks}"
-        )
-
-      String.contains?(content, "hooks:") && String.contains?(content, "...") ->
-        # Hooks object exists with spread operator, add our hooks
-        # This handles cases like: hooks: {...colocatedHooks}
-        String.replace(
-          content,
-          ~r/hooks:\s*{\s*([^}]+)}/,
-          "hooks: {\\1, TreeBuilder: TreeBuilderHook, ...selectoHooks}"
-        )
-
       String.contains?(content, "hooks:") ->
-        # Hooks object exists without spread, add with spread to preserve existing
-        String.replace(
-          content,
-          ~r/hooks:\s*{([^}]*)}/,
-          "hooks: {TreeBuilder: TreeBuilderHook, ...selectoHooks,\\1}"
-        )
+        ensure_livesocket_hooks(content)
 
       String.contains?(content, "new LiveSocket") ->
         # No hooks object, add one
         String.replace(
           content,
           ~r/(const liveSocket = new LiveSocket\([^,]+,\s*Socket,\s*{)([^}]*)(})/,
-          "\\1\\2,\n  hooks: { TreeBuilder: TreeBuilderHook, ...selectoHooks }\\3"
+          "\\1\\2,\n  hooks: { TreeBuilder: TreeBuilderHook, ...selectoComponentsHooks, ...selectoHooks }\\3"
         )
 
       true ->
         content
     end
   end
+
+  defp ensure_livesocket_hooks(content) do
+    Regex.replace(~r/hooks:\s*{([^}]*)}/, content, fn _full, hooks_body ->
+      existing_hooks = hooks_body |> String.trim() |> String.trim_trailing(",")
+
+      additions =
+        ""
+        |> maybe_add_hook_entry(existing_hooks, "TreeBuilder: TreeBuilderHook")
+        |> maybe_add_hook_entry(existing_hooks, "...selectoComponentsHooks")
+        |> maybe_add_hook_entry(existing_hooks, "...selectoHooks")
+
+      merged_hooks =
+        case {existing_hooks, additions} do
+          {"", ""} -> ""
+          {"", extra} -> extra
+          {existing, ""} -> existing
+          {existing, extra} -> "#{existing}, #{extra}"
+        end
+
+      "hooks: {#{merged_hooks}}"
+    end)
+  end
+
+  defp maybe_add_hook_entry(entries, hooks_body, entry) do
+    if String.contains?(hooks_body, entry) do
+      entries
+    else
+      append_entry(entries, entry)
+    end
+  end
+
+  defp append_entry("", entry), do: entry
+  defp append_entry(entries, entry), do: entries <> ", " <> entry
 
   defp get_selecto_components_path() do
     vendor_path = Path.join([File.cwd!(), "vendor", "selecto_components"])
@@ -796,11 +871,12 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
       ⚠️  Manual configuration needed:
 
       1. In assets/js/app.js, add:
+         import TreeBuilderHook from "#{get_selecto_components_js_base_path()}/lib/selecto_components/components/tree_builder.hooks"
          import {hooks as selectoComponentsHooks} from "phoenix-colocated/selecto_components"
-         import selectoHooks from "#{get_selecto_components_js_base_path()}/assets/js/hooks"
+         import selectoHooks from "./selecto_hooks"
 
-         // In your LiveSocket configuration:
-         hooks: { ...selectoComponentsHooks, ...selectoHooks }
+          // In your LiveSocket configuration:
+          hooks: { TreeBuilder: TreeBuilderHook, ...selectoComponentsHooks, ...selectoHooks }
 
       2. In assets/css/app.css, add:
          @source "#{get_selecto_components_path()}";
