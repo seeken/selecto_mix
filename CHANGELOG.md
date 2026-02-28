@@ -1,8 +1,8 @@
 CHANGES
 =======
 
-Next
-----
+V 0.3.8
+-------
 
 - Fixed installer task compilation in consuming apps by restoring `:igniter`
   dependency availability in all environments (not scoped to dev/test).
@@ -21,6 +21,7 @@ Next
 - Fixed `mix igniter.install selecto_mix` compatibility by converting
   `mix selecto_mix.install` to an `Igniter.Mix.Task` alias implementation
   (resolves missing `parse_argv/1` runtime error).
+- Bump package version to `0.3.8`.
 
 V 0.3.7
 -------
