@@ -1,6 +1,6 @@
 defmodule Mix.Tasks.Selecto.Gen.FilterSets do
   @shortdoc "Generates filter sets implementation for SelectoComponents"
-  
+
   @moduledoc """
   Generates a filter sets implementation for SelectoComponents.
 
@@ -58,28 +58,29 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
 
   use Mix.Task
   import Mix.Generator
-  
+
   @requirements ["app.config"]
 
   def run(args) do
-    {opts, [app_module | _], _} = OptionParser.parse(args, 
-      switches: [
-        context_module: :string,
-        schema_module: :string,
-        table: :string,
-        repo: :string,
-        migration: :boolean,
-        tests: :boolean
-      ],
-      aliases: []
-    )
-    
+    {opts, [app_module | _], _} =
+      OptionParser.parse(args,
+        switches: [
+          context_module: :string,
+          schema_module: :string,
+          table: :string,
+          repo: :string,
+          migration: :boolean,
+          tests: :boolean
+        ],
+        aliases: []
+      )
+
     if is_nil(app_module) do
       Mix.raise("Expected the base module name, got: #{inspect(args)}")
     end
-    
+
     app_name = Macro.underscore(app_module)
-    
+
     config = %{
       app_module: app_module,
       app_name: app_name,
@@ -90,30 +91,30 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
       migration: Keyword.get(opts, :migration, true),
       tests: Keyword.get(opts, :tests, true)
     }
-    
+
     Mix.shell().info("Generating filter sets implementation for #{app_module}...")
-    
+
     if config.migration do
       generate_migration(config)
     end
-    
+
     generate_schema(config)
     generate_context(config)
-    
+
     if config.tests do
       generate_tests(config)
     end
-    
+
     print_instructions(config)
   end
-  
+
   defp generate_migration(config) do
     migration_path = "priv/repo/migrations"
     create_directory(migration_path)
-    
+
     timestamp = timestamp()
     migration_file = Path.join(migration_path, "#{timestamp}_create_filter_sets.exs")
-    
+
     migration_content = """
     defmodule #{config.repo}.Migrations.CreateFilterSets do
       use Ecto.Migration
@@ -142,15 +143,15 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
       end
     end
     """
-    
+
     create_file(migration_file, migration_content)
     Mix.shell().info("Created migration: #{migration_file}")
   end
-  
+
   defp generate_schema(config) do
     schema_path = schema_file_path(config.schema_module, config.app_name)
     create_directory(Path.dirname(schema_path))
-    
+
     schema_content = """
     defmodule #{config.schema_module} do
       @moduledoc \"\"\"
@@ -189,15 +190,15 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
       end
     end
     """
-    
+
     create_file(schema_path, schema_content)
     Mix.shell().info("Created schema: #{schema_path}")
   end
-  
+
   defp generate_context(config) do
     context_path = context_file_path(config.context_module, config.app_name)
     create_directory(Path.dirname(context_path))
-    
+
     context_content = """
     defmodule #{config.context_module} do
       @moduledoc \"\"\"
@@ -213,6 +214,8 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
       
       @impl true
       def list_personal_filter_sets(user_id, domain) do
+        domain = scoped_domain(domain)
+
         FilterSet
         |> where([f], f.user_id == ^user_id and f.domain == ^domain)
         |> where([f], f.is_system == false)
@@ -222,6 +225,8 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
       
       @impl true
       def list_shared_filter_sets(_user_id, domain) do
+        domain = scoped_domain(domain)
+
         FilterSet
         |> where([f], f.is_shared == true and f.domain == ^domain)
         |> where([f], f.is_system == false)
@@ -231,6 +236,8 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
       
       @impl true
       def list_system_filter_sets(domain) do
+        domain = scoped_domain(domain)
+
         FilterSet
         |> where([f], f.is_system == true and f.domain == ^domain)
         |> order_by([f], asc: f.name)
@@ -260,6 +267,7 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
       @impl true
       def create_filter_set(attrs) do
         # If setting as default, unset other defaults for this user/domain
+        attrs = scope_attrs_domain(attrs)
         attrs = maybe_unset_other_defaults(attrs)
         
         %FilterSet{}
@@ -314,6 +322,8 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
       
       @impl true
       def get_default_filter_set(user_id, domain) do
+        domain = scoped_domain(domain)
+
         FilterSet
         |> where([f], f.user_id == ^user_id and f.domain == ^domain and f.is_default == true)
         |> Repo.one()
@@ -344,7 +354,44 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
       end
       
       # Private functions
-      
+
+      defp scoped_domain(domain) do
+        case domain do
+          %{} = domain_map ->
+            raw_domain =
+              Map.get(domain_map, :domain) ||
+                Map.get(domain_map, "domain") ||
+                Map.get(domain_map, :path) ||
+                Map.get(domain_map, "path") ||
+                "default"
+
+            tenant_context =
+              Map.get(domain_map, :tenant) ||
+                Map.get(domain_map, "tenant") ||
+                %{tenant_id: Map.get(domain_map, :tenant_id) || Map.get(domain_map, "tenant_id")}
+
+            if Code.ensure_loaded?(SelectoComponents.Tenant) do
+              SelectoComponents.Tenant.scoped_context(raw_domain, tenant_context)
+            else
+              raw_domain
+            end
+
+          _ ->
+            domain
+        end
+      end
+
+      defp scope_attrs_domain(attrs) when is_map(attrs) do
+        domain = Map.get(attrs, :domain) || Map.get(attrs, "domain")
+
+        case domain do
+          nil -> attrs
+          value -> Map.put(attrs, :domain, scoped_domain(value))
+        end
+      end
+
+      defp scope_attrs_domain(attrs), do: attrs
+
       defp maybe_unset_other_defaults(attrs, existing \\\\ nil) do
         if should_unset_defaults?(attrs, existing) do
           user_id = attrs[:user_id] || attrs["user_id"] || existing.user_id
@@ -372,14 +419,14 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
       end
     end
     """
-    
+
     create_file(context_path, context_content)
     Mix.shell().info("Created context: #{context_path}")
   end
-  
+
   defp generate_tests(config) do
     test_path = "test/#{Macro.underscore(config.context_module)}_test.exs"
-    
+
     test_content = """
     defmodule #{config.context_module}Test do
       use ExUnit.Case, async: true
@@ -404,30 +451,30 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
       end
     end
     """
-    
+
     create_file(test_path, test_content)
     Mix.shell().info("Created test file: #{test_path}")
   end
-  
+
   defp print_instructions(config) do
     Mix.shell().info("""
-    
+
     Filter sets implementation generated successfully!
-    
+
     Next steps:
-    
+
     1. Run the migration:
        mix ecto.migrate
-    
+
     2. Configure the adapter in your LiveView:
        
        def mount(_params, _session, socket) do
          socket = assign(socket, :filter_sets_adapter, #{config.context_module})
          {:ok, socket}
        end
-    
+
     3. Add the filter sets component to your view:
-    
+
        <.live_component 
          module={SelectoComponents.Filter.FilterSets}
          id="filter-sets"
@@ -435,36 +482,38 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
          user_id={@current_user.id}
          domain={@domain}
        />
-    
+
     4. (Optional) Add seed data for system filter sets in priv/repo/seeds.exs
-    
+
     For more information, see the SelectoComponents documentation.
     """)
   end
-  
+
   defp schema_file_path(module, app_name) do
-    path = module
-    |> String.split(".")
-    |> Enum.map(&Macro.underscore/1)
-    |> Path.join()
-    
+    path =
+      module
+      |> String.split(".")
+      |> Enum.map(&Macro.underscore/1)
+      |> Path.join()
+
     "lib/#{app_name}/#{path}.ex"
   end
-  
+
   defp context_file_path(module, app_name) do
-    path = module
-    |> String.split(".")
-    |> Enum.map(&Macro.underscore/1)
-    |> Path.join()
-    
+    path =
+      module
+      |> String.split(".")
+      |> Enum.map(&Macro.underscore/1)
+      |> Path.join()
+
     "lib/#{app_name}/#{path}.ex"
   end
-  
+
   defp timestamp do
     {{y, m, d}, {hh, mm, ss}} = :calendar.universal_time()
     "#{y}#{pad(m)}#{pad(d)}#{pad(hh)}#{pad(mm)}#{pad(ss)}"
   end
-  
+
   defp pad(i) when i < 10, do: "0#{i}"
   defp pad(i), do: to_string(i)
 end

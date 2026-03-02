@@ -8,6 +8,12 @@ V NEXT
   dependency rule aggregation tooling.
 - Added `MULTI_TENANT_USAGE_PATTERNS.md` with generator-focused guidance for
   tenant-aware domain overlays, join validation, and generated app wiring.
+- Updated `mix selecto.gen.saved_views` generated context template to support
+  map-style contexts and tenant-scoped context keys through
+  `SelectoComponents.Tenant.scoped_context/3` when available.
+- Updated `mix selecto.gen.filter_sets` generated context template to scope
+  domain keys and create-path domain attrs for tenant-aware filter set
+  persistence.
 
 V 0.3.8
 -------

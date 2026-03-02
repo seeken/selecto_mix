@@ -309,6 +309,8 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViews do
           import Ecto.Query
 
           def get_view(name, context) do
+            context = scoped_context(context)
+
             q = from v in #{inspect(config.schema_module)},
               where: ^context == v.context,
               where: ^name == v.name
@@ -316,6 +318,8 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViews do
           end
 
           def save_view(name, context, params) do
+            context = scoped_context(context)
+
             case get_view(name, context) do
               nil -> #{inspect(config.repo_module)}.insert!(%#{inspect(config.schema_module)}{name: name, context: context, params: params})
               view -> update_view(view, params)
@@ -329,6 +333,8 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViews do
           end
 
           def get_view_names(context) do
+            context = scoped_context(context)
+
             q = from v in #{inspect(config.schema_module)},
               select: v.name,
               where: ^context == v.context,
@@ -338,6 +344,8 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViews do
           end
 
           def list_views(context) do
+            context = scoped_context(context)
+
             q =
               from v in #{inspect(config.schema_module)},
                 where: ^context == v.context,
@@ -347,6 +355,8 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViews do
           end
 
           def delete_view(name, context) do
+            context = scoped_context(context)
+
             case get_view(name, context) do
               nil ->
                 {:error, :not_found}
@@ -357,6 +367,7 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViews do
           end
 
           def rename_view(old_name, new_name, context) do
+            context = scoped_context(context)
             trimmed_name = String.trim(new_name || "")
 
             cond do
@@ -389,6 +400,32 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViews do
           def decode_view(view) do
             # Return params to use for view restoration
             view.params
+          end
+
+          defp scoped_context(context) do
+            case context do
+              %{} = context_map ->
+                raw_context =
+                  Map.get(context_map, :context) ||
+                    Map.get(context_map, "context") ||
+                    Map.get(context_map, :path) ||
+                    Map.get(context_map, "path") ||
+                    "default"
+
+                tenant_context =
+                  Map.get(context_map, :tenant) ||
+                    Map.get(context_map, "tenant") ||
+                    %{tenant_id: Map.get(context_map, :tenant_id) || Map.get(context_map, "tenant_id")}
+
+                if Code.ensure_loaded?(SelectoComponents.Tenant) do
+                  SelectoComponents.Tenant.scoped_context(raw_context, tenant_context)
+                else
+                  raw_context
+                end
+
+              _ ->
+                context
+            end
           end
         end
       end
