@@ -1,6 +1,14 @@
 CHANGES
 =======
 
+V NEXT
+------
+
+- Added `usage-rules.md` with focused package guidance for agentic workflows and
+  dependency rule aggregation tooling.
+- Added `MULTI_TENANT_USAGE_PATTERNS.md` with generator-focused guidance for
+  tenant-aware domain overlays, join validation, and generated app wiring.
+
 V 0.3.8
 -------
 
