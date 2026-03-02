@@ -14,6 +14,8 @@ V NEXT
 - Updated `mix selecto.gen.filter_sets` generated context template to scope
   domain keys and create-path domain attrs for tenant-aware filter set
   persistence.
+- Added generator coverage test ensuring `mix selecto.gen.filter_sets` emits
+  tenant-scoped domain helpers in generated context modules.
 
 V 0.3.8
 -------
