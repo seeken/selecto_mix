@@ -4,6 +4,9 @@ CHANGES
 V NEXT
 ------
 
+V 0.3.9
+-------
+
 - Added `usage-rules.md` with focused package guidance for agentic workflows and
   dependency rule aggregation tooling.
 - Added `MULTI_TENANT_USAGE_PATTERNS.md` with generator-focused guidance for
@@ -16,6 +19,7 @@ V NEXT
   persistence.
 - Added generator coverage test ensuring `mix selecto.gen.filter_sets` emits
   tenant-scoped domain helpers in generated context modules.
+- Bump package version to `0.3.9`.
 
 V 0.3.8
 -------
