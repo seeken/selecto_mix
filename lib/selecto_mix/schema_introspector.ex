@@ -60,11 +60,12 @@ defmodule SelectoMix.SchemaIntrospector do
         associations = if include_associations, do: metadata.associations, else: %{}
 
         # Generate suggested defaults based on metadata
-        suggested_defaults = generate_suggested_defaults_from_metadata(
-          metadata.fields,
-          metadata.field_types,
-          opts
-        )
+        suggested_defaults =
+          generate_suggested_defaults_from_metadata(
+            metadata.fields,
+            metadata.field_types,
+            opts
+          )
 
         # Extract additional metadata
         extra_metadata = extract_metadata_from_source(source, metadata)
@@ -119,7 +120,7 @@ defmodule SelectoMix.SchemaIntrospector do
   """
   def get_field_types(schema_module) do
     fields = get_schema_fields(schema_module)
-    
+
     Enum.into(fields, %{}, fn field ->
       ecto_type = schema_module.__schema__(:type, field)
       selecto_type = map_ecto_type_to_selecto(ecto_type)
@@ -132,7 +133,7 @@ defmodule SelectoMix.SchemaIntrospector do
   """
   def get_associations(schema_module) do
     associations = schema_module.__schema__(:associations)
-    
+
     Enum.into(associations, %{}, fn assoc_name ->
       assoc = schema_module.__schema__(:association, assoc_name)
       {assoc_name, analyze_association(assoc)}
@@ -256,7 +257,8 @@ defmodule SelectoMix.SchemaIntrospector do
       :map -> :jsonb
       {:array, inner_type} -> {:array, map_ecto_type_to_selecto(inner_type)}
       {Ecto.Enum, _values} -> :string
-      _ -> :string  # Default fallback
+      # Default fallback
+      _ -> :string
     end
   end
 
@@ -297,49 +299,54 @@ defmodule SelectoMix.SchemaIntrospector do
 
   defp suggest_default_selected_fields(fields, field_types, include_timestamps) do
     # Start with common display fields
-    candidates = Enum.filter(fields, fn field ->
-      field_str = to_string(field)
-      
-      # Include name/title fields
-      name_field = String.contains?(field_str, ["name", "title", "email", "username"])
-      
-      # Include ID fields
-      id_field = String.ends_with?(field_str, "_id") or field == :id
-      
-      # Include status/active fields
-      status_field = String.contains?(field_str, ["status", "active", "enabled"])
-      
-      # Include timestamps if requested
-      timestamp_field = include_timestamps and String.contains?(field_str, ["_at", "date"])
-      
-      # Exclude binary and large text fields from defaults
-      suitable_type = field_types[field] in [:string, :integer, :decimal, :boolean, :date, :utc_datetime]
-      
-      (name_field or id_field or status_field or timestamp_field) and suitable_type
-    end)
-    
+    candidates =
+      Enum.filter(fields, fn field ->
+        field_str = to_string(field)
+
+        # Include name/title fields
+        name_field = String.contains?(field_str, ["name", "title", "email", "username"])
+
+        # Include ID fields
+        id_field = String.ends_with?(field_str, "_id") or field == :id
+
+        # Include status/active fields
+        status_field = String.contains?(field_str, ["status", "active", "enabled"])
+
+        # Include timestamps if requested
+        timestamp_field = include_timestamps and String.contains?(field_str, ["_at", "date"])
+
+        # Exclude binary and large text fields from defaults
+        suitable_type =
+          field_types[field] in [:string, :integer, :decimal, :boolean, :date, :utc_datetime]
+
+        (name_field or id_field or status_field or timestamp_field) and suitable_type
+      end)
+
     # Limit to reasonable number of fields
     candidates |> Enum.take(5)
   end
 
   defp suggest_default_filters(fields, field_types) do
     # Look for common filter patterns
-    filter_fields = Enum.filter(fields, fn field ->
-      field_str = to_string(field)
-      field_type = field_types[field]
-      
-      # Boolean fields make good filters
-      boolean_filter = field_type == :boolean
-      
-      # Status/category fields
-      status_filter = String.contains?(field_str, ["status", "type", "category", "role"])
-      
-      # Date fields for range filtering
-      date_filter = field_type in [:date, :utc_datetime] and String.contains?(field_str, ["created", "updated"])
-      
-      boolean_filter or status_filter or date_filter
-    end)
-    
+    filter_fields =
+      Enum.filter(fields, fn field ->
+        field_str = to_string(field)
+        field_type = field_types[field]
+
+        # Boolean fields make good filters
+        boolean_filter = field_type == :boolean
+
+        # Status/category fields
+        status_filter = String.contains?(field_str, ["status", "type", "category", "role"])
+
+        # Date fields for range filtering
+        date_filter =
+          field_type in [:date, :utc_datetime] and
+            String.contains?(field_str, ["created", "updated"])
+
+        boolean_filter or status_filter or date_filter
+      end)
+
     # Generate filter configurations
     Enum.into(filter_fields, %{}, fn field ->
       field_type = field_types[field]
@@ -350,18 +357,20 @@ defmodule SelectoMix.SchemaIntrospector do
 
   defp generate_filter_config(field, field_type) do
     _field_str = to_string(field)
-    
+
     base_config = %{
       name: humanize_field_name(field),
       type: filter_type_for_selecto_type(field_type)
     }
-    
+
     case field_type do
-      :boolean -> 
+      :boolean ->
         Map.put(base_config, :default, true)
+
       type when type in [:date, :utc_datetime] ->
         Map.put(base_config, :operator, "gte")
-      _ -> 
+
+      _ ->
         base_config
     end
   end
@@ -383,24 +392,27 @@ defmodule SelectoMix.SchemaIntrospector do
 
   defp suggest_default_ordering(fields, field_types) do
     # Look for good ordering fields
-    order_candidates = Enum.filter(fields, fn field ->
-      field_str = to_string(field)
-      field_type = field_types[field]
-      
-      # Timestamp fields for chronological ordering
-      timestamp_field = field_type in [:date, :utc_datetime] and 
-                       String.contains?(field_str, ["created", "updated", "published"])
-      
-      # Name fields for alphabetical ordering
-      name_field = field_type == :string and 
-                   String.contains?(field_str, ["name", "title"])
-      
-      # ID for natural ordering
-      id_field = field == :id
-      
-      timestamp_field or name_field or id_field
-    end)
-    
+    order_candidates =
+      Enum.filter(fields, fn field ->
+        field_str = to_string(field)
+        field_type = field_types[field]
+
+        # Timestamp fields for chronological ordering
+        timestamp_field =
+          field_type in [:date, :utc_datetime] and
+            String.contains?(field_str, ["created", "updated", "published"])
+
+        # Name fields for alphabetical ordering
+        name_field =
+          field_type == :string and
+            String.contains?(field_str, ["name", "title"])
+
+        # ID for natural ordering
+        id_field = field == :id
+
+        timestamp_field or name_field or id_field
+      end)
+
     case order_candidates do
       [] -> []
       [first | _] -> [%{"field" => to_string(first), "direction" => "asc"}]
@@ -415,6 +427,7 @@ defmodule SelectoMix.SchemaIntrospector do
 
   defp get_context_name(schema_module) do
     parts = Module.split(schema_module)
+
     case parts do
       [_app, context | _] -> context
       _ -> "Unknown"
@@ -423,6 +436,7 @@ defmodule SelectoMix.SchemaIntrospector do
 
   defp has_timestamps?(schema_module) do
     fields = get_schema_fields(schema_module)
+
     Enum.any?(fields, fn field ->
       field_str = to_string(field)
       String.contains?(field_str, ["inserted_at", "updated_at"])
@@ -432,7 +446,7 @@ defmodule SelectoMix.SchemaIntrospector do
   defp estimate_schema_complexity(schema_module) do
     field_count = length(get_schema_fields(schema_module))
     assoc_count = length(schema_module.__schema__(:associations))
-    
+
     cond do
       field_count <= 5 and assoc_count <= 2 -> :simple
       field_count <= 15 and assoc_count <= 5 -> :moderate

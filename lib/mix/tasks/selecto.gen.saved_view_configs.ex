@@ -72,7 +72,8 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViewConfigs do
   def info(_argv, _composing_task) do
     %Igniter.Mix.Task.Info{
       group: :selecto,
-      example: "mix selecto.gen.saved_view_configs MyApp --context-module MyApp.SavedViewConfigContext",
+      example:
+        "mix selecto.gen.saved_view_configs MyApp --context-module MyApp.SavedViewConfigContext",
       positional: [:app_name],
       schema: [
         context_module: :string,
@@ -133,7 +134,8 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViewConfigs do
     %{
       app_name: app_name,
       app_module: app_module,
-      context_module: parse_module_name(opts[:context_module] || "#{app_name}.SavedViewConfigContext"),
+      context_module:
+        parse_module_name(opts[:context_module] || "#{app_name}.SavedViewConfigContext"),
       schema_module: parse_module_name(opts[:schema_module] || "#{app_name}.SavedViewConfig"),
       table_name: opts[:table_name] || "saved_view_configs",
       repo_module: parse_module_name(opts[:repo_module] || "#{app_name}.Repo"),
@@ -145,6 +147,7 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViewConfigs do
   defp parse_module_name(module_string) when is_binary(module_string) do
     Module.concat([module_string])
   end
+
   defp parse_module_name(module) when is_atom(module), do: module
 
   defp show_dry_run_summary(config) do
@@ -204,18 +207,34 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViewConfigs do
 
   defp schema_file_path(config) do
     app_name = config.app_name |> to_string() |> Macro.underscore()
-    schema_name = config.schema_module |> to_string() |> String.split(".") |> List.last() |> Macro.underscore()
+
+    schema_name =
+      config.schema_module
+      |> to_string()
+      |> String.split(".")
+      |> List.last()
+      |> Macro.underscore()
+
     "lib/#{app_name}/#{schema_name}.ex"
   end
 
   defp context_file_path(config) do
     app_name = config.app_name |> to_string() |> Macro.underscore()
-    context_name = config.context_module |> to_string() |> String.split(".") |> List.last() |> Macro.underscore()
+
+    context_name =
+      config.context_module
+      |> to_string()
+      |> String.split(".")
+      |> List.last()
+      |> Macro.underscore()
+
     "lib/#{app_name}/#{context_name}.ex"
   end
 
   defp render_migration_template(config) do
-    migration_module_name = "#{config.repo_module}.Migrations.#{Macro.camelize(config.migration_name)}"
+    migration_module_name =
+      "#{config.repo_module}.Migrations.#{Macro.camelize(config.migration_name)}"
+
     migration_module = Module.concat([migration_module_name])
 
     """

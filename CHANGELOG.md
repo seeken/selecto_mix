@@ -4,6 +4,16 @@ CHANGES
 V NEXT
 ------
 
+V 0.3.10
+--------
+
+- Fixed Northwind generation/introspection behavior in domain generator and
+  Ecto introspection paths, with updated coverage in `selecto_mix` tests.
+- Added StreamData-backed property coverage for parser/validator and
+  config-merger robustness (`test/selecto_mix_property_test.exs`).
+- Added README documentation for running the SelectoMix property suite.
+- Bump package version to `0.3.10`.
+
 V 0.3.9
 -------
 

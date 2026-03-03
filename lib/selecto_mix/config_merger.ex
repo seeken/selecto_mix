@@ -1,11 +1,11 @@
 defmodule SelectoMix.ConfigMerger do
   @moduledoc """
   Merges new schema introspection data with existing user customizations.
-  
+
   This module intelligently combines freshly introspected schema data with
   existing domain configurations, preserving user customizations while
   incorporating new fields, associations, and other schema changes.
-  
+
   The merger uses special markers in the generated files to identify
   sections that can be safely regenerated vs. sections that contain
   user customizations.
@@ -13,19 +13,19 @@ defmodule SelectoMix.ConfigMerger do
 
   @doc """
   Merge new domain configuration with existing file content.
-  
+
   This function parses existing domain files to extract user customizations,
   then intelligently merges them with new schema data.
-  
+
   ## Strategy
-  
+
   1. Parse existing file to identify custom vs. generated sections
   2. Extract user customizations (custom fields, filters, joins)
   3. Merge new schema fields while preserving customizations
   4. Generate backup of existing file if major changes detected
-  
+
   ## Returns
-  
+
   A merged configuration map that combines:
   - All new/changed fields from schema introspection
   - Preserved user customizations from existing file
@@ -33,10 +33,10 @@ defmodule SelectoMix.ConfigMerger do
   """
   def merge_with_existing(new_config, existing_content) do
     case existing_content do
-      nil -> 
+      nil ->
         # No existing file, use new config as-is
         new_config
-        
+
       content when is_binary(content) ->
         existing_config = parse_existing_config(content)
         merge_configurations(new_config, existing_config)
@@ -51,7 +51,7 @@ defmodule SelectoMix.ConfigMerger do
       # Extract the domain configuration from the existing file
       # This is a simplified approach - in production would use AST parsing
       config = extract_domain_config_from_content(file_content)
-      
+
       %{
         domain_config: config,
         custom_fields: extract_custom_fields(file_content),
@@ -90,33 +90,36 @@ defmodule SelectoMix.ConfigMerger do
   defp extract_domain_config_from_content(content) do
     # Extract the main domain map from the file content
     # This would use proper AST parsing in production
-    
+
     # Look for domain configuration patterns
     config = %{}
-    
+
     # Extract source table
-    config = if table_match = Regex.run(~r/source_table:\s*"([^"]+)"/, content) do
-      Map.put(config, :table_name, Enum.at(table_match, 1))
-    else
-      config
-    end
-    
+    config =
+      if table_match = Regex.run(~r/source_table:\s*"([^"]+)"/, content) do
+        Map.put(config, :table_name, Enum.at(table_match, 1))
+      else
+        config
+      end
+
     # Extract primary key
-    config = if pk_match = Regex.run(~r/primary_key:\s*:(\w+)/, content) do
-      Map.put(config, :primary_key, String.to_atom(Enum.at(pk_match, 1)))
-    else
-      config
-    end
-    
+    config =
+      if pk_match = Regex.run(~r/primary_key:\s*:(\w+)/, content) do
+        Map.put(config, :primary_key, String.to_atom(Enum.at(pk_match, 1)))
+      else
+        config
+      end
+
     # Extract fields list
-    config = if fields_match = Regex.run(~r/fields:\s*\[(.*?)\]/s, content) do
-      fields_str = Enum.at(fields_match, 1)
-      fields = parse_fields_list(fields_str)
-      Map.put(config, :fields, fields)
-    else
-      config
-    end
-    
+    config =
+      if fields_match = Regex.run(~r/fields:\s*\[(.*?)\]/s, content) do
+        fields_str = Enum.at(fields_match, 1)
+        fields = parse_fields_list(fields_str)
+        Map.put(config, :fields, fields)
+      else
+        config
+      end
+
     config
   end
 
@@ -140,7 +143,7 @@ defmodule SelectoMix.ConfigMerger do
       ~r/# User added: (.+)/,
       ~r/# Custom: (.+)/
     ]
-    
+
     Enum.flat_map(custom_markers, fn regex ->
       Regex.scan(regex, content, capture: :all_but_first)
       |> List.flatten()
@@ -151,10 +154,10 @@ defmodule SelectoMix.ConfigMerger do
     # Extract custom filter definitions
     # Look for filter blocks that have custom markers
     _custom_filters = %{}
-    
+
     # Find filters marked as custom
     filter_matches = Regex.scan(~r/"([^"]+)"\s*=>\s*%\{[^}]*# CUSTOM/, content)
-    
+
     Enum.into(filter_matches, %{}, fn [_, filter_name] ->
       {filter_name, :custom}
     end)
@@ -163,7 +166,7 @@ defmodule SelectoMix.ConfigMerger do
   defp extract_custom_joins(content) do
     # Extract custom join configurations
     join_matches = Regex.scan(~r/(\w+):\s*%\{[^}]*# CUSTOM JOIN/, content)
-    
+
     Enum.map(join_matches, fn [_, join_name] ->
       String.to_atom(join_name)
     end)
@@ -172,22 +175,24 @@ defmodule SelectoMix.ConfigMerger do
   defp extract_custom_metadata(content) do
     # Extract custom domain metadata and configuration
     metadata = %{}
-    
+
     # Look for custom name
-    metadata = if name_match = Regex.run(~r/name:\s*"([^"]+)".*# CUSTOM/, content) do
-      Map.put(metadata, :custom_name, Enum.at(name_match, 1))
-    else
-      metadata
-    end
-    
+    metadata =
+      if name_match = Regex.run(~r/name:\s*"([^"]+)".*# CUSTOM/, content) do
+        Map.put(metadata, :custom_name, Enum.at(name_match, 1))
+      else
+        metadata
+      end
+
     # Look for custom default selections
-    metadata = if default_match = Regex.run(~r/default_selected:\s*\[(.*?)\].*# CUSTOM/s, content) do
-      defaults = parse_fields_list(Enum.at(default_match, 1))
-      Map.put(metadata, :custom_defaults, defaults)
-    else
-      metadata
-    end
-    
+    metadata =
+      if default_match = Regex.run(~r/default_selected:\s*\[(.*?)\].*# CUSTOM/s, content) do
+        defaults = parse_fields_list(Enum.at(default_match, 1))
+        Map.put(metadata, :custom_defaults, defaults)
+      else
+        metadata
+      end
+
     metadata
   end
 
@@ -202,7 +207,7 @@ defmodule SelectoMix.ConfigMerger do
       "# FIXME",
       "# NOTE"
     ]
-    
+
     Enum.any?(custom_markers, &String.contains?(content, &1))
   end
 
@@ -211,25 +216,27 @@ defmodule SelectoMix.ConfigMerger do
   defp merge_conservatively(new_config, existing_config) do
     # Conservative merge - preserve as much existing config as possible
     # Only add completely new fields, don't change existing ones
-    
+
     base_config = existing_config[:domain_config] || %{}
-    
+
     new_config
     |> Map.put(:preserve_existing, true)
     |> Map.put(:merge_strategy, :conservative)
     |> Map.merge(%{
       # Only add new fields that don't exist
-      fields: merge_fields_conservatively(
-        new_config[:fields] || [],
-        base_config[:fields] || []
-      ),
-      
+      fields:
+        merge_fields_conservatively(
+          new_config[:fields] || [],
+          base_config[:fields] || []
+        ),
+
       # Preserve existing associations, only add new ones
-      associations: merge_associations_conservatively(
-        new_config[:associations] || %{},
-        existing_config[:custom_joins] || []
-      ),
-      
+      associations:
+        merge_associations_conservatively(
+          new_config[:associations] || %{},
+          existing_config[:custom_joins] || []
+        ),
+
       # Keep existing metadata
       custom_metadata: existing_config[:custom_metadata] || %{},
       custom_fields: existing_config[:custom_fields] || [],
@@ -239,25 +246,27 @@ defmodule SelectoMix.ConfigMerger do
 
   defp merge_aggressively(new_config, existing_config) do
     # Aggressive merge - update most fields, but preserve obvious customizations
-    
+
     base_config = existing_config[:domain_config] || %{}
-    
+
     new_config
     |> Map.put(:merge_strategy, :aggressive)
     |> Map.merge(%{
       # Update fields but preserve custom ones
-      fields: merge_fields_aggressively(
-        new_config[:fields] || [],
-        base_config[:fields] || [],
-        existing_config[:custom_fields] || []
-      ),
-      
+      fields:
+        merge_fields_aggressively(
+          new_config[:fields] || [],
+          base_config[:fields] || [],
+          existing_config[:custom_fields] || []
+        ),
+
       # Update associations but preserve custom joins
-      associations: merge_associations_aggressively(
-        new_config[:associations] || %{},
-        existing_config[:custom_joins] || []
-      ),
-      
+      associations:
+        merge_associations_aggressively(
+          new_config[:associations] || %{},
+          existing_config[:custom_joins] || []
+        ),
+
       # Preserve custom metadata but update suggestions
       preserved_customizations: %{
         custom_metadata: existing_config[:custom_metadata] || %{},
@@ -271,17 +280,17 @@ defmodule SelectoMix.ConfigMerger do
     # Only add fields that don't already exist
     existing_field_atoms = Enum.map(existing_fields, &ensure_atom/1)
     new_field_atoms = Enum.map(new_fields, &ensure_atom/1)
-    
+
     # Keep all existing fields, add only truly new ones
-    existing_field_atoms ++ 
-    Enum.reject(new_field_atoms, &(&1 in existing_field_atoms))
+    existing_field_atoms ++
+      Enum.reject(new_field_atoms, &(&1 in existing_field_atoms))
   end
 
   defp merge_fields_aggressively(new_fields, _existing_fields, custom_fields) do
     # Update with new fields but preserve custom ones
     custom_field_atoms = Enum.map(custom_fields, &parse_custom_field/1)
     new_field_atoms = Enum.map(new_fields, &ensure_atom/1)
-    
+
     # Use new fields as base, but add back any custom fields
     (new_field_atoms ++ custom_field_atoms) |> Enum.uniq()
   end
@@ -289,7 +298,7 @@ defmodule SelectoMix.ConfigMerger do
   defp merge_associations_conservatively(new_assocs, existing_custom_joins) do
     # Keep all existing custom joins, add only new associations
     existing_joins = MapSet.new(existing_custom_joins)
-    
+
     Enum.reject(new_assocs, fn {assoc_name, _assoc_config} ->
       assoc_name in existing_joins
     end)
@@ -299,7 +308,7 @@ defmodule SelectoMix.ConfigMerger do
   defp merge_associations_aggressively(new_assocs, existing_custom_joins) do
     # Update associations but mark custom ones for preservation
     custom_joins = MapSet.new(existing_custom_joins)
-    
+
     Enum.into(new_assocs, %{}, fn {assoc_name, assoc_config} ->
       if assoc_name in custom_joins do
         # Mark as custom to preserve in template
@@ -344,10 +353,10 @@ defmodule SelectoMix.ConfigMerger do
     # - File has customizations and we're doing aggressive merge
     # - Significant changes detected (>20% of content would change)
     # - User explicitly requested backup
-    
+
     has_customizations = detect_customizations(existing_content || "")
     aggressive_merge = new_config[:merge_strategy] == :aggressive
-    
+
     has_customizations and aggressive_merge
   end
 

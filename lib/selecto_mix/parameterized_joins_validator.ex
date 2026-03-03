@@ -237,7 +237,10 @@ defmodule SelectoMix.ParameterizedJoinsValidator do
 
         _ ->
           {joins_acc,
-           [issue(:syntax_valid, "Join '#{current_path_str}' configuration is not a map") | issues_acc]}
+           [
+             issue(:syntax_valid, "Join '#{current_path_str}' configuration is not a map")
+             | issues_acc
+           ]}
       end
     end)
     |> then(fn {joins, issues} -> {Enum.reverse(joins), Enum.reverse(issues)} end)
@@ -250,7 +253,8 @@ defmodule SelectoMix.ParameterizedJoinsValidator do
     |> validate_join_condition(join_detail)
   end
 
-  defp validate_parameters(issues, %{path: path, parameters: parameters}) when is_list(parameters) do
+  defp validate_parameters(issues, %{path: path, parameters: parameters})
+       when is_list(parameters) do
     name_values =
       Enum.map(parameters, fn
         %{} = param -> Map.get(param, :name)
@@ -287,20 +291,38 @@ defmodule SelectoMix.ParameterizedJoinsValidator do
       if is_atom(name) do
         issues
       else
-        [issue(:parameters_valid, "Join '#{path}' parameter #{index + 1} is missing an atom :name") | issues]
+        [
+          issue(
+            :parameters_valid,
+            "Join '#{path}' parameter #{index + 1} is missing an atom :name"
+          )
+          | issues
+        ]
       end
 
     issues =
       if is_atom(type) and type in @allowed_parameter_types do
         issues
       else
-        [issue(:parameters_valid, "Join '#{path}' parameter '#{inspect(name)}' has unsupported type #{inspect(type)}") | issues]
+        [
+          issue(
+            :parameters_valid,
+            "Join '#{path}' parameter '#{inspect(name)}' has unsupported type #{inspect(type)}"
+          )
+          | issues
+        ]
       end
 
     if is_boolean(required) do
       issues
     else
-      [issue(:parameters_valid, "Join '#{path}' parameter '#{inspect(name)}' has non-boolean :required") | issues]
+      [
+        issue(
+          :parameters_valid,
+          "Join '#{path}' parameter '#{inspect(name)}' has non-boolean :required"
+        )
+        | issues
+      ]
     end
   end
 
@@ -310,7 +332,10 @@ defmodule SelectoMix.ParameterizedJoinsValidator do
 
   defp validate_fields(issues, %{path: path, fields: fields}) when is_map(fields) do
     if map_size(fields) == 0 do
-      [issue(:field_types_valid, "Join '#{path}' should define at least one field in :fields") | issues]
+      [
+        issue(:field_types_valid, "Join '#{path}' should define at least one field in :fields")
+        | issues
+      ]
     else
       Enum.reduce(fields, issues, fn {field_name, field_config}, acc ->
         validate_field_entry(acc, path, field_name, field_config)
@@ -328,17 +353,33 @@ defmodule SelectoMix.ParameterizedJoinsValidator do
         issues
 
       type ->
-        [issue(:field_types_valid, "Join '#{path}' field '#{inspect(field_name)}' has unsupported type #{inspect(type)}") | issues]
+        [
+          issue(
+            :field_types_valid,
+            "Join '#{path}' field '#{inspect(field_name)}' has unsupported type #{inspect(type)}"
+          )
+          | issues
+        ]
     end
   end
 
   defp validate_field_entry(issues, path, field_name, _field_config) do
-    [issue(:field_types_valid, "Join '#{path}' field '#{inspect(field_name)}' config is not a map") | issues]
+    [
+      issue(
+        :field_types_valid,
+        "Join '#{path}' field '#{inspect(field_name)}' config is not a map"
+      )
+      | issues
+    ]
   end
 
   defp validate_join_condition(issues, %{join_condition: nil}), do: issues
 
-  defp validate_join_condition(issues, %{path: path, join_condition: condition, parameters: parameters})
+  defp validate_join_condition(issues, %{
+         path: path,
+         join_condition: condition,
+         parameters: parameters
+       })
        when is_binary(condition) and is_list(parameters) do
     param_names = Enum.map(parameters, &Map.get(&1, :name))
 
@@ -351,13 +392,25 @@ defmodule SelectoMix.ParameterizedJoinsValidator do
       if placeholder in param_names do
         acc
       else
-        [issue(:join_conditions_valid, "Join '#{path}' join_condition references unknown parameter :#{placeholder}") | acc]
+        [
+          issue(
+            :join_conditions_valid,
+            "Join '#{path}' join_condition references unknown parameter :#{placeholder}"
+          )
+          | acc
+        ]
       end
     end)
   end
 
   defp validate_join_condition(issues, %{path: path}) do
-    [issue(:join_conditions_valid, "Join '#{path}' has invalid :join_condition (expected string)") | issues]
+    [
+      issue(
+        :join_conditions_valid,
+        "Join '#{path}' has invalid :join_condition (expected string)"
+      )
+      | issues
+    ]
   end
 
   defp split_reference(reference) do
@@ -377,7 +430,9 @@ defmodule SelectoMix.ParameterizedJoinsValidator do
   defp parse_join_segment(join_segment) do
     case split_unquoted(join_segment, ":") do
       [join] ->
-        if valid_identifier?(join), do: {:ok, {join, []}}, else: {:error, "Invalid join identifier '#{join}'"}
+        if valid_identifier?(join),
+          do: {:ok, {join, []}},
+          else: {:error, "Invalid join identifier '#{join}'"}
 
       [join | params] ->
         with true <- valid_identifier?(join) or {:error, "Invalid join identifier '#{join}'"},

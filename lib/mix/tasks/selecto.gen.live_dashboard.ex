@@ -36,12 +36,13 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
 
   @impl Mix.Task
   def run(args) do
-    {opts, _, _} = OptionParser.parse(args,
-      switches: [
-        no_router: :boolean,
-        module: :string
-      ]
-    )
+    {opts, _, _} =
+      OptionParser.parse(args,
+        switches: [
+          no_router: :boolean,
+          module: :string
+        ]
+      )
 
     # Ensure the project is compiled
     Mix.Task.run("compile")
@@ -50,18 +51,20 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
     app = Mix.Project.config()[:app]
 
     # Get the base module from the Mix project
-    app_module = Mix.Project.config()[:app]
+    app_module =
+      Mix.Project.config()[:app]
       |> to_string()
       |> Macro.camelize()
 
     web_module = Module.concat([app_module, "Web"])
 
     # Determine the page module name
-    page_module = if opts[:module] do
-      Module.concat([opts[:module]])
-    else
-      Module.concat([web_module, "LiveDashboard", "SelectoPage"])
-    end
+    page_module =
+      if opts[:module] do
+        Module.concat([opts[:module]])
+      else
+        Module.concat([web_module, "LiveDashboard", "SelectoPage"])
+      end
 
     Mix.shell().info("Generating Selecto LiveDashboard page...")
 
@@ -436,36 +439,38 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
         Mix.shell().info("Selecto metrics already present in telemetry.ex")
       else
         # Add Selecto metrics to the metrics/0 function
-        updated_content = String.replace(content,
-          "# VM Metrics",
-          """
-          # Selecto Metrics
-          summary("selecto.query.complete.duration",
-            unit: {:native, :millisecond},
-            description: "Selecto query execution time"
-          ),
-          summary("selecto.query.complete.execution_time",
-            unit: {:native, :millisecond},
-            description: "Time spent executing the query"
-          ),
-          counter("selecto.cache.hit.count",
-            description: "Number of cache hits"
-          ),
-          counter("selecto.cache.miss.count",
-            description: "Number of cache misses"
-          ),
-          counter("selecto.query.error.count",
-            description: "Number of query errors"
-          ),
-          distribution("selecto.cache.ratio",
-            buckets: [0, 0.25, 0.5, 0.75, 1.0],
-            unit: :percent,
-            description: "Cache hit ratio"
-          ),
+        updated_content =
+          String.replace(
+            content,
+            "# VM Metrics",
+            """
+            # Selecto Metrics
+            summary("selecto.query.complete.duration",
+              unit: {:native, :millisecond},
+              description: "Selecto query execution time"
+            ),
+            summary("selecto.query.complete.execution_time",
+              unit: {:native, :millisecond},
+              description: "Time spent executing the query"
+            ),
+            counter("selecto.cache.hit.count",
+              description: "Number of cache hits"
+            ),
+            counter("selecto.cache.miss.count",
+              description: "Number of cache misses"
+            ),
+            counter("selecto.query.error.count",
+              description: "Number of query errors"
+            ),
+            distribution("selecto.cache.ratio",
+              buckets: [0, 0.25, 0.5, 0.75, 1.0],
+              unit: :percent,
+              description: "Cache hit ratio"
+            ),
 
-          # VM Metrics
-          """
-        )
+            # VM Metrics
+            """
+          )
 
         File.write!(telemetry_path, updated_content)
         Mix.shell().info("✓ Added Selecto telemetry metrics")
@@ -489,22 +494,25 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
         Mix.shell().info("Please manually add #{page_module} to the additional_pages list")
       else
         # Add additional_pages to live_dashboard
-        updated_content = String.replace(content,
-          ~r/live_dashboard\s+"\/dashboard",\s*\n\s*metrics:\s*#{web_module}\.Telemetry/,
-          """
-          live_dashboard "/dashboard",
-            metrics: #{web_module}.Telemetry,
-            additional_pages: [
-              selecto: #{page_module}
-            ]
-          """
-        )
+        updated_content =
+          String.replace(
+            content,
+            ~r/live_dashboard\s+"\/dashboard",\s*\n\s*metrics:\s*#{web_module}\.Telemetry/,
+            """
+            live_dashboard "/dashboard",
+              metrics: #{web_module}.Telemetry,
+              additional_pages: [
+                selecto: #{page_module}
+              ]
+            """
+          )
 
         if updated_content != content do
           File.write!(router_path, updated_content)
           Mix.shell().info("✓ Updated router.ex with Selecto LiveDashboard page")
         else
           Mix.shell().error("Could not automatically update router.ex")
+
           Mix.shell().info("""
 
           Please manually update your router.ex:
@@ -527,6 +535,7 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
 
     # Convert module parts to path
     web_part = Enum.find_index(parts, &(&1 =~ ~r/Web$/i)) || 0
+
     path_parts =
       parts
       |> Enum.drop(web_part + 1)

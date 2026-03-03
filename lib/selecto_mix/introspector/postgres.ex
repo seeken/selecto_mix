@@ -90,7 +90,6 @@ defmodule SelectoMix.Introspector.Postgres do
     with {:ok, columns} <- get_columns(conn, table_name, schema),
          {:ok, primary_key} <- get_primary_key(conn, table_name, schema),
          {:ok, foreign_keys} <- get_foreign_keys(conn, table_name, schema) do
-
       # Extract field names and types
       fields = Enum.map(columns, & &1.column_name)
 
@@ -108,14 +107,15 @@ defmodule SelectoMix.Introspector.Postgres do
       column_metadata =
         columns
         |> Enum.into(%{}, fn col ->
-          {col.column_name, %{
-            type: Map.get(field_types, col.column_name),
-            nullable: col.is_nullable == "YES",
-            default: col.column_default,
-            max_length: col.character_maximum_length,
-            precision: col.numeric_precision,
-            scale: col.numeric_scale
-          }}
+          {col.column_name,
+           %{
+             type: Map.get(field_types, col.column_name),
+             nullable: col.is_nullable == "YES",
+             default: col.column_default,
+             max_length: col.character_maximum_length,
+             precision: col.numeric_precision,
+             scale: col.numeric_scale
+           }}
         end)
 
       metadata = %{
@@ -173,8 +173,17 @@ defmodule SelectoMix.Introspector.Postgres do
       {:ok, %{rows: rows, columns: _cols}} ->
         columns =
           rows
-          |> Enum.map(fn [col_name, data_type, udt_name, is_nullable, col_default,
-                          max_length, precision, scale, _position] ->
+          |> Enum.map(fn [
+                           col_name,
+                           data_type,
+                           udt_name,
+                           is_nullable,
+                           col_default,
+                           max_length,
+                           precision,
+                           scale,
+                           _position
+                         ] ->
             %{
               column_name: String.to_atom(col_name),
               data_type: data_type,
@@ -275,8 +284,7 @@ defmodule SelectoMix.Introspector.Postgres do
       {:ok, %{rows: rows}} ->
         foreign_keys =
           rows
-          |> Enum.map(fn [constraint_name, col_name, foreign_schema,
-                          foreign_table, foreign_col] ->
+          |> Enum.map(fn [constraint_name, col_name, foreign_schema, foreign_table, foreign_col] ->
             %{
               constraint_name: constraint_name,
               column_name: String.to_atom(col_name),
@@ -468,6 +476,7 @@ defmodule SelectoMix.Introspector.Postgres do
         {:ok, _values} ->
           # Return string type for now - could enhance to include enum values
           :string
+
         {:error, _} ->
           :string
       end
@@ -515,7 +524,8 @@ defmodule SelectoMix.Introspector.Postgres do
     # e.g., "categories" -> Categories, "order_items" -> OrderItems
     table_name
     |> Macro.camelize()
-    |> String.replace_suffix("s", "")  # Simple pluralization handling
+    # Simple pluralization handling
+    |> String.replace_suffix("s", "")
     |> String.to_atom()
   end
 end

@@ -23,9 +23,11 @@ defmodule Mix.Selecto.SchemaAnalyzer do
     analysis = analyze_schema(schema_module, include_associations: true)
 
     %{
-      name: generate_domain_name(schema_module),  # Add missing :name field
+      # Add missing :name field
+      name: generate_domain_name(schema_module),
       schema: schema_module,
-      source: get_table_name(schema_module),  # Tests expect :source not :table
+      # Tests expect :source not :table
+      source: get_table_name(schema_module),
       table: get_table_name(schema_module),
       fields: analysis.fields,
       associations: analysis.associations,
@@ -39,6 +41,7 @@ defmodule Mix.Selecto.SchemaAnalyzer do
       schema_module.__schema__(:fields)
       |> Enum.map(fn field ->
         type = schema_module.__schema__(:type, field)
+
         %{
           name: field,
           type: type,
@@ -75,7 +78,8 @@ defmodule Mix.Selecto.SchemaAnalyzer do
               name: assoc,
               type: :belongs_to,
               related: related,
-              foreign_key: belongs_to.owner_key  # BelongsTo uses owner_key
+              # BelongsTo uses owner_key
+              foreign_key: belongs_to.owner_key
             }
 
           other ->
@@ -124,7 +128,8 @@ defmodule Mix.Selecto.SchemaAnalyzer do
             type: :domain,
             domain: generate_domain_name(assoc.related),
             value_field: assoc.foreign_key,
-            display_field: :name  # Default assumption
+            # Default assumption
+            display_field: :name
           }
         }
       end)
@@ -143,7 +148,9 @@ defmodule Mix.Selecto.SchemaAnalyzer do
 
   defp generate_suggested_config(select_candidates) do
     case length(select_candidates) do
-      0 -> %{}
+      0 ->
+        %{}
+
       _ ->
         %{
           custom_columns: generate_custom_columns_config(select_candidates),
@@ -174,27 +181,32 @@ defmodule Mix.Selecto.SchemaAnalyzer do
     select_candidates
     |> Enum.reduce(%{}, fn candidate, acc ->
       field_name = Atom.to_string(candidate.field)
-      config = case candidate.option_provider.type do
-        :enum ->
-          %{
-            name: field_name,
-            option_provider: candidate.option_provider,
-            multiple: true,
-            searchable: false
-          }
-        :domain ->
-          %{
-            name: field_name,
-            option_provider: candidate.option_provider,
-            multiple: false,
-            searchable: true
-          }
-      end
+
+      config =
+        case candidate.option_provider.type do
+          :enum ->
+            %{
+              name: field_name,
+              option_provider: candidate.option_provider,
+              multiple: true,
+              searchable: false
+            }
+
+          :domain ->
+            %{
+              name: field_name,
+              option_provider: candidate.option_provider,
+              multiple: false,
+              searchable: true
+            }
+        end
+
       Map.put(acc, field_name, config)
     end)
   end
 
   defp is_enum_field?({:parameterized, {Ecto.Enum, _}}), do: true
-  defp is_enum_field?({:parameterized, Ecto.Enum, _}), do: true  # Handle both patterns
+  # Handle both patterns
+  defp is_enum_field?({:parameterized, Ecto.Enum, _}), do: true
   defp is_enum_field?(_), do: false
 end

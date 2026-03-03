@@ -96,7 +96,7 @@ defmodule SelectoMix.OverlayGenerator do
 
       # Uncomment and add custom filters
     #{filter_examples}
-#{jsonb_examples}
+    #{jsonb_examples}
     end
     """
   end

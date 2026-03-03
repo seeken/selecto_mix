@@ -42,7 +42,8 @@ defmodule Mix.Tasks.Selecto.Validate.ParameterizedJoins do
   defp test_field_references(references_str) do
     Mix.shell().info("Testing parameterized field reference parsing...\n")
 
-    references = references_str |> String.split(",") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
+    references =
+      references_str |> String.split(",") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
 
     Enum.each(references, fn ref ->
       Mix.shell().info("Testing: #{inspect(ref)}")
@@ -110,7 +111,8 @@ defmodule Mix.Tasks.Selecto.Validate.ParameterizedJoins do
          file_status: :readable,
          parameterized_joins: validation_result.parameterized_joins,
          validation_checks: validation_result.validation_checks,
-         suggestions: if(opts[:suggestions], do: generate_suggestions(validation_result), else: [])
+         suggestions:
+           if(opts[:suggestions], do: generate_suggestions(validation_result), else: [])
        }}
     else
       {:error, reason} ->
@@ -156,6 +158,7 @@ defmodule Mix.Tasks.Selecto.Validate.ParameterizedJoins do
 
       joins ->
         Mix.shell().info("  ✅ Found #{length(joins)} parameterized join(s)")
+
         Enum.each(joins, fn join ->
           Mix.shell().info("     • #{join}")
         end)
@@ -167,6 +170,7 @@ defmodule Mix.Tasks.Selecto.Validate.ParameterizedJoins do
 
       issues ->
         Mix.shell().info("  ⚠️  Validation issues:")
+
         Enum.each(issues, fn issue ->
           Mix.shell().info("     • #{issue}")
         end)
@@ -174,6 +178,7 @@ defmodule Mix.Tasks.Selecto.Validate.ParameterizedJoins do
 
     if opts[:suggestions] == true and result.suggestions != [] do
       Mix.shell().info("  💡 Suggestions:")
+
       Enum.each(result.suggestions, fn suggestion ->
         Mix.shell().info("     • #{suggestion}")
       end)
@@ -195,14 +200,20 @@ defmodule Mix.Tasks.Selecto.Validate.ParameterizedJoins do
 
     suggestions =
       if !checks.parameters_valid do
-        ["Normalize parameter definitions to `%{name: atom, type: atom, required: boolean}`" | suggestions]
+        [
+          "Normalize parameter definitions to `%{name: atom, type: atom, required: boolean}`"
+          | suggestions
+        ]
       else
         suggestions
       end
 
     suggestions =
       if !checks.field_types_valid do
-        ["Define each join field as `%{type: atom}` with supported Selecto-compatible types" | suggestions]
+        [
+          "Define each join field as `%{type: atom}` with supported Selecto-compatible types"
+          | suggestions
+        ]
       else
         suggestions
       end

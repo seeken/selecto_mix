@@ -25,7 +25,8 @@ defmodule SelectoMix.ParameterizedJoinsValidatorTest do
     end
 
     test "returns error for invalid reference syntax" do
-      assert {:error, _reason} = ParameterizedJoinsValidator.parse_field_reference("products_only")
+      assert {:error, _reason} =
+               ParameterizedJoinsValidator.parse_field_reference("products_only")
     end
   end
 
@@ -81,7 +82,11 @@ defmodule SelectoMix.ParameterizedJoinsValidatorTest do
 
       assert {:ok, result} = ParameterizedJoinsValidator.validate_domain_content(content)
       refute result.validation_checks.join_conditions_valid
-      assert Enum.any?(result.validation_checks.issues, &String.contains?(&1, "unknown parameter"))
+
+      assert Enum.any?(
+               result.validation_checks.issues,
+               &String.contains?(&1, "unknown parameter")
+             )
     end
 
     test "flags invalid parameter definitions" do
@@ -106,7 +111,11 @@ defmodule SelectoMix.ParameterizedJoinsValidatorTest do
       assert {:ok, result} = ParameterizedJoinsValidator.validate_domain_content(content)
       refute result.validation_checks.parameters_valid
       assert Enum.any?(result.validation_checks.issues, &String.contains?(&1, "unsupported type"))
-      assert Enum.any?(result.validation_checks.issues, &String.contains?(&1, "duplicate parameter"))
+
+      assert Enum.any?(
+               result.validation_checks.issues,
+               &String.contains?(&1, "duplicate parameter")
+             )
     end
   end
 end

@@ -31,8 +31,8 @@ Add `selecto_mix` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:selecto_mix, "~> 0.3.2"},
-    {:selecto, "~> 0.3.2"},
+    {:selecto_mix, "~> 0.3.10"},
+    {:selecto, "~> 0.3.8"},
     {:ecto, "~> 3.10"}
   ]
 end
@@ -223,6 +223,14 @@ end
 - `mix selecto.gen.domain` - Generate Selecto domain configurations
 - `mix selecto.install` - Install Selecto deps + run asset integration (`--development-mode --source your-fork` supported)
 - `mix selecto.update` - Update existing domain configurations after schema changes
+
+## Property Testing
+
+Run the SelectoMix property suite:
+
+```bash
+mix test test/selecto_mix_property_test.exs
+```
 
 ## Contributing
 
