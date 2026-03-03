@@ -1,7 +1,7 @@
 defmodule SelectoMix.DomainGenerator do
   @moduledoc """
   Generates Selecto domain configuration files from schema introspection data.
-  
+
   This module creates complete, functional Selecto domain files that users
   can immediately use in their applications. The generated files include
   helpful comments, customization markers, and suggested configurations.
@@ -114,7 +114,7 @@ defmodule SelectoMix.DomainGenerator do
           
       Your customizations will be preserved during regeneration (unless --force is used).
       \"\"\"
-#{saved_views_use}
+    #{saved_views_use}
       @doc \"\"\"
       Returns the Selecto domain configuration for #{inspect(schema_module)}.
 
@@ -157,43 +157,47 @@ defmodule SelectoMix.DomainGenerator do
   def generate_domain_map(config) do
     timestamp = DateTime.utc_now() |> DateTime.to_iso8601()
     custom_metadata = generate_custom_metadata(config)
-    
+
     "%{\n      # Generated from schema: #{config[:schema_module]}\n" <>
-    "      # Last updated: #{timestamp}\n      \n" <>
-    "      source: #{generate_source_config(config)},\n" <>
-    "      schemas: #{generate_schemas_config(config)},\n" <>
-    "      name: #{generate_domain_name(config)},\n      \n" <>
-    "      # Default selections (customize as needed)\n" <>
-    "      default_selected: #{generate_default_selected(config)},\n      \n" <>
-    "      # Suggested filters (add/remove as needed)\n" <>
-    "      filters: #{generate_filters_config(config)},\n      \n" <>
-    "      # Subfilters for relationship-based filtering (Selecto 0.3.0+)\n" <>
-    "      subfilters: #{generate_subfilters_config(config)},\n" <>
-    "      \n" <>
-    "      # Window functions configuration (Selecto 0.3.0+)\n" <>
-    "      window_functions: #{generate_window_functions_config(config)},\n" <>
-    "      \n" <>
-    "      # Query pagination settings\n" <>
-    "      pagination: #{generate_pagination_config(config)},\n" <>
-    "      \n" <>
-    "      # Pivot table configuration (Selecto 0.3.0+)\n" <>
-    "      pivot: #{generate_pivot_config(config)},\n      \n" <>
-    "      # Join configurations\n" <>
-    "      joins: #{generate_joins_config(config)}#{custom_metadata}\n    }"
+      "      # Last updated: #{timestamp}\n      \n" <>
+      "      source: #{generate_source_config(config)},\n" <>
+      "      schemas: #{generate_schemas_config(config)},\n" <>
+      "      name: #{generate_domain_name(config)},\n      \n" <>
+      "      # Default selections (customize as needed)\n" <>
+      "      default_selected: #{generate_default_selected(config)},\n      \n" <>
+      "      # Suggested filters (add/remove as needed)\n" <>
+      "      filters: #{generate_filters_config(config)},\n      \n" <>
+      "      # Subfilters for relationship-based filtering (Selecto 0.3.0+)\n" <>
+      "      subfilters: #{generate_subfilters_config(config)},\n" <>
+      "      \n" <>
+      "      # Window functions configuration (Selecto 0.3.0+)\n" <>
+      "      window_functions: #{generate_window_functions_config(config)},\n" <>
+      "      \n" <>
+      "      # Query pagination settings\n" <>
+      "      pagination: #{generate_pagination_config(config)},\n" <>
+      "      \n" <>
+      "      # Pivot table configuration (Selecto 0.3.0+)\n" <>
+      "      pivot: #{generate_pivot_config(config)},\n      \n" <>
+      "      # Join configurations\n" <>
+      "      joins: #{generate_joins_config(config)}#{custom_metadata}\n    }"
   end
 
   # Private generation functions
 
   defp get_domain_module_name(schema_module, config) do
-    base_name = config[:metadata][:module_name] ||
-                Module.split(schema_module) |> List.last()
+    base_name =
+      config[:metadata][:module_name] ||
+        Module.split(schema_module) |> List.last()
 
     _context_name = config[:metadata][:context_name] || "Domains"
 
     # Generate appropriate module name - use schema module as source of truth
-    app_name = Application.get_env(:selecto_mix, :app_name) ||
-               infer_app_name_from_schema(schema_module) ||  # KEY FIX: Use schema module
-               "MyApp"
+    # KEY FIX: Use schema module
+    app_name =
+      Application.get_env(:selecto_mix, :app_name) ||
+        infer_app_name_from_schema(schema_module) ||
+        "MyApp"
+
     "#{app_name}.SelectoDomains.#{base_name}Domain"
   end
 
@@ -206,73 +210,81 @@ defmodule SelectoMix.DomainGenerator do
     polymorphic_config = config[:polymorphic_config]
 
     # Only include redact_fields if there are redacted fields, otherwise use empty list
-    redacted_config = if redacted_fields != [] do
-      "        # Fields to exclude from queries\n" <>
-      "        redact_fields: #{inspect(redacted_fields)},\n        \n"
-    else
-      "        # Fields to exclude from queries\n" <>
-      "        redact_fields: [],\n        \n"
-    end
+    redacted_config =
+      if redacted_fields != [] do
+        "        # Fields to exclude from queries\n" <>
+          "        redact_fields: #{inspect(redacted_fields)},\n        \n"
+      else
+        "        # Fields to exclude from queries\n" <>
+          "        redact_fields: [],\n        \n"
+      end
 
     "%{\n        source_table: \"#{table_name}\",\n" <>
-    "        primary_key: #{inspect(primary_key)},\n        \n" <>
-    "        # Available fields from schema\n" <>
-    "        # NOTE: This is redundant with columns - consider using Map.keys(columns) instead\n" <>
-    "        fields: #{inspect(fields)},\n        \n" <>
-    redacted_config <>
-    "        # Field type definitions (contains the same info as fields above)\n" <>
-    "        columns: #{generate_columns_config(fields, field_types, polymorphic_config)},\n        \n" <>
-    "        # Schema associations\n" <>
-    "        associations: #{generate_source_associations(config)}\n      }"
+      "        primary_key: #{inspect(primary_key)},\n        \n" <>
+      "        # Available fields from schema\n" <>
+      "        # NOTE: This is redundant with columns - consider using Map.keys(columns) instead\n" <>
+      "        fields: #{inspect(fields)},\n        \n" <>
+      redacted_config <>
+      "        # Field type definitions (contains the same info as fields above)\n" <>
+      "        columns: #{generate_columns_config(fields, field_types, polymorphic_config)},\n        \n" <>
+      "        # Schema associations\n" <>
+      "        associations: #{generate_source_associations(config)}\n      }"
   end
 
   defp generate_columns_config(fields, field_types, polymorphic_config \\ nil) do
     # Detect polymorphic associations (auto-detect OR use provided config)
-    polymorphic_assocs = if polymorphic_config do
-      # Use provided config from --expand-polymorphic
-      [polymorphic_config]
-    else
-      # Auto-detect from field patterns
-      detect_polymorphic_associations(fields, field_types)
-    end
-
-    columns_map = Enum.into(fields, %{}, fn field ->
-      type = Map.get(field_types, field, :string)
-      base_config = %{type: type}
-
-      # For JSONB columns, add a placeholder schema that can be customized in the overlay
-      config = if type == :jsonb do
-        Map.put(base_config, :schema, :stub)
+    polymorphic_assocs =
+      if polymorphic_config do
+        # Use provided config from --expand-polymorphic
+        [polymorphic_config]
       else
-        base_config
+        # Auto-detect from field patterns
+        detect_polymorphic_associations(fields, field_types)
       end
 
-      {field, config}
-    end)
+    columns_map =
+      Enum.into(fields, %{}, fn field ->
+        type = Map.get(field_types, field, :string)
+        base_config = %{type: type}
+
+        # For JSONB columns, add a placeholder schema that can be customized in the overlay
+        config =
+          if type == :jsonb do
+            Map.put(base_config, :schema, :stub)
+          else
+            base_config
+          end
+
+        {field, config}
+      end)
 
     # Add polymorphic virtual column for each detected polymorphic association
-    polymorphic_columns = Enum.into(polymorphic_assocs, %{}, fn assoc ->
-      # Handle both auto-detected format and CLI-provided format
-      {virtual_field, type_field, id_field, entity_types, display_name} = case assoc do
-        # CLI-provided format from --expand-polymorphic
-        %{field_name: field_name, type_field: tf, id_field: idf, entity_types: types} ->
-          {String.to_atom(field_name), tf, idf, types, String.capitalize(field_name)}
+    polymorphic_columns =
+      Enum.into(polymorphic_assocs, %{}, fn assoc ->
+        # Handle both auto-detected format and CLI-provided format
+        {virtual_field, type_field, id_field, entity_types, display_name} =
+          case assoc do
+            # CLI-provided format from --expand-polymorphic
+            %{field_name: field_name, type_field: tf, id_field: idf, entity_types: types} ->
+              {String.to_atom(field_name), tf, idf, types, String.capitalize(field_name)}
 
-        # Auto-detected format
-        %{base_name: base, type_field: tf, id_field: idf, suggested_types: types} ->
-          {String.to_atom(base), to_string(tf), to_string(idf), types, String.capitalize(base)}
-      end
+            # Auto-detected format
+            %{base_name: base, type_field: tf, id_field: idf, suggested_types: types} ->
+              {String.to_atom(base), to_string(tf), to_string(idf), types,
+               String.capitalize(base)}
+          end
 
-      {virtual_field, %{
-        type: :string,
-        join_mode: :polymorphic,
-        filter_type: :polymorphic,
-        type_field: type_field,
-        id_field: id_field,
-        entity_types: entity_types,
-        display_name: display_name
-      }}
-    end)
+        {virtual_field,
+         %{
+           type: :string,
+           join_mode: :polymorphic,
+           filter_type: :polymorphic,
+           type_field: type_field,
+           id_field: id_field,
+           entity_types: entity_types,
+           display_name: display_name
+         }}
+      end)
 
     # Merge regular columns with polymorphic virtual columns
     all_columns = Map.merge(columns_map, polymorphic_columns)
@@ -289,23 +301,31 @@ defmodule SelectoMix.DomainGenerator do
   end
 
   # Generate columns config with special join mode handling
-  defp generate_columns_config_with_mode(fields, field_types, join_mode, primary_key, assoc_config) do
+  defp generate_columns_config_with_mode(
+         fields,
+         field_types,
+         join_mode,
+         primary_key,
+         assoc_config
+       ) do
     case join_mode do
       {mode_type, display_field} when mode_type in [:tag, :star, :lookup] ->
         display_field_atom = String.to_atom(display_field)
 
         # Start with ALL fields to satisfy validator
-        columns_map = Enum.into(fields, %{}, fn field ->
-          type = Map.get(field_types, field, :string)
-          {field, %{type: type}}
-        end)
+        columns_map =
+          Enum.into(fields, %{}, fn field ->
+            type = Map.get(field_types, field, :string)
+            {field, %{type: type}}
+          end)
 
         # Extract the foreign key field from association config
         # This allows filtering on the local foreign key instead of joining
-        foreign_key_field = case assoc_config do
-          %{owner_key: owner_key} -> Atom.to_string(owner_key)
-          _ -> nil
-        end
+        foreign_key_field =
+          case assoc_config do
+            %{owner_key: owner_key} -> Atom.to_string(owner_key)
+            _ -> nil
+          end
 
         # Build metadata map for the display field
         metadata = %{
@@ -317,35 +337,40 @@ defmodule SelectoMix.DomainGenerator do
         }
 
         # Add group_by_filter if we have a foreign key to filter on
-        metadata = if foreign_key_field do
-          Map.put(metadata, :group_by_filter, foreign_key_field)
-        else
-          metadata
-        end
+        metadata =
+          if foreign_key_field do
+            Map.put(metadata, :group_by_filter, foreign_key_field)
+          else
+            metadata
+          end
 
         # Enhance the display field with special metadata
-        columns_map = Map.update!(columns_map, display_field_atom, fn col ->
-          Map.merge(col, metadata)
-        end)
+        columns_map =
+          Map.update!(columns_map, display_field_atom, fn col ->
+            Map.merge(col, metadata)
+          end)
 
         # Mark ID field as hidden if it's not the display field
-        columns_map = if display_field_atom != primary_key && Map.has_key?(columns_map, primary_key) do
-          Map.update!(columns_map, primary_key, fn col ->
-            Map.put(col, :hidden, true)
-          end)
-        else
-          columns_map
-        end
+        columns_map =
+          if display_field_atom != primary_key && Map.has_key?(columns_map, primary_key) do
+            Map.update!(columns_map, primary_key, fn col ->
+              Map.put(col, :hidden, true)
+            end)
+          else
+            columns_map
+          end
 
         # Format with nice indentation and helpful comments
         formatted_columns =
           columns_map
           |> Enum.map(fn {field, config_map} ->
-            comment = if field == display_field_atom do
-              "# #{mode_type} mode: displays name, filters by ID"
-            else
-              ""
-            end
+            comment =
+              if field == display_field_atom do
+                "# #{mode_type} mode: displays name, filters by ID"
+              else
+                ""
+              end
+
             comment_line = if comment != "", do: "          #{comment}\n", else: ""
             "#{comment_line}          #{inspect(field)} => #{inspect(config_map)}"
           end)
@@ -397,20 +422,31 @@ defmodule SelectoMix.DomainGenerator do
     # Check for many-to-many with join_through
     if assoc_config[:join_through] do
       join_through = assoc_config[:join_through] |> inspect()
+
+      join_keys_line =
+        case assoc_config[:join_keys] do
+          join_keys when is_list(join_keys) and join_keys != [] ->
+            "              join_keys: #{inspect(join_keys)}\n"
+
+          _ ->
+            ""
+        end
+
       "#{assoc_name_key} => %{\n" <>
-      "              queryable: #{queryable_name},\n" <>
-      "              field: #{inspect(assoc_name)},\n" <>
-      "              owner_key: #{owner_key},\n" <>
-      "              related_key: #{related_key},\n" <>
-      "              join_through: #{join_through}\n" <>
-      "            }"
+        "              queryable: #{queryable_name},\n" <>
+        "              field: #{inspect(assoc_name)},\n" <>
+        "              owner_key: #{owner_key},\n" <>
+        "              related_key: #{related_key},\n" <>
+        "              join_through: #{join_through},\n" <>
+        join_keys_line <>
+        "            }"
     else
       "#{assoc_name_key} => %{\n" <>
-      "              queryable: #{queryable_name},\n" <>
-      "              field: #{inspect(assoc_name)},\n" <>
-      "              owner_key: #{owner_key},\n" <>
-      "              related_key: #{related_key}\n" <>
-      "            }"
+        "              queryable: #{queryable_name},\n" <>
+        "              field: #{inspect(assoc_name)},\n" <>
+        "              owner_key: #{owner_key},\n" <>
+        "              related_key: #{related_key}\n" <>
+        "            }"
     end
   end
 
@@ -419,28 +455,33 @@ defmodule SelectoMix.DomainGenerator do
     queryable_name = get_queryable_name(assoc_config) |> inspect()
 
     # Get the through path - this tells selecto how to traverse the associations
-    through_path = case assoc_config[:through_path] do
-      path when is_list(path) -> inspect(path)
-      _ -> "[]"
-    end
+    through_path =
+      case assoc_config[:through_path] do
+        path when is_list(path) -> inspect(path)
+        _ -> "[]"
+      end
 
     "#{assoc_name_key} => %{\n" <>
-    "              queryable: #{queryable_name},\n" <>
-    "              field: #{inspect(assoc_name)},\n" <>
-    "              through: #{through_path}\n" <>
-    "            }"
+      "              queryable: #{queryable_name},\n" <>
+      "              field: #{inspect(assoc_name)},\n" <>
+      "              through: #{through_path}\n" <>
+      "            }"
   end
 
   defp get_queryable_name(assoc_config) do
     case assoc_config[:related_schema] do
-      nil -> :unknown
+      nil ->
+        :unknown
+
       schema when is_atom(schema) ->
         schema
         |> Module.split()
         |> List.last()
         |> Macro.underscore()
         |> String.to_atom()
-      other -> other
+
+      other ->
+        other
     end
   end
 
@@ -467,13 +508,19 @@ defmodule SelectoMix.DomainGenerator do
         join_mode = get_join_mode_for_schema(schema_name, expand_modes)
 
         if should_expand do
-          generate_expanded_schema_config(schema_name, related_schema, table_name, join_mode, assoc_config)
+          generate_expanded_schema_config(
+            schema_name,
+            related_schema,
+            table_name,
+            join_mode,
+            assoc_config
+          )
         else
           generate_placeholder_schema_config(schema_name, related_schema_string, table_name)
         end
       end)
       |> Enum.join(",\n      ")
-    
+
     if schema_configs == "" do
       "%{}"
     else
@@ -485,17 +532,18 @@ defmodule SelectoMix.DomainGenerator do
     schema_name_str = to_string(schema_name)
     related_schema_str = to_string(related_schema)
 
-    result = Enum.any?(expand_schemas_list || [], fn expand_name ->
-      expand_name_lower = String.downcase(expand_name)
-      schema_name_lower = String.downcase(schema_name_str)
-      related_schema_lower = String.downcase(related_schema_str)
+    result =
+      Enum.any?(expand_schemas_list || [], fn expand_name ->
+        expand_name_lower = String.downcase(expand_name)
+        schema_name_lower = String.downcase(schema_name_str)
+        related_schema_lower = String.downcase(related_schema_str)
 
-      # Match by exact schema name, or if expand_name contains schema_name, or vice versa
-      expand_name_lower == schema_name_lower ||
-      expand_name_lower == related_schema_lower ||
-      String.contains?(expand_name_lower, schema_name_lower) ||
-      String.contains?(related_schema_lower, expand_name_lower)
-    end)
+        # Match by exact schema name, or if expand_name contains schema_name, or vice versa
+        expand_name_lower == schema_name_lower ||
+          expand_name_lower == related_schema_lower ||
+          String.contains?(expand_name_lower, schema_name_lower) ||
+          String.contains?(related_schema_lower, expand_name_lower)
+      end)
 
     result
   end
@@ -512,44 +560,66 @@ defmodule SelectoMix.DomainGenerator do
 
       cond do
         # Exact match (case-insensitive)
-        key_lower == schema_name_lower -> value
+        key_lower == schema_name_lower ->
+          value
 
         # Plural form match (Tags matches Tag, Categories matches Category)
-        key_lower == schema_name_lower <> "s" -> value
-        key_lower <> "s" == schema_name_lower -> value
+        key_lower == schema_name_lower <> "s" ->
+          value
+
+        key_lower <> "s" == schema_name_lower ->
+          value
 
         # Remove common plural suffixes for matching
-        String.ends_with?(key_lower, "ies") && String.replace_suffix(key_lower, "ies", "y") == schema_name_lower -> value
-        String.ends_with?(schema_name_lower, "ies") && String.replace_suffix(schema_name_lower, "ies", "y") == key_lower -> value
+        String.ends_with?(key_lower, "ies") &&
+            String.replace_suffix(key_lower, "ies", "y") == schema_name_lower ->
+          value
+
+        String.ends_with?(schema_name_lower, "ies") &&
+            String.replace_suffix(schema_name_lower, "ies", "y") == key_lower ->
+          value
 
         # Partial match (if key contains schema name or vice versa)
-        String.contains?(key_lower, schema_name_lower) && String.length(key_lower) < String.length(schema_name_lower) + 3 -> value
-        String.contains?(schema_name_lower, key_lower) && String.length(schema_name_lower) < String.length(key_lower) + 3 -> value
+        String.contains?(key_lower, schema_name_lower) &&
+            String.length(key_lower) < String.length(schema_name_lower) + 3 ->
+          value
 
-        true -> nil
+        String.contains?(schema_name_lower, key_lower) &&
+            String.length(schema_name_lower) < String.length(key_lower) + 3 ->
+          value
+
+        true ->
+          nil
       end
     end)
   end
-  
+
   defp generate_placeholder_schema_config(schema_name, related_schema_string, table_name) do
     # Use proper atom syntax for map key
-    schema_name_key = schema_name |> inspect()  # KEY FIX
+    # KEY FIX
+    schema_name_key = schema_name |> inspect()
 
     "#{schema_name_key} => %{\n" <>
-    "            # TODO: Add proper schema configuration for #{related_schema_string}\n" <>
-    "            # This will be auto-generated when you run:\n" <>
-    "            # mix selecto.gen.domain #{related_schema_string}\n" <>
-    "            # Or use --expand-schemas #{schema_name} to expand automatically\n" <>
-    "            source_table: \"#{table_name}\",\n" <>
-    "            primary_key: :id,\n" <>
-    "            fields: [], # Add fields for #{related_schema_string}\n" <>
-    "            redact_fields: [],\n" <>
-    "            columns: %{},\n" <>
-    "            associations: %{}\n" <>
-    "          }"
+      "            # TODO: Add proper schema configuration for #{related_schema_string}\n" <>
+      "            # This will be auto-generated when you run:\n" <>
+      "            # mix selecto.gen.domain #{related_schema_string}\n" <>
+      "            # Or use --expand-schemas #{schema_name} to expand automatically\n" <>
+      "            source_table: \"#{table_name}\",\n" <>
+      "            primary_key: :id,\n" <>
+      "            fields: [], # Add fields for #{related_schema_string}\n" <>
+      "            redact_fields: [],\n" <>
+      "            columns: %{},\n" <>
+      "            associations: %{}\n" <>
+      "          }"
   end
-  
-  defp generate_expanded_schema_config(schema_name, related_schema, table_name, join_mode, assoc_config) do
+
+  defp generate_expanded_schema_config(
+         schema_name,
+         related_schema,
+         table_name,
+         join_mode,
+         assoc_config
+       ) do
     # Attempt to introspect the related schema
     case introspect_related_schema(related_schema) do
       {:ok, schema_config} ->
@@ -559,36 +629,47 @@ defmodule SelectoMix.DomainGenerator do
         associations = schema_config[:associations] || %{}
 
         # Generate columns config with join mode awareness
-        columns_config = generate_columns_config_with_mode(fields, field_types, join_mode, primary_key, assoc_config)
+        columns_config =
+          generate_columns_config_with_mode(
+            fields,
+            field_types,
+            join_mode,
+            primary_key,
+            assoc_config
+          )
+
         associations_config = generate_nested_associations_config(associations)
 
         # Add join mode metadata if present
-        mode_comment = case join_mode do
-          {:tag, _} -> "            # Join mode: tag (many-to-many with ID-based filtering)\n"
-          {:star, _} -> "            # Join mode: star (lookup table with ID-based filtering)\n"
-          {:lookup, _} -> "            # Join mode: lookup (small reference table)\n"
-          _ -> ""
-        end
+        mode_comment =
+          case join_mode do
+            {:tag, _} -> "            # Join mode: tag (many-to-many with ID-based filtering)\n"
+            {:star, _} -> "            # Join mode: star (lookup table with ID-based filtering)\n"
+            {:lookup, _} -> "            # Join mode: lookup (small reference table)\n"
+            _ -> ""
+          end
 
         # Use proper atom syntax for map key
-        schema_name_key = schema_name |> inspect()  # KEY FIX
+        # KEY FIX
+        schema_name_key = schema_name |> inspect()
 
         "#{schema_name_key} => %{\n" <>
-        "            # Expanded schema configuration for #{inspect(related_schema)}\n" <>
-        mode_comment <>
-        "            source_table: \"#{table_name}\",\n" <>
-        "            primary_key: #{inspect(primary_key)},\n" <>
-        "            fields: #{inspect(fields)},\n" <>
-        "            redact_fields: [],\n" <>
-        "            columns: #{columns_config},\n" <>
-        "            associations: #{associations_config}\n" <>
-        "          }"
+          "            # Expanded schema configuration for #{inspect(related_schema)}\n" <>
+          mode_comment <>
+          "            source_table: \"#{table_name}\",\n" <>
+          "            primary_key: #{inspect(primary_key)},\n" <>
+          "            fields: #{inspect(fields)},\n" <>
+          "            redact_fields: [],\n" <>
+          "            columns: #{columns_config},\n" <>
+          "            associations: #{associations_config}\n" <>
+          "          }"
+
       {:error, _reason} ->
         # Fallback to placeholder if introspection fails
         generate_placeholder_schema_config(schema_name, inspect(related_schema), table_name)
     end
   end
-  
+
   defp introspect_related_schema(schema_module) do
     try do
       # Try to load the module and introspect it
@@ -598,37 +679,39 @@ defmodule SelectoMix.DomainGenerator do
           if function_exported?(schema_module, :__schema__, 1) do
             fields = schema_module.__schema__(:fields)
             primary_key = schema_module.__schema__(:primary_key) |> List.first() || :id
-            
+
             # Convert types to simplified format
-            field_types = 
+            field_types =
               fields
               |> Enum.into(%{}, fn field ->
                 type = schema_module.__schema__(:type, field)
                 simplified_type = simplify_ecto_type(type)
                 {field, simplified_type}
               end)
-            
+
             # No associations in expanded schemas to avoid circular references
             associations = %{}
-            
-            {:ok, %{
-              fields: fields,
-              field_types: field_types,
-              primary_key: primary_key,
-              associations: associations
-            }}
+
+            {:ok,
+             %{
+               fields: fields,
+               field_types: field_types,
+               primary_key: primary_key,
+               associations: associations
+             }}
           else
             {:error, :not_ecto_schema}
           end
+
         {:error, _reason} ->
           {:error, :module_not_loaded}
       end
     rescue
-      _ -> 
+      _ ->
         {:error, :introspection_failed}
     end
   end
-  
+
   defp simplify_ecto_type({:parameterized, Ecto.Enum, _}), do: :string
   defp simplify_ecto_type({:array, inner_type}), do: {:array, simplify_ecto_type(inner_type)}
   defp simplify_ecto_type(:id), do: :integer
@@ -656,10 +739,11 @@ defmodule SelectoMix.DomainGenerator do
   # ]
   defp detect_polymorphic_associations(fields, _field_types) do
     # Find all fields ending in _type
-    type_fields = Enum.filter(fields, fn field ->
-      field_str = to_string(field)
-      String.ends_with?(field_str, "_type")
-    end)
+    type_fields =
+      Enum.filter(fields, fn field ->
+        field_str = to_string(field)
+        String.ends_with?(field_str, "_type")
+      end)
 
     # For each type field, check if corresponding _id field exists
     Enum.flat_map(type_fields, fn type_field ->
@@ -669,19 +753,21 @@ defmodule SelectoMix.DomainGenerator do
 
       if id_field in fields do
         # Found a polymorphic pair!
-        [%{
-          base_name: base_name,
-          type_field: type_field,
-          id_field: id_field,
-          # Default suggested types - can be overridden by --expand-polymorphic option
-          suggested_types: ["Product", "Order", "Customer"]
-        }]
+        [
+          %{
+            base_name: base_name,
+            type_field: type_field,
+            id_field: id_field,
+            # Default suggested types - can be overridden by --expand-polymorphic option
+            suggested_types: ["Product", "Order", "Customer"]
+          }
+        ]
       else
         []
       end
     end)
   end
-  
+
   # defp discover_basic_associations(schema_module) do
   #   try do
   #     # This is a simplified version - in a full implementation, 
@@ -702,7 +788,7 @@ defmodule SelectoMix.DomainGenerator do
   #     _ -> %{}
   #   end
   # end
-  
+
   # defp get_association_queryable(assoc) do
   #   case assoc.queryable do
   #     module when is_atom(module) ->
@@ -719,7 +805,7 @@ defmodule SelectoMix.DomainGenerator do
   #     other -> other
   #   end
   # end
-  
+
   defp generate_nested_associations_config(associations) do
     if Enum.empty?(associations) do
       "%{}"
@@ -735,11 +821,11 @@ defmodule SelectoMix.DomainGenerator do
           assoc_name_key = assoc_name |> inspect()
 
           "#{assoc_name_key} => %{\n" <>
-          "                queryable: #{queryable_name},\n" <>
-          "                field: #{inspect(assoc_name)},\n" <>
-          "                owner_key: #{owner_key},\n" <>
-          "                related_key: #{related_key}\n" <>
-          "              }"
+            "                queryable: #{queryable_name},\n" <>
+            "                field: #{inspect(assoc_name)},\n" <>
+            "                owner_key: #{owner_key},\n" <>
+            "                related_key: #{related_key}\n" <>
+            "              }"
         end)
         |> Enum.join(",\n          ")
 
@@ -756,58 +842,62 @@ defmodule SelectoMix.DomainGenerator do
   rescue
     _ -> "unknown_table"
   end
-  
+
   defp guess_table_name(_), do: "unknown_table"
 
   defp generate_domain_name(config) do
     custom_name = get_in(config, [:preserved_customizations, :custom_metadata, :custom_name])
-    
+
     case custom_name do
-      nil -> 
+      nil ->
         base_name = config[:metadata][:module_name] || "Unknown"
         inspect("#{base_name} Domain")
-      name -> 
+
+      name ->
         inspect(name) <> " # CUSTOM"
     end
   end
 
   defp generate_default_selected(config) do
     suggested_defaults = config[:suggested_defaults][:default_selected] || []
-    custom_defaults = get_in(config, [:preserved_customizations, :custom_metadata, :custom_defaults])
-    
-    defaults = case custom_defaults do
-      nil -> suggested_defaults
-      custom -> custom ++ suggested_defaults
-    end
-    
+
+    custom_defaults =
+      get_in(config, [:preserved_customizations, :custom_metadata, :custom_defaults])
+
+    defaults =
+      case custom_defaults do
+        nil -> suggested_defaults
+        custom -> custom ++ suggested_defaults
+      end
+
     formatted_defaults = defaults |> Enum.map(&inspect(to_string(&1))) |> Enum.join(", ")
-    
+
     case defaults do
       [] -> "[]"
       _ -> "[#{formatted_defaults}]"
-    end <> (if custom_defaults, do: " # CUSTOM", else: "")
+    end <> if(custom_defaults, do: " # CUSTOM", else: "")
   end
 
   defp generate_filters_config(config) do
     suggested_filters = config[:suggested_defaults][:default_filters] || %{}
     custom_filters = get_in(config, [:preserved_customizations, :custom_filters]) || %{}
-    
+
     all_filters = Map.merge(suggested_filters, custom_filters)
-    
+
     if Enum.empty?(all_filters) do
       "%{}"
     else
-      formatted_filters = 
+      formatted_filters =
         all_filters
         |> Enum.map(fn {filter_name, filter_config} ->
           is_custom = Map.has_key?(custom_filters, filter_name)
           custom_marker = if is_custom, do: " # CUSTOM", else: ""
           formatted_config = format_filter_config(filter_config)
-          
+
           "\"#{filter_name}\" => #{formatted_config}#{custom_marker}"
         end)
         |> Enum.join(",\n      ")
-      
+
       "%{\n      #{formatted_filters}\n    }"
     end
   end
@@ -815,34 +905,35 @@ defmodule SelectoMix.DomainGenerator do
   defp format_filter_config(filter_config) when is_map(filter_config) do
     inspect(filter_config, pretty: true, width: 60)
   end
-  
+
   defp format_filter_config(:custom) do
     "%{\n" <>
-    "        # Custom filter configuration\n" <>
-    "        # Add your filter definition here\n" <>
-    "      }"
+      "        # Custom filter configuration\n" <>
+      "        # Add your filter definition here\n" <>
+      "      }"
   end
 
   defp generate_joins_config(config) do
     associations = config[:associations] || %{}
     parameterized_joins = config[:parameterized_joins] || %{}
-    
+
     # Combine regular associations and parameterized joins
-    all_joins = Map.merge(
-      generate_association_joins(associations),
-      parameterized_joins
-    )
-    
+    all_joins =
+      Map.merge(
+        generate_association_joins(associations, config[:table_name] || "main"),
+        parameterized_joins
+      )
+
     if Enum.empty?(all_joins) do
       "%{}"
     else
-      formatted_joins = 
+      formatted_joins =
         all_joins
         |> Enum.map(fn {join_name, join_config} ->
           format_single_join(join_name, join_config)
         end)
         |> Enum.join(",\n      ")
-      
+
       "%{\n      #{formatted_joins}\n    }"
     end
   end
@@ -850,7 +941,7 @@ defmodule SelectoMix.DomainGenerator do
   defp generate_subfilters_config(config) do
     # Generate subfilter examples based on associations
     associations = config[:associations] || %{}
-    
+
     if Enum.empty?(associations) do
       "%{}"
     else
@@ -866,17 +957,17 @@ defmodule SelectoMix.DomainGenerator do
 
   defp generate_pagination_config(_config) do
     "%{\n" <>
-    "        # Default pagination settings\n" <>
-    "        default_limit: 50,\n" <>
-    "        max_limit: 1000,\n" <>
-    "        \n" <>
-    "        # Cursor-based pagination support\n" <>
-    "        cursor_fields: [:id],\n" <>
-    "        \n" <>
-    "        # Enable/disable pagination features\n" <>
-    "        allow_offset: true,\n" <>
-    "        require_limit: false\n" <>
-    "      }"
+      "        # Default pagination settings\n" <>
+      "        default_limit: 50,\n" <>
+      "        max_limit: 1000,\n" <>
+      "        \n" <>
+      "        # Cursor-based pagination support\n" <>
+      "        cursor_fields: [:id],\n" <>
+      "        \n" <>
+      "        # Enable/disable pagination features\n" <>
+      "        allow_offset: true,\n" <>
+      "        require_limit: false\n" <>
+      "      }"
   end
 
   defp generate_pivot_config(_config) do
@@ -885,7 +976,7 @@ defmodule SelectoMix.DomainGenerator do
 
   defp generate_custom_metadata(config) do
     custom_metadata = get_in(config, [:preserved_customizations, :custom_metadata]) || %{}
-    
+
     if Enum.empty?(custom_metadata) do
       ""
     else
@@ -895,7 +986,7 @@ defmodule SelectoMix.DomainGenerator do
 
   defp generate_helper_functions(schema_module, config) do
     suggested_queries = generate_suggested_queries(config)
-    
+
     [
       "@doc \"Create a new Selecto instance configured with this domain.\"",
       "def new(repo, opts \\\\ []) do",
@@ -961,13 +1052,14 @@ defmodule SelectoMix.DomainGenerator do
   defp generate_suggested_queries(config) do
     # Generate some suggested query functions based on the schema
     filters = config[:suggested_defaults][:default_filters] || %{}
-    
-    filter_queries = 
+
+    filter_queries =
       filters
-      |> Enum.take(2)  # Limit to avoid too many generated functions
+      # Limit to avoid too many generated functions
+      |> Enum.take(2)
       |> Enum.map(fn {filter_name, _filter_config} ->
         function_name = filter_name |> String.replace(" ", "_") |> String.downcase()
-        
+
         [
           "",
           "@doc \"Common query: filter by #{filter_name}.\"",
@@ -981,13 +1073,13 @@ defmodule SelectoMix.DomainGenerator do
         |> Enum.join("\n    ")
       end)
       |> Enum.join("")
-    
+
     filter_queries
   end
 
   # Helper functions for join generation
-  
-  defp generate_association_joins(associations) do
+
+  defp generate_association_joins(associations, main_table) do
     # Include through associations - selecto now handles them properly
     associations
     |> Enum.into(%{}, fn {assoc_name, assoc_config} ->
@@ -1004,25 +1096,34 @@ defmodule SelectoMix.DomainGenerator do
       }
 
       # Add through association configuration
-      join_config = if assoc_config[:is_through] do
-        Map.merge(join_config, %{
-          is_through: true,
-          through_path: assoc_config[:through_path] || []
-        })
-      else
-        join_config
-      end
+      join_config =
+        if assoc_config[:is_through] do
+          Map.merge(join_config, %{
+            is_through: true,
+            through_path: assoc_config[:through_path] || []
+          })
+        else
+          join_config
+        end
 
       # Add many-to-many specific configuration
-      join_config = if assoc_config[:association_type] == :many_to_many do
-        Map.merge(join_config, %{
-          join_through: assoc_config[:join_through],
-          owner_key: assoc_config[:owner_key] || :id,
-          assoc_key: assoc_config[:related_key] || :id
-        })
-      else
-        join_config
-      end
+      join_config =
+        if assoc_config[:association_type] == :many_to_many do
+          {main_foreign_key, tag_foreign_key} =
+            infer_many_to_many_foreign_keys(assoc_config, main_table)
+
+          Map.merge(join_config, %{
+            join_table: assoc_config[:join_through],
+            join_through: assoc_config[:join_through],
+            join_keys: assoc_config[:join_keys] || [],
+            main_foreign_key: main_foreign_key,
+            tag_foreign_key: tag_foreign_key,
+            owner_key: assoc_config[:owner_key] || :id,
+            assoc_key: assoc_config[:related_key] || :id
+          })
+        else
+          join_config
+        end
 
       {assoc_name, join_config}
     end)
@@ -1034,12 +1135,14 @@ defmodule SelectoMix.DomainGenerator do
     related_key = assoc_config[:related_key] || :id
 
     # Convert to strings for Selecto
-    [%{
-      left: to_string(owner_key),
-      right: to_string(related_key)
-    }]
+    [
+      %{
+        left: to_string(owner_key),
+        right: to_string(related_key)
+      }
+    ]
   end
-  
+
   defp format_single_join(join_name, join_config) do
     is_custom = Map.get(join_config, :is_custom, false)
     is_non_assoc = Map.get(join_config, :non_assoc, false)
@@ -1049,158 +1152,187 @@ defmodule SelectoMix.DomainGenerator do
 
     # Note: Custom markers are disabled for now due to Sourceror parsing issues with inline comments
     # TODO: Re-enable once we find a parser-safe format
-    _custom_marker = cond do
-      is_non_assoc -> " # NON-ASSOCIATION JOIN"
-      is_custom and is_parameterized -> " # CUSTOM PARAMETERIZED JOIN"
-      is_custom -> " # CUSTOM JOIN"
-      is_parameterized -> " # PARAMETERIZED JOIN"
-      is_many_to_many -> " # MANY-TO-MANY"
-      is_through -> " # THROUGH ASSOCIATION"
-      true -> ""
-    end
+    _custom_marker =
+      cond do
+        is_non_assoc -> " # NON-ASSOCIATION JOIN"
+        is_custom and is_parameterized -> " # CUSTOM PARAMETERIZED JOIN"
+        is_custom -> " # CUSTOM JOIN"
+        is_parameterized -> " # PARAMETERIZED JOIN"
+        is_many_to_many -> " # MANY-TO-MANY"
+        is_through -> " # THROUGH ASSOCIATION"
+        true -> ""
+      end
 
     join_type = inspect(Map.get(join_config, :type, :left))
     join_name_str = Map.get(join_config, :name, humanize_name(join_name))
 
-    base_config = "#{inspect(join_name)} => %{\n" <>
-                  "              name: \"#{join_name_str}\",\n" <>
-                  "              type: #{join_type}"
+    base_config =
+      "#{inspect(join_name)} => %{\n" <>
+        "              name: \"#{join_name_str}\",\n" <>
+        "              type: #{join_type}"
 
     # Add non_assoc flag for custom joins without Ecto associations
-    non_assoc_config = if is_non_assoc do
-      owner_key = Map.get(join_config, :owner_key, :id)
-      related_key = Map.get(join_config, :related_key, :id)
-      source_table = Map.get(join_config, :source, to_string(join_name))
+    non_assoc_config =
+      if is_non_assoc do
+        owner_key = Map.get(join_config, :owner_key, :id)
+        related_key = Map.get(join_config, :related_key, :id)
+        source_table = Map.get(join_config, :source, to_string(join_name))
 
-      config = ",\n              non_assoc: true,\n" <>
-               "              source: #{inspect(source_table)},\n" <>
-               "              owner_key: #{inspect(owner_key)},\n" <>
-               "              related_key: #{inspect(related_key)}"
+        config =
+          ",\n              non_assoc: true,\n" <>
+            "              source: #{inspect(source_table)},\n" <>
+            "              owner_key: #{inspect(owner_key)},\n" <>
+            "              related_key: #{inspect(related_key)}"
 
-      # Add optional fields configuration for non-assoc joins
-      config = if fields = Map.get(join_config, :fields) do
-        fields_config = format_join_fields_config(fields)
-        config <> ",\n              fields: #{fields_config}"
+        # Add optional fields configuration for non-assoc joins
+        config =
+          if fields = Map.get(join_config, :fields) do
+            fields_config = format_join_fields_config(fields)
+            config <> ",\n              fields: #{fields_config}"
+          else
+            config
+          end
+
+        # Add optional filters configuration for non-assoc joins
+        if filters = Map.get(join_config, :filters) do
+          config <> ",\n              filters: #{inspect(filters)}"
+        else
+          config
+        end
       else
-        config
+        ""
       end
-
-      # Add optional filters configuration for non-assoc joins
-      if filters = Map.get(join_config, :filters) do
-        config <> ",\n              filters: #{inspect(filters)}"
-      else
-        config
-      end
-    else
-      ""
-    end
 
     # Add source and on clause (required for association-based joins, skip for non_assoc)
-    source_config = if !is_non_assoc do
-      case Map.get(join_config, :source) do
-        nil -> ""
-        source_val ->
-          on_clause = Map.get(join_config, :on, [])
-          ",\n              source: #{inspect(source_val)},\n" <>
-          "              on: #{inspect(on_clause)}"
+    source_config =
+      if !is_non_assoc do
+        case Map.get(join_config, :source) do
+          nil ->
+            ""
+
+          source_val ->
+            on_clause = Map.get(join_config, :on, [])
+
+            ",\n              source: #{inspect(source_val)},\n" <>
+              "              on: #{inspect(on_clause)}"
+        end
+      else
+        ""
       end
-    else
-      ""
-    end
 
     # Add many-to-many specific configuration
-    many_to_many_config = if is_many_to_many do
-      join_through = Map.get(join_config, :join_through)
-      owner_key = Map.get(join_config, :owner_key, :id)
-      assoc_key = Map.get(join_config, :assoc_key, :id)
+    many_to_many_config =
+      if is_many_to_many do
+        join_table = Map.get(join_config, :join_table)
+        join_through = Map.get(join_config, :join_through)
+        join_keys = Map.get(join_config, :join_keys, [])
+        main_foreign_key = Map.get(join_config, :main_foreign_key)
+        tag_foreign_key = Map.get(join_config, :tag_foreign_key)
+        owner_key = Map.get(join_config, :owner_key, :id)
+        assoc_key = Map.get(join_config, :assoc_key, :id)
 
-      ",\n              join_through: #{inspect(join_through)},\n" <>
-      "              owner_key: #{inspect(owner_key)},\n" <>
-      "              assoc_key: #{inspect(assoc_key)}"
-    else
-      ""
-    end
+        ",\n              join_table: #{inspect(join_table)},\n" <>
+          "              join_through: #{inspect(join_through)},\n" <>
+          "              join_keys: #{inspect(join_keys)},\n" <>
+          "              main_foreign_key: #{inspect(main_foreign_key)},\n" <>
+          "              tag_foreign_key: #{inspect(tag_foreign_key)},\n" <>
+          "              owner_key: #{inspect(owner_key)},\n" <>
+          "              assoc_key: #{inspect(assoc_key)}"
+      else
+        ""
+      end
 
     # Add through association specific configuration
-    through_config = if is_through do
-      through_path = Map.get(join_config, :through_path, [])
-      ",\n              through: #{inspect(through_path)}"
-    else
-      ""
-    end
+    through_config =
+      if is_through do
+        through_path = Map.get(join_config, :through_path, [])
+        ",\n              through: #{inspect(through_path)}"
+      else
+        ""
+      end
 
     # Add parameterized join specific configurations
-    parameterized_config = if is_parameterized do
-      parameters_config = format_parameters_config(join_config[:parameters])
-      source_table = inspect(Map.get(join_config, :source_table, to_string(join_name)))
-      fields_config = format_join_fields_config(Map.get(join_config, :fields, %{}))
+    parameterized_config =
+      if is_parameterized do
+        parameters_config = format_parameters_config(join_config[:parameters])
+        source_table = inspect(Map.get(join_config, :source_table, to_string(join_name)))
+        fields_config = format_join_fields_config(Map.get(join_config, :fields, %{}))
 
-      ",\n              \n              # Parameterized join configuration\n" <>
-      "              source_table: #{source_table},\n" <>
-      "              parameters: #{parameters_config},\n" <>
-      "              fields: #{fields_config}"
-    else
-      ""
-    end
+        ",\n              \n              # Parameterized join configuration\n" <>
+          "              source_table: #{source_table},\n" <>
+          "              parameters: #{parameters_config},\n" <>
+          "              fields: #{fields_config}"
+      else
+        ""
+      end
 
-    join_condition_config = case Map.get(join_config, :join_condition) do
-      nil -> ""
-      condition -> ",\n              join_condition: #{inspect(condition)}"
-    end
+    join_condition_config =
+      case Map.get(join_config, :join_condition) do
+        nil -> ""
+        condition -> ",\n              join_condition: #{inspect(condition)}"
+      end
 
-    base_config <> non_assoc_config <> source_config <> many_to_many_config <> through_config <> parameterized_config <> join_condition_config <> "\n            }"
+    base_config <>
+      non_assoc_config <>
+      source_config <>
+      many_to_many_config <>
+      through_config <> parameterized_config <> join_condition_config <> "\n            }"
   end
-  
+
   defp format_parameters_config(parameters) when is_list(parameters) do
     if Enum.empty?(parameters) do
       "[]"
     else
-      formatted_params = 
+      formatted_params =
         parameters
         |> Enum.map(fn param ->
-          param_config = param
-          |> Map.take([:name, :type, :required, :default, :description])
-          |> Map.to_list()
-          |> Enum.map(fn {key, value} -> "#{key}: #{inspect(value)}" end)
-          |> Enum.join(", ")
-          
+          param_config =
+            param
+            |> Map.take([:name, :type, :required, :default, :description])
+            |> Map.to_list()
+            |> Enum.map(fn {key, value} -> "#{key}: #{inspect(value)}" end)
+            |> Enum.join(", ")
+
           "              %{#{param_config}}"
         end)
         |> Enum.join(",\n")
-      
+
       "[\n#{formatted_params}\n            ]"
     end
   end
-  
+
   defp format_parameters_config(_), do: "[]"
-  
+
   defp format_join_fields_config(fields) when is_map(fields) do
     if Enum.empty?(fields) do
       "%{}"
     else
-      formatted_fields = 
+      formatted_fields =
         fields
         |> Enum.map(fn {field_name, field_config} ->
-          config_str = case field_config do
-            %{} -> 
-              config_pairs = 
-                field_config
-                |> Map.to_list()
-                |> Enum.map(fn {key, value} -> "#{key}: #{inspect(value)}" end)
-                |> Enum.join(", ")
-              "%{#{config_pairs}}"
-            _ -> 
-              inspect(field_config)
-          end
-          
+          config_str =
+            case field_config do
+              %{} ->
+                config_pairs =
+                  field_config
+                  |> Map.to_list()
+                  |> Enum.map(fn {key, value} -> "#{key}: #{inspect(value)}" end)
+                  |> Enum.join(", ")
+
+                "%{#{config_pairs}}"
+
+              _ ->
+                inspect(field_config)
+            end
+
           "              #{inspect(field_name)} => #{config_str}"
         end)
         |> Enum.join(",\n")
-      
+
       "%{\n#{formatted_fields}\n            }"
     end
   end
-  
+
   defp format_join_fields_config(_), do: "%{}"
 
   defp humanize_name(atom) when is_atom(atom) do
@@ -1212,8 +1344,42 @@ defmodule SelectoMix.DomainGenerator do
     |> Enum.join(" ")
   end
 
-  # New helper functions for advanced Selecto features
+  defp infer_many_to_many_foreign_keys(assoc_config, main_table) do
+    case assoc_config[:join_keys] do
+      [{main_key, _}, {tag_key, _} | _rest] ->
+        {to_string(main_key), to_string(tag_key)}
 
+      [main_key, tag_key | _rest] when is_atom(main_key) and is_atom(tag_key) ->
+        {to_string(main_key), to_string(tag_key)}
+
+      [main_key, tag_key | _rest] when is_binary(main_key) and is_binary(tag_key) ->
+        {main_key, tag_key}
+
+      _ ->
+        {
+          infer_main_foreign_key_from_main_table(main_table),
+          infer_tag_foreign_key_from_assoc(assoc_config)
+        }
+    end
+  end
+
+  defp infer_main_foreign_key_from_main_table(main_table) do
+    main_table
+    |> to_string()
+    |> String.trim_trailing("s")
+    |> Kernel.<>("_id")
+  end
+
+  defp infer_tag_foreign_key_from_assoc(assoc_config) do
+    assoc_config
+    |> Map.get(:related_schema, :tag)
+    |> get_schema_name_from_module()
+    |> to_string()
+    |> String.trim_trailing("s")
+    |> Kernel.<>("_id")
+  end
+
+  # New helper functions for advanced Selecto features
 
   # Unused - kept for future CTE support
   # defp generate_ctes_config(config) do
@@ -1232,7 +1398,6 @@ defmodule SelectoMix.DomainGenerator do
   #     ""
   #   end
   # end
-
 
   # Unused - kept for future VALUES clause support
   # defp generate_values_clauses_config(_config) do

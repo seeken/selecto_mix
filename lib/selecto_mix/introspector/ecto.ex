@@ -39,16 +39,19 @@ defmodule SelectoMix.Introspector.Ecto do
       columns =
         fields
         |> Enum.into(%{}, fn field ->
-          {field, %{
-            type: Map.get(field_types, field),
-            nullable: true,  # Ecto doesn't expose this easily
-            default: nil
-          }}
+          {field,
+           %{
+             type: Map.get(field_types, field),
+             # Ecto doesn't expose this easily
+             nullable: true,
+             default: nil
+           }}
         end)
 
       metadata = %{
         table_name: table_name,
-        schema: "public",  # Ecto doesn't expose schema name
+        # Ecto doesn't expose schema name
+        schema: "public",
         fields: fields,
         field_types: field_types,
         primary_key: primary_key,
@@ -154,7 +157,8 @@ defmodule SelectoMix.Introspector.Ecto do
       {:array, inner_type} -> {:array, map_ecto_type_to_selecto(inner_type)}
       {Ecto.Enum, _values} -> :string
       {:parameterized, Ecto.Enum, _values} -> :string
-      _ -> :string  # Default fallback
+      # Default fallback
+      _ -> :string
     end
   end
 
@@ -172,7 +176,9 @@ defmodule SelectoMix.Introspector.Ecto do
 
     # Add many-to-many specific metadata
     if get_association_type(assoc) == :many_to_many do
-      Map.put(base_metadata, :join_through, get_join_through(assoc))
+      base_metadata
+      |> Map.put(:join_through, get_join_through(assoc))
+      |> Map.put(:join_keys, get_join_keys(assoc))
     else
       base_metadata
     end
@@ -182,6 +188,7 @@ defmodule SelectoMix.Introspector.Ecto do
   defp get_join_through(%{join_through: join_through}) when is_binary(join_through) do
     join_through
   end
+
   defp get_join_through(%{join_through: join_through_schema}) when is_atom(join_through_schema) do
     # If it's a schema module, get its table name
     try do
@@ -190,7 +197,11 @@ defmodule SelectoMix.Introspector.Ecto do
       _ -> to_string(join_through_schema)
     end
   end
+
   defp get_join_through(_), do: nil
+
+  defp get_join_keys(%{join_keys: join_keys}) when is_list(join_keys), do: join_keys
+  defp get_join_keys(_), do: []
 
   defp get_association_type(%{__struct__: struct}) do
     case struct do
@@ -220,9 +231,11 @@ defmodule SelectoMix.Introspector.Ecto do
     |> Module.split()
     |> List.last()
     |> Macro.underscore()
-    |> Kernel.<>("s")  # Simple pluralization
+    # Simple pluralization
+    |> Kernel.<>("s")
     |> String.to_atom()
   end
+
   defp get_queryable(_), do: :unknown
 
   defp suggest_join_type(%{__struct__: Ecto.Association.BelongsTo}), do: :inner

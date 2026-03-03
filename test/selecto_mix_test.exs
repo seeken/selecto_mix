@@ -45,12 +45,13 @@ defmodule SelectoMixTest do
     test "merge_with_existing/2 with nil existing content" do
       new_config = %{schema_module: TestSchema, fields: [:id, :name]}
       result = ConfigMerger.merge_with_existing(new_config, nil)
-      
+
       assert result == new_config
     end
 
     test "merge_with_existing/2 with existing content" do
       new_config = %{schema_module: TestSchema, fields: [:id, :name, :email]}
+
       existing_content = """
       defmodule TestDomain do
         def domain do
@@ -62,9 +63,9 @@ defmodule SelectoMixTest do
         end
       end
       """
-      
+
       result = ConfigMerger.merge_with_existing(new_config, existing_content)
-      
+
       # Should preserve customizations
       assert Map.has_key?(result, :preserve_existing)
     end
@@ -72,11 +73,11 @@ defmodule SelectoMixTest do
     test "detect_customizations/1 finds custom markers" do
       content_with_custom = "field: :test # CUSTOM"
       content_without_custom = "field: :test"
-      
+
       # Test through parse_existing_config since detect_customizations is private
       result1 = ConfigMerger.parse_existing_config(content_with_custom)
       result2 = ConfigMerger.parse_existing_config(content_without_custom)
-      
+
       assert result1[:has_customizations] == true
       assert result2[:has_customizations] == false
     end
@@ -85,6 +86,7 @@ defmodule SelectoMixTest do
   describe "DomainGenerator" do
     test "generate_domain_file/2 creates valid Elixir code" do
       schema_module = TestSchema
+
       config = %{
         schema_module: schema_module,
         table_name: "test_table",
@@ -102,9 +104,9 @@ defmodule SelectoMixTest do
           context_name: "Test"
         }
       }
-      
+
       result = DomainGenerator.generate_domain_file(schema_module, config)
-      
+
       assert is_binary(result)
       assert String.contains?(result, "defmodule")
       assert String.contains?(result, "def domain do")
@@ -127,13 +129,48 @@ defmodule SelectoMixTest do
         },
         metadata: %{module_name: "Test"}
       }
-      
+
       result = DomainGenerator.generate_domain_map(config)
-      
+
       assert is_binary(result)
       assert String.contains?(result, "source:")
       assert String.contains?(result, "source_table: \"tests\"")
       assert String.contains?(result, "primary_key: :id")
+    end
+
+    test "generate_domain_map/1 emits many-to-many join table metadata" do
+      config = %{
+        schema_module: TestSchema,
+        table_name: "products",
+        primary_key: :id,
+        fields: [:id],
+        field_types: %{id: :integer},
+        associations: %{
+          tags: %{
+            association_type: :many_to_many,
+            related_schema: TestTag,
+            queryable: :tags,
+            owner_key: :id,
+            related_key: :id,
+            join_type: :left,
+            join_through: "product_tags",
+            join_keys: [product_id: :id, tag_id: :id]
+          }
+        },
+        suggested_defaults: %{
+          default_selected: [],
+          default_filters: %{},
+          default_order: []
+        },
+        metadata: %{module_name: "Product"}
+      }
+
+      result = DomainGenerator.generate_domain_map(config)
+
+      assert String.contains?(result, "join_table: \"product_tags\"")
+      assert String.contains?(result, "join_keys: [product_id: :id, tag_id: :id]")
+      assert String.contains?(result, "main_foreign_key: \"product_id\"")
+      assert String.contains?(result, "tag_foreign_key: \"tag_id\"")
     end
   end
 
@@ -157,16 +194,16 @@ defmodule SelectoMixTest do
           context_name: "Test"
         }
       }
-      
+
       # Step 1: Merge with existing (none in this case)
       merged_config = ConfigMerger.merge_with_existing(config, nil)
       assert merged_config == config
-      
+
       # Step 2: Generate domain file
       domain_content = DomainGenerator.generate_domain_file(TestSchema, merged_config)
       assert is_binary(domain_content)
       assert String.contains?(domain_content, "defmodule")
-      
+
       # This demonstrates the complete workflow works end-to-end
       assert true
     end
