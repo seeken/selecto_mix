@@ -102,6 +102,17 @@ Complete Selecto domain configuration with:
 
 ## Usage Examples
 
+### Updato API Scaffolding (Wrapper)
+
+If your app depends on `selecto_api`, you can scaffold an Updato API endpoint
+and control panel through the SelectoMix namespace:
+
+```bash
+mix selecto.gen.updato_api orders --domain MyApp.OrdersDomain
+```
+
+This forwards all options to `mix selecto_api.gen.api`.
+
 ### Basic Domain Generation
 
 ```bash
