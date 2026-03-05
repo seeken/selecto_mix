@@ -4,6 +4,11 @@ CHANGES
 V NEXT
 ------
 
+- Added `mix selecto.gen.updato_api` wrapper task delegating to
+  `mix selecto_api.gen.api`.
+- Updated README wrapper docs to reflect `selecto_api` ownership for API
+  scaffolding.
+
 V 0.3.10
 --------
 
