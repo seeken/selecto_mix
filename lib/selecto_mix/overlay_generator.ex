@@ -25,6 +25,7 @@ defmodule SelectoMix.OverlayGenerator do
     filter_examples = generate_filter_examples_dsl(config)
     redaction_example = generate_redaction_example(config)
     jsonb_examples = generate_jsonb_schema_examples(config)
+    query_member_examples = generate_query_member_examples_dsl()
 
     """
     defmodule #{overlay_module_name} do
@@ -41,6 +42,7 @@ defmodule SelectoMix.OverlayGenerator do
       - Add redaction to sensitive fields
       - Define custom filters
       - Define JSONB schemas for structured data columns
+      - Define named query members (CTE/VALUES/subquery/LATERAL/UNNEST presets)
       - Add domain-specific validations (future)
       - Configure custom transformations (future)
 
@@ -73,6 +75,37 @@ defmodule SelectoMix.OverlayGenerator do
             }
           end
 
+          # Named CTE/VALUES/subquery/LATERAL/UNNEST presets
+          defcte :active_rows do
+            query &__MODULE__.active_rows_cte/1
+            columns ["id"]
+            join [owner_key: :id, related_key: :id]
+          end
+
+          defvalues :status_lookup do
+            rows [["active", "Active"], ["inactive", "Inactive"]]
+            columns ["status", "label"]
+            as "status_lookup"
+            join [owner_key: :status, related_key: :status]
+          end
+
+          defsubquery :high_value_rows do
+            query &__MODULE__.high_value_rows_subquery/1
+            on [%{left: "id", right: "entity_id"}]
+          end
+
+          deflateral :recent_series do
+            source {:function, :generate_series, [1, 3]}
+            as "recent_series"
+            join_type :inner
+          end
+
+          defunnest :tag_values do
+            array_field "tags"
+            as "tag_value"
+            ordinality "tag_position"
+          end
+
       ## How It Works
 
       The DSL compiles into an overlay configuration map that is merged with the
@@ -96,6 +129,7 @@ defmodule SelectoMix.OverlayGenerator do
 
       # Uncomment and add custom filters
     #{filter_examples}
+    #{query_member_examples}
     #{jsonb_examples}
     end
     """
@@ -291,6 +325,45 @@ defmodule SelectoMix.OverlayGenerator do
           # end
         """
     end
+    |> String.trim_trailing()
+  end
+
+  defp generate_query_member_examples_dsl do
+    """
+
+      # Optional named query members (used by Selecto.with_cte/2, with_values/2,
+      # with_subquery/2, with_lateral/2, and with_unnest/2)
+      # defcte :active_rows do
+      #   query &__MODULE__.active_rows_cte/1
+      #   columns ["id"]
+      #   join [owner_key: :id, related_key: :id, fields: :infer]
+      # end
+
+      # defvalues :status_lookup do
+      #   rows [["active", "Active"], ["inactive", "Inactive"]]
+      #   columns ["status", "label"]
+      #   as "status_lookup"
+      #   join [owner_key: :status, related_key: :status]
+      # end
+
+      # defsubquery :high_value_rows do
+      #   query &__MODULE__.high_value_rows_subquery/1
+      #   type :inner
+      #   on [%{left: "id", right: "entity_id"}]
+      # end
+
+      # deflateral :recent_series do
+      #   source {:function, :generate_series, [1, 3]}
+      #   as "recent_series"
+      #   join_type :inner
+      # end
+
+      # defunnest :tag_values do
+      #   array_field "tags"
+      #   as "tag_value"
+      #   ordinality "tag_position"
+      # end
+    """
     |> String.trim_trailing()
   end
 

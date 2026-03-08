@@ -87,5 +87,5 @@ defmodule SelectoMix.PropertyTest do
   defp render_param(true), do: "true"
   defp render_param(false), do: "false"
   defp render_param(nil), do: "nil"
-  defp render_param(value) when is_binary(value), do: value
+  defp render_param(value) when is_binary(value), do: "'#{value}'"
 end
