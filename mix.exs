@@ -4,7 +4,7 @@ defmodule SelectoMix.MixProject do
   def project do
     [
       app: :selecto_mix,
-      version: "0.3.12",
+      version: "0.3.13",
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -31,14 +31,18 @@ defmodule SelectoMix.MixProject do
   end
 
   defp description do
-    "ALPHA: Mix tasks for Selecto domain/config generation from Ecto schemas"
+    "Alpha: Mix tasks for generating and validating Selecto domains from Ecto schemas"
   end
 
   defp package do
     [
       maintainers: ["Chris Rohlfs"],
       licenses: ["MIT"],
-      links: %{"GitHub" => "https://github.com/selecto-elixir/selecto_mix"}
+      links: %{
+        "GitHub" => "https://github.com/selecto-elixir/selecto_mix",
+        "SQL Patterns" => "https://seeken.github.io/selecto-sql-patterns",
+        "Demo (Fly)" => "https://testselecto.fly.dev"
+      }
     ]
   end
 end

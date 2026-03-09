@@ -4,6 +4,17 @@ CHANGES
 V NEXT
 ------
 
+V 0.3.13
+--------
+
+- Added native `mix selecto.gen.api` scaffolding task in `selecto_mix` so
+  Selecto API generation no longer requires a separate app-level
+  `selecto_api` dependency declaration.
+- Updated `mix selecto.gen.updato_api` to be a compatibility alias that
+  delegates to `mix selecto.gen.api`.
+- Updated README API scaffolding docs to prefer `mix selecto.gen.api`.
+- Bump package version to `0.3.13`.
+
 V 0.3.12
 --------
 

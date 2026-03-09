@@ -31,7 +31,7 @@ Add `selecto_mix` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:selecto_mix, "~> 0.3.12"},
+    {:selecto_mix, "~> 0.3.13"},
     {:selecto, "~> 0.3.10"},
     {:ecto, "~> 3.10"}
   ]
@@ -102,16 +102,19 @@ Complete Selecto domain configuration with:
 
 ## Usage Examples
 
-### Updato API Scaffolding (Wrapper)
+### Updato API Scaffolding
 
-If your app depends on `selecto_api`, you can scaffold an Updato API endpoint
-and control panel through the SelectoMix namespace:
+Scaffold an Updato API endpoint and control panel directly from SelectoMix:
+
+```bash
+mix selecto.gen.api orders --domain MyApp.OrdersDomain
+```
+
+The legacy alias remains available:
 
 ```bash
 mix selecto.gen.updato_api orders --domain MyApp.OrdersDomain
 ```
-
-This forwards all options to `mix selecto_api.gen.api`.
 
 ### Basic Domain Generation
 
