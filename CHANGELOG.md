@@ -4,6 +4,27 @@ CHANGES
 V NEXT
 ------
 
+V 0.3.15
+--------
+
+- Updated `mix selecto.components.integrate` to treat Phoenix LiveView
+  colocated hooks as the canonical SelectoComponents integration path, removing
+  generated `./selecto_hooks`, `TreeBuilderHook`, and Alpine.js requirements.
+- Updated integration patching/manual guidance so generated LiveSocket wiring
+  uses only `phoenix-colocated/selecto_components` hooks plus the Tailwind
+  `@source` entry for SelectoComponents.
+- Bump package version to `0.3.15`.
+
+V 0.3.14
+--------
+
+- Updated package metadata description to better reflect Selecto domain
+  generation and validation responsibilities.
+- Added package links for SQL pattern references and the hosted demo
+  (`https://seeken.github.io/selecto-sql-patterns`,
+  `https://testselecto.fly.dev`).
+- Bump package version to `0.3.14`.
+
 V 0.3.13
 --------
 

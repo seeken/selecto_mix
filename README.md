@@ -31,7 +31,7 @@ Add `selecto_mix` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:selecto_mix, "~> 0.3.13"},
+    {:selecto_mix, "~> 0.3.15"},
     {:selecto, "~> 0.3.10"},
     {:ecto, "~> 3.10"}
   ]

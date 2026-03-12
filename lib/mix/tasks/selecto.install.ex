@@ -117,7 +117,7 @@ defmodule Mix.Tasks.Selecto.Install do
           %{
             app: :selecto_components,
             repo: nil,
-            dep: "{:selecto_components, \">= 0.3.12 and < 0.4.0\", override: true}"
+            dep: "{:selecto_components, \">= 0.3.20 and < 0.4.0\", override: true}"
           }
         ]
       end
