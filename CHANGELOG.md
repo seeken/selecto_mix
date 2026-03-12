@@ -4,6 +4,12 @@ CHANGES
 V NEXT
 ------
 
+V 0.3.16
+--------
+
+- Raised the minimum supported Elixir version to `1.18`.
+- Bump package version to `0.3.16`.
+
 V 0.3.15
 --------
 
