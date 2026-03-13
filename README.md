@@ -34,10 +34,14 @@ def deps do
     {:selecto_mix, "~> 0.4.0"},
     {:selecto, "~> 0.4.0"},
     {:selecto_db_postgresql, "~> 0.4.0"},
+    {:postgrex, ">= 0.0.0"},
     {:ecto, "~> 3.10"}
   ]
 end
 ```
+
+`mix selecto.install` now ensures the PostgreSQL driver dependency is present
+for the default PostgreSQL adapter path.
 
 Then run the installer (recommended for most projects):
 

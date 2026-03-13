@@ -4,6 +4,10 @@ CHANGES
 V NEXT
 ------
 
+- Updated `mix selecto.install` to add the `postgrex` database driver required
+  by the default PostgreSQL adapter path, while preserving an existing app-level
+  `postgrex` dependency declaration when present.
+
 V 0.4.0
 --------
 

@@ -97,6 +97,12 @@ defmodule Mix.Tasks.Selecto.Install do
       if development_mode? do
         [
           %{
+            app: :postgrex,
+            repo: nil,
+            dep: "{:postgrex, \">= 0.0.0\"}",
+            preserve_existing: true
+          },
+          %{
             app: :selecto,
             repo: "selecto",
             dep: "{:selecto, path: \"./vendor/selecto\", override: true}"
@@ -115,6 +121,12 @@ defmodule Mix.Tasks.Selecto.Install do
         ]
       else
         [
+          %{
+            app: :postgrex,
+            repo: nil,
+            dep: "{:postgrex, \">= 0.0.0\"}",
+            preserve_existing: true
+          },
           %{
             app: :selecto,
             repo: nil,
@@ -188,15 +200,24 @@ defmodule Mix.Tasks.Selecto.Install do
 
     case Regex.run(regex, content, capture: :all_but_first) do
       [prefix, body, suffix] ->
-        apps = Enum.map(specs, & &1.app)
+        replace_apps =
+          specs
+          |> Enum.reject(&Map.get(&1, :preserve_existing, false))
+          |> Enum.map(& &1.app)
+
+        existing_lines = String.split(body, "\n")
 
         filtered_body_lines =
-          body
-          |> String.split("\n")
-          |> Enum.reject(&dep_line_matches_apps?(&1, apps))
+          existing_lines
+          |> Enum.reject(&dep_line_matches_apps?(&1, replace_apps))
           |> Enum.reject(&(String.trim(&1) == ""))
 
-        new_dep_lines = Enum.map(specs, fn spec -> "      #{spec.dep}," end)
+        new_dep_lines =
+          specs
+          |> Enum.reject(fn spec ->
+            Map.get(spec, :preserve_existing, false) and dep_line_matches_apps?(body, [spec.app])
+          end)
+          |> Enum.map(fn spec -> "      #{spec.dep}," end)
 
         combined_lines =
           (filtered_body_lines ++ new_dep_lines)
