@@ -102,6 +102,12 @@ defmodule Mix.Tasks.Selecto.Install do
             dep: "{:selecto, path: \"./vendor/selecto\", override: true}"
           },
           %{
+            app: :selecto_db_postgresql,
+            repo: "selecto_db_postgresql",
+            dep:
+              "{:selecto_db_postgresql, path: \"./vendor/selecto_db_postgresql\", override: true}"
+          },
+          %{
             app: :selecto_components,
             repo: "selecto_components",
             dep: "{:selecto_components, path: \"./vendor/selecto_components\", override: true}"
@@ -112,12 +118,17 @@ defmodule Mix.Tasks.Selecto.Install do
           %{
             app: :selecto,
             repo: nil,
-            dep: "{:selecto, \">= 0.3.16 and < 0.4.0\", override: true}"
+            dep: "{:selecto, \">= 0.4.0 and < 0.5.0\", override: true}"
+          },
+          %{
+            app: :selecto_db_postgresql,
+            repo: nil,
+            dep: "{:selecto_db_postgresql, \">= 0.4.0 and < 0.5.0\", override: true}"
           },
           %{
             app: :selecto_components,
             repo: nil,
-            dep: "{:selecto_components, \">= 0.3.21 and < 0.4.0\", override: true}"
+            dep: "{:selecto_components, \">= 0.4.0 and < 0.5.0\", override: true}"
           }
         ]
       end

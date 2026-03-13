@@ -31,8 +31,9 @@ Add `selecto_mix` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:selecto_mix, "~> 0.3.16"},
-    {:selecto, "~> 0.3.16"},
+    {:selecto_mix, "~> 0.4.0"},
+    {:selecto, "~> 0.4.0"},
+    {:selecto_db_postgresql, "~> 0.4.0"},
     {:ecto, "~> 3.10"}
   ]
 end
@@ -52,11 +53,11 @@ Development mode (use your fork/source owner for vendor clones):
 mix selecto.install --development-mode --source your-github-user
 ```
 
-## Release Status (0.3.x)
+## Release Status (0.4.x)
 
 - **Alpha**: Domain generation (`mix selecto.gen.domain`), overlay generation/update flows, and customization preservation are usable but not yet stable.
 - **High Risk / Experimental**: `mix selecto.validate.parameterized_joins` coverage is implemented and actively evolving as additional edge cases are standardized.
-- **Not Included**: `selecto_mix` does not generate `*_queries.ex` runtime query helper modules in the current `0.3.x` scope.
+- **Not Included**: `selecto_mix` does not generate `*_queries.ex` runtime query helper modules in the current `0.4.x` scope.
 
 ## Quick Start
 

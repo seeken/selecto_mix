@@ -4,6 +4,14 @@ CHANGES
 V NEXT
 ------
 
+V 0.4.0
+--------
+
+- Updated installer dependency baselines for the `0.4.0` ecosystem release.
+- Updated generated install dependencies to include the external
+  `selecto_db_postgresql` adapter package for the default PostgreSQL path.
+- Bump package version to `0.4.0`.
+
 V 0.3.16
 --------
 
