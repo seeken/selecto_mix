@@ -79,7 +79,11 @@ defmodule SelectoMix.SchemaIntrospector do
           associations: associations,
           suggested_defaults: suggested_defaults,
           redacted_fields: redact_fields,
-          metadata: extra_metadata
+          metadata: extra_metadata,
+          columns: Map.get(metadata, :columns, %{}),
+          source: Map.get(metadata, :source),
+          source_type: Map.get(metadata, :source_type, source_type_for(source)),
+          adapter: Map.get(metadata, :adapter)
         }
 
       {:error, reason} ->
@@ -207,6 +211,24 @@ defmodule SelectoMix.SchemaIntrospector do
     %{
       module_name: Macro.camelize(table_name),
       context_name: "Database",
+      has_timestamps: has_timestamps_in_fields?(metadata.fields),
+      estimated_complexity: estimate_complexity_from_metadata(metadata)
+    }
+  end
+
+  defp extract_metadata_from_source({:db, adapter, _conn, table_name}, metadata) do
+    %{
+      module_name: module_name_from_table(table_name),
+      context_name: adapter_context_name(adapter),
+      has_timestamps: has_timestamps_in_fields?(metadata.fields),
+      estimated_complexity: estimate_complexity_from_metadata(metadata)
+    }
+  end
+
+  defp extract_metadata_from_source({:db, adapter, _conn, table_name, _opts}, metadata) do
+    %{
+      module_name: module_name_from_table(table_name),
+      context_name: adapter_context_name(adapter),
       has_timestamps: has_timestamps_in_fields?(metadata.fields),
       estimated_complexity: estimate_complexity_from_metadata(metadata)
     }
@@ -461,5 +483,50 @@ defmodule SelectoMix.SchemaIntrospector do
     |> String.split()
     |> Enum.map(&String.capitalize/1)
     |> Enum.join(" ")
+  end
+
+  defp source_type_for(source) when is_atom(source), do: :ecto
+  defp source_type_for({:postgrex, _conn, _table_name}), do: :db
+  defp source_type_for({:postgrex, _conn, _table_name, _schema}), do: :db
+  defp source_type_for({:db, _adapter, _conn, _table_name}), do: :db
+  defp source_type_for({:db, _adapter, _conn, _table_name, _opts}), do: :db
+  defp source_type_for(_source), do: :unknown
+
+  defp module_name_from_table(table_name) do
+    table_name
+    |> to_string()
+    |> String.trim()
+    |> String.trim_leading("public.")
+    |> singularize_table_name()
+    |> Macro.camelize()
+  end
+
+  defp adapter_context_name(adapter) when is_atom(adapter) do
+    adapter
+    |> Module.split()
+    |> Enum.at(-2, "Database")
+    |> to_string()
+    |> String.replace_prefix("SelectoDB", "")
+  end
+
+  defp adapter_context_name(_adapter), do: "Database"
+
+  defp singularize_table_name(table_name) do
+    cond do
+      String.ends_with?(table_name, "ies") ->
+        String.replace_suffix(table_name, "ies", "y")
+
+      String.ends_with?(table_name, "sses") ->
+        String.replace_suffix(table_name, "sses", "ss")
+
+      String.ends_with?(table_name, "ses") ->
+        String.replace_suffix(table_name, "ses", "s")
+
+      String.ends_with?(table_name, "s") and not String.ends_with?(table_name, "ss") ->
+        String.replace_suffix(table_name, "s", "")
+
+      true ->
+        table_name
+    end
   end
 end

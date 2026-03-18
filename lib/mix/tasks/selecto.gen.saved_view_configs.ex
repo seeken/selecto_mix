@@ -68,6 +68,8 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViewConfigs do
 
   use Igniter.Mix.Task
 
+  alias SelectoMix.RawPersistence
+
   @impl Igniter.Mix.Task
   def info(_argv, _composing_task) do
     %Igniter.Mix.Task.Info{
@@ -80,6 +82,8 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViewConfigs do
         schema_module: :string,
         table_name: :string,
         repo_module: :string,
+        adapter: :string,
+        connection_name: :string,
         dry_run: :boolean
       ],
       aliases: [
@@ -114,21 +118,38 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViewConfigs do
   # Private functions
 
   defp generate_saved_view_configs_implementation(igniter, app_name, opts) do
-    config = build_generation_config(app_name, opts)
+    with {:ok, adapter_mode} <- RawPersistence.parse_adapter(opts[:adapter]) do
+      config = build_generation_config(app_name, opts, adapter_mode)
 
-    if opts[:dry_run] do
-      show_dry_run_summary(config)
-      igniter
+      cond do
+        RawPersistence.raw_mode?(adapter_mode) and opts[:dry_run] ->
+          show_raw_dry_run_summary(config)
+          raw_mode_notice(igniter, config)
+
+        RawPersistence.raw_mode?(adapter_mode) ->
+          igniter
+          |> raw_mode_notice(config)
+          |> generate_raw_sql_file(config)
+          |> generate_raw_context_file(config)
+          |> add_raw_success_messages(config)
+
+        opts[:dry_run] ->
+          show_dry_run_summary(config)
+          igniter
+
+        true ->
+          igniter
+          |> generate_migration_file(config)
+          |> generate_schema_file(config)
+          |> generate_context_file(config)
+          |> add_success_messages(config)
+      end
     else
-      igniter
-      |> generate_migration_file(config)
-      |> generate_schema_file(config)
-      |> generate_context_file(config)
-      |> add_success_messages(config)
+      {:error, reason} -> Igniter.add_warning(igniter, reason)
     end
   end
 
-  defp build_generation_config(app_name, opts) do
+  defp build_generation_config(app_name, opts, adapter_mode) do
     app_module = Module.concat([app_name])
 
     %{
@@ -140,7 +161,9 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViewConfigs do
       table_name: opts[:table_name] || "saved_view_configs",
       repo_module: parse_module_name(opts[:repo_module] || "#{app_name}.Repo"),
       migration_name: "create_#{opts[:table_name] || "saved_view_configs"}",
-      timestamp: timestamp()
+      timestamp: timestamp(),
+      adapter_mode: adapter_mode,
+      connection_name: RawPersistence.connection_name(app_name, opts)
     }
   end
 
@@ -540,5 +563,57 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViewConfigs do
     2. Add 'use #{inspect(config.context_module)}' to your domain modules
     3. Update your LiveView to use view_type when saving/loading configs
     """)
+  end
+
+  defp generate_raw_sql_file(igniter, config) do
+    Igniter.create_new_file(
+      igniter,
+      "priv/sql/create_#{config.table_name}.sql",
+      RawPersistence.saved_view_configs_sql(config)
+    )
+  end
+
+  defp generate_raw_context_file(igniter, config) do
+    Igniter.create_new_file(
+      igniter,
+      context_file_path(config),
+      RawPersistence.saved_view_configs_context(config)
+    )
+  end
+
+  defp show_raw_dry_run_summary(config) do
+    IO.puts("""
+
+    Selecto SavedViewConfigs Generation (DRY RUN)
+    =============================================
+
+    App Name: #{config.app_name}
+    Table Name: #{config.table_name}
+    Adapter: #{config.adapter_mode}
+
+    Files to be generated:
+      • SQL:     priv/sql/create_#{config.table_name}.sql
+      • Context: #{context_file_path(config)}
+    """)
+  end
+
+  defp add_raw_success_messages(igniter, config) do
+    igniter
+    |> Igniter.add_notice("Generated SQL: priv/sql/create_#{config.table_name}.sql")
+    |> Igniter.add_notice("Generated context: #{inspect(config.context_module)}")
+    |> Igniter.add_notice("""
+
+    Next steps:
+    1. #{RawPersistence.compatibility_notice(config.adapter_mode)}
+    2. Add 'use #{inspect(config.context_module)}' to your domain modules
+    3. Update your LiveView to use view_type when saving/loading configs
+    """)
+  end
+
+  defp raw_mode_notice(igniter, config) do
+    Igniter.add_notice(
+      igniter,
+      "Adapter-backed saved view configs mode uses generated SQL plus #{config.adapter_mode} adapter contexts instead of Ecto schema/repo modules"
+    )
   end
 end

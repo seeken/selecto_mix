@@ -171,7 +171,7 @@ IO.puts("Joins are automatically inferred when you reference fields with dot not
 IO.puts("Example: selecting 'category.name' automatically joins to category table")
 
 # ============================================================================  
-# Pivot Examples
+# Retarget Examples
 # ============================================================================
 
 # ============================================================================

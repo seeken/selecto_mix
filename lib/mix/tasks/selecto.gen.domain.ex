@@ -76,8 +76,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
   use Igniter.Mix.Task
 
-  # alias SelectoMix.{AdapterDetector, CLIParser, JoinAnalyzer}
-  # alias SelectoMix.{SchemaIntrospector, ConfigMerger, DomainGenerator}
+  alias SelectoMix.{AdapterResolver, Connection, ConnectionOpts, LiveViewGenerator}
 
   @impl Igniter.Mix.Task
   def info(_argv, _composing_task) do
@@ -86,34 +85,36 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       example:
         "mix selecto.gen.domain Blog.Post --include-associations --expand-schemas categories",
       positional: [:schemas],
-      schema: [
-        all: :boolean,
-        output: :string,
-        force: :boolean,
-        dry_run: :boolean,
-        include_associations: :boolean,
-        exclude: :string,
-        live: :boolean,
-        saved_views: :boolean,
-        expand_schemas: :string,
-        expand_tag: :keep,
-        expand_star: :keep,
-        expand_lookup: :keep,
-        expand_polymorphic: :keep,
-        parameterized_joins: :boolean,
-        path: :string,
-        enable_modal: :boolean
-      ],
-      aliases: [
-        a: :all,
-        o: :output,
-        f: :force,
-        d: :dry_run,
-        l: :live,
-        s: :saved_views,
-        e: :expand_schemas,
-        p: :parameterized_joins
-      ]
+      schema:
+        [
+          all: :boolean,
+          output: :string,
+          force: :boolean,
+          dry_run: :boolean,
+          include_associations: :boolean,
+          exclude: :string,
+          live: :boolean,
+          saved_views: :boolean,
+          expand_schemas: :string,
+          expand_tag: :keep,
+          expand_star: :keep,
+          expand_lookup: :keep,
+          expand_polymorphic: :keep,
+          parameterized_joins: :boolean,
+          path: :string,
+          enable_modal: :boolean
+        ] ++ ConnectionOpts.connection_schema(),
+      aliases:
+        [
+          a: :all,
+          o: :output,
+          f: :force,
+          d: :dry_run,
+          l: :live,
+          s: :saved_views,
+          e: :expand_schemas,
+          p: :parameterized_joins
+        ] ++ ConnectionOpts.connection_aliases()
     }
   end
 
@@ -127,20 +128,10 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     positional = igniter.args.positional
 
     # Convert keyword list to map for easier manipulation
-    parsed_args = Map.new(options)
+    parsed_args = Map.new(options) |> Map.put_new(:include_associations, true)
 
     # Get the schemas positional argument
     schemas_arg = Map.get(positional, :schemas, "")
-
-    schemas =
-      cond do
-        parsed_args[:all] -> discover_all_schemas(igniter)
-        schemas_arg != "" -> parse_schema_patterns(schemas_arg)
-        true -> []
-      end
-
-    exclude_patterns = parse_exclude_patterns(parsed_args[:exclude] || "")
-    schemas = Enum.reject(schemas, &schema_matches_exclude?(&1, exclude_patterns))
 
     # Parse expand-schemas parameter
     expand_schemas = parse_expand_schemas(parsed_args[:expand_schemas] || "")
@@ -155,22 +146,36 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     # Validate flags
     validated_igniter = validate_flags(igniter, parsed_args)
 
-    if Enum.empty?(schemas) do
-      validated_igniter
-      |> Igniter.add_warning("""
-      No schemas specified. Use one of:
-        mix selecto.gen.domain MyApp.Schema
-        mix selecto.gen.domain MyApp.Context.*
-        mix selecto.gen.domain --all
-      """)
-    else
-      # Add expand_schemas and expand_modes to parsed_args
-      updated_args =
-        parsed_args
-        |> Map.put(:expand_schemas_list, expand_schemas)
-        |> Map.put(:expand_modes, expand_modes)
+    updated_args =
+      parsed_args
+      |> Map.put(:expand_schemas_list, expand_schemas)
+      |> Map.put(:expand_modes, expand_modes)
 
-      process_schemas(validated_igniter, schemas, updated_args)
+    if db_mode?(updated_args, schemas_arg) do
+      process_db_sources(validated_igniter, updated_args)
+    else
+      schemas =
+        cond do
+          updated_args[:all] -> discover_all_schemas(igniter)
+          schemas_arg != "" -> parse_schema_patterns(schemas_arg)
+          true -> []
+        end
+
+      exclude_patterns = parse_exclude_patterns(updated_args[:exclude] || "")
+      schemas = Enum.reject(schemas, &schema_matches_exclude?(&1, exclude_patterns))
+
+      if Enum.empty?(schemas) do
+        validated_igniter
+        |> Igniter.add_warning("""
+        No schemas specified. Use one of:
+          mix selecto.gen.domain MyApp.Schema
+          mix selecto.gen.domain MyApp.Context.*
+          mix selecto.gen.domain --all
+          mix selecto.gen.domain --adapter postgresql --table users
+        """)
+      else
+        process_schemas(validated_igniter, schemas, updated_args)
+      end
     end
   end
 
@@ -182,8 +187,113 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         igniter
         |> Igniter.add_warning("--saved-views flag requires --live flag to be set")
 
+      parsed_args[:table] && is_nil(parsed_args[:adapter]) ->
+        igniter
+        |> Igniter.add_warning(
+          "DB-backed generation requires --adapter (for example: --adapter postgresql)"
+        )
+
       true ->
         igniter
+    end
+  end
+
+  defp db_mode?(parsed_args, schemas_arg) do
+    parsed_args[:adapter] ||
+      parsed_args[:table] ||
+      parsed_args[:database_url] ||
+      parsed_args[:database] ||
+      (parsed_args[:host] && schemas_arg == "")
+  end
+
+  defp process_db_sources(igniter, opts) do
+    with {:ok, adapter} <- resolve_adapter(opts[:adapter]),
+         {:ok, conn_opts} <- resolve_db_connection_opts(opts),
+         {:ok, updated_igniter} <- with_db_connection(adapter, conn_opts, igniter, opts) do
+      updated_igniter
+    else
+      {:error, :missing_adapter} ->
+        Igniter.add_warning(
+          igniter,
+          "DB-backed generation requires --adapter. Known adapters: #{Enum.join(AdapterResolver.known_adapter_names(), ", ")}"
+        )
+
+      {:error, reason} ->
+        Igniter.add_warning(
+          igniter,
+          "Failed to generate from database source: #{inspect(reason)}"
+        )
+    end
+  end
+
+  defp with_db_connection(adapter, conn_opts, igniter, opts) do
+    Connection.with_connection(adapter, conn_opts, fn conn ->
+      db_schema = opts[:schema] || "public"
+      exclude_patterns = parse_exclude_patterns(opts[:exclude] || "")
+
+      tables =
+        cond do
+          opts[:all] -> discover_all_tables(adapter, conn, db_schema)
+          table = opts[:table] -> [table]
+          true -> []
+        end
+
+      tables = Enum.reject(tables, &table_matches_exclude?(&1, exclude_patterns))
+
+      if Enum.empty?(tables) do
+        Igniter.add_warning(
+          igniter,
+          "No tables specified. Use one of: mix selecto.gen.domain --adapter postgresql --table TABLE_NAME or --all"
+        )
+      else
+        process_db_tables(igniter, adapter, conn, tables, Map.put(opts, :db_schema, db_schema))
+      end
+    end)
+  end
+
+  defp resolve_adapter(nil), do: {:error, :missing_adapter}
+  defp resolve_adapter(adapter), do: AdapterResolver.resolve(adapter)
+
+  defp resolve_db_connection_opts(opts) do
+    conn_opts = ConnectionOpts.from_parsed_args(opts)
+
+    if conn_opts == [] do
+      {:error, :missing_connection_opts}
+    else
+      {:ok, conn_opts}
+    end
+  end
+
+  defp discover_all_tables(adapter, conn, db_schema) do
+    cond do
+      not Code.ensure_loaded?(adapter) ->
+        []
+
+      not function_exported?(adapter, :list_tables, 2) ->
+        []
+
+      true ->
+        case adapter.list_tables(conn, schema: db_schema) do
+          {:ok, tables} -> Enum.reject(tables, &(&1 in ConnectionOpts.system_tables()))
+          {:error, _reason} -> []
+        end
+    end
+  end
+
+  defp process_db_tables(igniter, adapter, conn, tables, opts) do
+    output_dir = get_output_directory(igniter, opts[:output])
+    opts = Map.put_new(opts, :app_name, Igniter.Project.Application.app_name(igniter))
+
+    if opts[:dry_run] do
+      show_dry_run_summary(tables, output_dir, opts)
+      igniter
+    else
+      Enum.reduce(tables, igniter, fn table, acc_igniter ->
+        source =
+          {:db, adapter, conn, table, schema: opts[:db_schema], expand: opts[:expand] || false}
+
+        generate_domain_for_source(acc_igniter, source, output_dir, opts)
+      end)
     end
   end
 
@@ -336,6 +446,14 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     end)
   end
 
+  defp table_matches_exclude?(table, exclude_patterns) do
+    table_name = table |> to_string() |> String.downcase()
+
+    Enum.any?(exclude_patterns, fn pattern ->
+      String.contains?(table_name, String.downcase(pattern))
+    end)
+  end
+
   defp process_schemas(igniter, schemas, opts) do
     output_dir = get_output_directory(igniter, opts[:output])
 
@@ -354,7 +472,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
       # Now generate domain files
       Enum.reduce(schemas, igniter_with_saved_views, fn schema, acc_igniter ->
-        generate_domain_for_schema(acc_igniter, schema, output_dir, opts)
+        generate_domain_for_source(acc_igniter, schema, output_dir, opts)
       end)
     end
   end
@@ -382,19 +500,18 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     Generate LiveView: #{opts[:live] || false}
     Generate Saved Views: #{opts[:saved_views] || false}
 
-    Schemas to process:
+    Sources to process:
     """)
 
     Enum.each(schemas, fn schema ->
       domain_file = domain_file_path(output_dir, schema)
 
-      IO.puts("  • #{schema}")
+      IO.puts("  • #{display_source(schema)}")
       IO.puts("    → #{domain_file}")
 
       if opts[:live] do
-        schema_parts = schema |> to_string() |> String.split(".")
-        app_name = get_app_name_from_schema_parts(schema_parts)
-        schema_name = List.last(schema_parts) |> Macro.underscore()
+        app_name = output_app_name(opts)
+        schema_name = LiveViewGenerator.source_live_name(schema) |> Macro.underscore()
 
         live_file = "lib/#{app_name}_web/live/#{schema_name}_live.ex"
         html_file = "lib/#{app_name}_web/live/#{schema_name}_live.html.heex"
@@ -411,28 +528,54 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     IO.puts("\nRun without --dry-run to generate files.")
   end
 
-  defp generate_domain_for_schema(igniter, schema, output_dir, opts) do
-    domain_file = domain_file_path(output_dir, schema)
+  defp generate_domain_for_source(igniter, source, output_dir, opts) do
+    domain_file = domain_file_path(output_dir, source)
 
     igniter_with_domain =
       igniter
       |> ensure_directory_exists(output_dir)
-      |> generate_domain_file(schema, domain_file, opts)
-      |> generate_overlay_file(schema, domain_file, opts)
-      |> add_success_message("Generated Selecto domain for #{schema}")
+      |> generate_domain_file(source, domain_file, opts)
+      |> generate_overlay_file(source, domain_file, opts)
+      |> add_success_message("Generated Selecto domain for #{display_source(source)}")
 
     # Generate LiveView files if requested
-    if opts[:live] do
+    if opts[:live] && ecto_source?(source) do
       igniter_with_domain
-      |> generate_live_view_for_schema(schema, opts)
+      |> generate_live_view_for_schema(source, opts)
     else
-      igniter_with_domain
+      if opts[:live] && !ecto_source?(source) do
+        Igniter.add_warning(
+          igniter_with_domain,
+          "LiveView generation is still Ecto-only in selecto_mix; domain generation completed for #{display_source(source)}"
+        )
+      else
+        igniter_with_domain
+      end
     end
   end
 
-  defp domain_file_path(output_dir, schema) do
-    filename = schema |> to_string() |> String.split(".") |> List.last() |> Macro.underscore()
-    Path.join([output_dir, "#{filename}_domain.ex"])
+  defp ecto_source?(source) when is_atom(source), do: true
+  defp ecto_source?(_source), do: false
+
+  defp display_source({:db, _adapter, _conn, table, _opts}), do: table
+  defp display_source({:db, _adapter, _conn, table}), do: table
+  defp display_source(source) when is_binary(source), do: source
+  defp display_source(source), do: inspect(source)
+
+  defp source_basename({:db, _adapter, _conn, table, _opts}), do: Macro.underscore(table)
+  defp source_basename({:db, _adapter, _conn, table}), do: Macro.underscore(table)
+  defp source_basename(source) when is_binary(source), do: Macro.underscore(source)
+
+  defp source_basename(source) do
+    source
+    |> to_string()
+    |> String.split(".")
+    |> List.last()
+    |> Macro.underscore()
+  end
+
+  defp domain_file_path(output_dir, source) do
+    Path.join([output_dir, "#{source_basename(source)}_domain.ex"])
   end
 
   defp ensure_directory_exists(igniter, dir_path) do
@@ -446,17 +589,17 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     end
   end
 
-  defp generate_domain_file(igniter, schema, file_path, opts) do
+  defp generate_domain_file(igniter, source, file_path, opts) do
     existing_content = read_existing_domain_file(igniter, file_path)
     # Convert map opts to keyword list for SchemaIntrospector
     opts_list = Map.to_list(opts)
-    domain_config = SelectoMix.SchemaIntrospector.introspect_schema(schema, opts_list)
+    domain_config = SelectoMix.SchemaIntrospector.introspect_schema(source, opts_list)
 
     # Expand associated schemas if requested
     expanded_config =
       if opts[:expand_schemas_list] && is_list(opts[:expand_schemas_list]) do
         domain_config
-        |> expand_associated_schemas(opts[:expand_schemas_list])
+        |> expand_associated_schemas(source, opts[:expand_schemas_list], opts_list)
         |> Map.put(:expand_schemas_list, opts[:expand_schemas_list])
       else
         domain_config
@@ -495,15 +638,22 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         SelectoMix.ConfigMerger.merge_with_existing(config_with_poly, existing_content)
       end
 
+    merged_config = Map.put(merged_config, :adapter, domain_config[:adapter])
+
     # Add schema_module to opts for saved views context inference
-    opts_with_schema = Map.put(opts, :schema_module, schema)
+    app_name = Igniter.Project.Application.app_name(igniter) |> to_string() |> Macro.camelize()
+
+    opts_with_schema =
+      opts
+      |> Map.put(:schema_module, source)
+      |> Map.put(:app_name, app_name)
 
     content =
-      SelectoMix.DomainGenerator.generate_domain_file(schema, merged_config, opts_with_schema)
+      SelectoMix.DomainGenerator.generate_domain_file(source, merged_config, opts_with_schema)
 
     # For now, delete the existing file and create a new one
     # This is a workaround until we figure out the proper Igniter API
-    if File.exists?(file_path) do
+    if opts[:force] && File.exists?(file_path) do
       File.rm!(file_path)
     end
 
@@ -520,7 +670,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   #   end
   # end
 
-  defp generate_overlay_file(igniter, schema, domain_file_path, opts) do
+  defp generate_overlay_file(igniter, source, domain_file_path, opts) do
     # Only generate overlay file if it doesn't already exist
     # Never overwrite an existing overlay file
     overlay_path = SelectoMix.OverlayGenerator.overlay_file_path(domain_file_path)
@@ -531,10 +681,13 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     else
       # Generate overlay template
       opts_list = Map.to_list(opts)
-      domain_config = SelectoMix.SchemaIntrospector.introspect_schema(schema, opts_list)
+      domain_config = SelectoMix.SchemaIntrospector.introspect_schema(source, opts_list)
 
       # Get the domain module name
-      domain_module_name = get_domain_module_name_from_schema(schema)
+      app_name = Igniter.Project.Application.app_name(igniter) |> to_string() |> Macro.camelize()
+
+      domain_module_name =
+        SelectoMix.DomainGenerator.domain_module_name(source, domain_config, app_name: app_name)
 
       # Generate overlay content
       content =
@@ -554,25 +707,6 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     end
   end
 
-  defp get_domain_module_name_from_schema(schema) do
-    base_name = Module.split(schema) |> List.last()
-
-    app_name =
-      Application.get_env(:selecto_mix, :app_name) ||
-        infer_app_name_from_schema(schema) ||
-        "MyApp"
-
-    "#{app_name}.SelectoDomains.#{base_name}Domain"
-  end
-
-  defp infer_app_name_from_schema(schema_module) when is_atom(schema_module) do
-    schema_module
-    |> Module.split()
-    |> List.first()
-  end
-
-  defp infer_app_name_from_schema(_), do: "MyApp"
-
   defp read_existing_domain_file(_igniter, file_path) do
     case File.read(file_path) do
       {:ok, content} -> content
@@ -581,7 +715,27 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     end
   end
 
-  defp expand_associated_schemas(domain_config, expand_list) do
+  defp expand_associated_schemas(domain_config, source, expand_list, opts_list) do
+    case source do
+      {:db, adapter, conn, _table, source_opts} ->
+        expand_db_associated_schemas(
+          domain_config,
+          adapter,
+          conn,
+          source_opts,
+          expand_list,
+          opts_list
+        )
+
+      {:db, adapter, conn, _table} ->
+        expand_db_associated_schemas(domain_config, adapter, conn, [], expand_list, opts_list)
+
+      _ ->
+        expand_ecto_associated_schemas(domain_config, expand_list)
+    end
+  end
+
+  defp expand_ecto_associated_schemas(domain_config, expand_list) do
     associations = domain_config[:associations] || %{}
 
     expanded_schemas =
@@ -638,19 +792,125 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     Map.put(domain_config, :expanded_schemas, expanded_schemas)
   end
 
-  defp generate_live_view_for_schema(igniter, schema, opts) do
+  defp expand_db_associated_schemas(
+         domain_config,
+         adapter,
+         conn,
+         source_opts,
+         expand_list,
+         opts_list
+       ) do
+    associations = domain_config[:associations] || %{}
+    merged_opts = Keyword.merge(source_opts, opts_list)
+
+    expanded_schemas =
+      Enum.reduce(associations, %{}, fn {assoc_name, assoc_data}, acc ->
+        related_table = assoc_data[:related_table]
+        schema_key = related_schema_key(assoc_name, assoc_data)
+
+        if should_expand_related_table?(schema_key, related_table, expand_list) and related_table do
+          introspection_opts =
+            merged_opts
+            |> Keyword.put(:include_associations, false)
+            |> Keyword.put(:expand, false)
+
+          case SelectoMix.Introspector.introspect(
+                 {:db, adapter, conn, related_table, introspection_opts},
+                 introspection_opts
+               ) do
+            {:ok, related_config} ->
+              Map.put(acc, schema_key, %{
+                source_table: related_config.table_name,
+                table_name: related_config.table_name,
+                primary_key: related_config.primary_key,
+                fields: related_config.fields,
+                field_types: related_config.field_types,
+                associations: %{}
+              })
+
+            {:error, _reason} ->
+              acc
+          end
+        else
+          acc
+        end
+      end)
+
+    Map.put(domain_config, :expanded_schemas, expanded_schemas)
+  end
+
+  defp related_schema_key(assoc_name, assoc_data) do
+    cond do
+      module_name = assoc_data[:related_module_name] ->
+        module_name
+        |> to_string()
+        |> Macro.underscore()
+        |> String.to_atom()
+
+      related_schema = assoc_data[:related_schema] ->
+        related_schema
+        |> to_string()
+        |> String.split(".")
+        |> List.last()
+        |> Macro.underscore()
+        |> String.to_atom()
+
+      related_table = assoc_data[:related_table] ->
+        related_table
+        |> singularize_table_name()
+        |> String.to_atom()
+
+      true ->
+        assoc_name
+    end
+  end
+
+  defp should_expand_related_table?(schema_key, related_table, expand_list) do
+    schema_name = schema_key |> to_string() |> String.downcase()
+    table_name = related_table |> to_string() |> String.downcase()
+
+    Enum.any?(expand_list || [], fn expand_name ->
+      expand_name = String.downcase(expand_name)
+
+      expand_name == schema_name ||
+        expand_name == table_name ||
+        String.contains?(expand_name, schema_name) ||
+        String.contains?(table_name, expand_name)
+    end)
+  end
+
+  defp singularize_table_name(table_name) do
+    cond do
+      String.ends_with?(table_name, "ies") ->
+        String.replace_suffix(table_name, "ies", "y")
+
+      String.ends_with?(table_name, "sses") ->
+        String.replace_suffix(table_name, "sses", "ss")
+
+      String.ends_with?(table_name, "ses") ->
+        String.replace_suffix(table_name, "ses", "s")
+
+      String.ends_with?(table_name, "s") and not String.ends_with?(table_name, "ss") ->
+        String.replace_suffix(table_name, "s", "")
+
+      true ->
+        table_name
+    end
+  end
+
+  defp generate_live_view_for_schema(igniter, source, opts) do
     app_name = Igniter.Project.Application.app_name(igniter)
 
-    live_file = live_view_file_path(app_name, schema)
-    html_file = live_view_html_file_path(app_name, schema)
+    live_file = LiveViewGenerator.live_view_file_path(app_name, source)
+    html_file = LiveViewGenerator.live_view_html_file_path(app_name, source)
 
     igniter
     |> ensure_live_directory_exists(app_name)
-    |> generate_live_view_file(schema, live_file, opts)
-    |> generate_live_view_html_file(schema, html_file, opts)
-    |> add_success_message("Generated LiveView files for #{schema}")
+    |> generate_live_view_file(source, live_file, opts)
+    |> generate_live_view_html_file(source, html_file, opts)
+    |> add_success_message("Generated LiveView files for #{display_source(source)}")
     |> maybe_run_assets_integration()
-    |> add_route_suggestion(schema, opts)
+    |> add_route_suggestion(source, opts)
   end
 
   defp generate_saved_views_if_needed(igniter, opts) do
@@ -693,301 +953,57 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     end
   end
 
-  defp live_view_file_path(app_name_atom, schema) do
-    schema_parts = schema |> to_string() |> String.split(".")
-    # Use the actual app name from Igniter instead of trying to derive it
-    app_name = app_name_atom |> to_string()
-    schema_name = List.last(schema_parts) |> Macro.underscore()
-    "lib/#{app_name}_web/live/#{schema_name}_live.ex"
-  end
-
-  defp live_view_html_file_path(app_name_atom, schema) do
-    schema_parts = schema |> to_string() |> String.split(".")
-    # Use the actual app name from Igniter instead of trying to derive it
-    app_name = app_name_atom |> to_string()
-    schema_name = List.last(schema_parts) |> Macro.underscore()
-    "lib/#{app_name}_web/live/#{schema_name}_live.html.heex"
-  end
-
   defp ensure_live_directory_exists(igniter, app_name_atom) do
     app_name = app_name_atom |> to_string() |> Macro.underscore()
     live_dir = "lib/#{app_name}_web/live"
     Igniter.create_new_file(igniter, Path.join(live_dir, ".gitkeep"), "")
   end
 
-  defp generate_live_view_file(igniter, schema, file_path, opts) do
-    content = render_live_view_template(schema, opts)
+  defp generate_live_view_file(igniter, source, file_path, opts) do
+    content = render_live_view_template(igniter, source, opts)
+
+    if opts[:force] && File.exists?(file_path) do
+      File.rm!(file_path)
+    end
+
     Igniter.create_new_file(igniter, file_path, content)
   end
 
-  defp generate_live_view_html_file(igniter, schema, file_path, opts) do
-    content = render_live_view_html_template(schema, opts)
+  defp generate_live_view_html_file(igniter, source, file_path, opts) do
+    content = LiveViewGenerator.render_live_view_html_template(source, opts)
+
+    if opts[:force] && File.exists?(file_path) do
+      File.rm!(file_path)
+    end
+
     Igniter.create_new_file(igniter, file_path, content)
   end
 
-  defp render_live_view_template(schema, opts) do
-    # Extract app name from the schema module
-    schema_parts = schema |> to_string() |> String.split(".")
-    # Remove "Elixir" prefix if present
-    clean_parts =
-      case schema_parts do
-        ["Elixir" | rest] -> rest
-        parts -> parts
-      end
+  defp render_live_view_template(igniter, source, opts) do
+    app_name = Igniter.Project.Application.app_name(igniter) |> to_string() |> Macro.camelize()
 
-    app_name = List.first(clean_parts)
-    schema_name = List.last(clean_parts)
-    schema_underscore = Macro.underscore(schema_name)
+    domain_config = SelectoMix.SchemaIntrospector.introspect_schema(source, Map.to_list(opts))
 
-    # Use custom path if provided, otherwise use singular form
-    route_path = opts[:path] || "/#{schema_underscore}"
-    # Ensure path starts with /
-    route_path = if String.starts_with?(route_path, "/"), do: route_path, else: "/#{route_path}"
+    domain_module =
+      SelectoMix.DomainGenerator.domain_module_name(source, domain_config, app_name: app_name)
 
-    domain_module = "#{app_name}.SelectoDomains.#{schema_name}Domain"
-    web_module = "#{app_name}Web"
-
-    saved_views_code =
-      if opts[:saved_views] do
-        """
-          saved_views = #{domain_module}.get_view_names(path)
-
-          socket =
-            assign(socket,
-              show_view_configurator: false,
-              views: views,
-              my_path: path,
-              saved_view_module: #{domain_module},
-              saved_view_context: path,
-              path: path,
-              available_saved_views: saved_views
-            )
-        """
-      else
-        """
-          socket =
-            assign(socket,
-              show_view_configurator: false,
-              views: views,
-              my_path: path
-            )
-        """
-      end
-
-    """
-    defmodule #{web_module}.#{schema_name}Live do
-      @moduledoc \"\"\"
-      LiveView for #{schema_name} using SelectoComponents.
-      
-      ## Quick Setup (Phoenix 1.7+)
-      
-      1. Import hooks in `assets/js/app.js`:
-         ```javascript
-         import {hooks as selectoHooks} from "phoenix-colocated/selecto_components"
-         // Add to your liveSocket hooks: { ...selectoHooks }
-         ```
-      
-      2. Add to Tailwind in `assets/css/app.css`:
-         ```css
-         @source "../../#{get_selecto_components_location()}/selecto_components/lib/**/*.{ex,heex}";
-         ```
-      
-      3. Run `mix assets.build`
-      
-      That's it! The drag-and-drop query builder and charts will work automatically.
-      \"\"\"
-
-      use #{web_module}, :live_view
-      use SelectoComponents.Form
-
-      @impl true
-      def mount(_params, _session, socket) do
-        # Configure the domain and path
-        domain = #{domain_module}.domain()
-        path = "#{route_path}"
-
-        # Configure Selecto to use the main Repo connection pool
-        selecto = Selecto.configure(domain, #{app_name}.Repo)
-
-        views = [
-          {:aggregate, SelectoComponents.Views.Aggregate, "Aggregate View", %{drill_down: :detail}},
-          {:detail, SelectoComponents.Views.Detail, "Detail View", %{}},
-          {:graph, SelectoComponents.Views.Graph, "Graph View", %{}}
-        ]
-
-        state = get_initial_state(views, selecto)
-
-    #{saved_views_code}
-
-        {:ok, assign(socket, state), layout: {#{web_module}.Layouts, :root}}
-      end
-
-      @impl true
-      def render(assigns) do
-        ~H\"\"\"
-        <div class="container mx-auto px-4 py-8">
-          #{render_inline_header(schema_name, schema_underscore, opts)}
-
-          <.live_component
-            module={SelectoComponents.Form}
-            id="#{schema_underscore}-form"
-            #{if opts[:enable_modal], do: "enable_modal_detail={true}", else: ""}
-            {assigns}
-          />
-
-          <.live_component
-            module={SelectoComponents.Results}
-            id="#{schema_underscore}-results"
-            {assigns}
-          />
-        </div>
-        \"\"\"
-      end
-
-      @impl true
-      def handle_event("toggle_show_view_configurator", _params, socket) do
-        {:noreply, assign(socket, show_view_configurator: !socket.assigns.show_view_configurator)}
-      end
-    end
-    """
+    LiveViewGenerator.render_live_view_template(
+      app_name,
+      source,
+      domain_module,
+      opts,
+      get_selecto_components_location()
+    )
   end
 
-  defp render_live_view_html_template(schema, opts) do
-    schema_name = schema |> to_string() |> String.split(".") |> List.last()
-
-    saved_views_dropdown =
-      if opts[:saved_views] do
-        ~S"""
-        <details :if={@available_saved_views != []} id="saved-views-dropdown" class="dropdown">
-          <summary class="btn btn-sm btn-outline gap-1">Saved Views</summary>
-          <ul class="menu dropdown-content z-[1] mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-2 shadow">
-            <li :for={v <- @available_saved_views}>
-              <.link href={"#{@path}?saved_view=#{v}"}>{v}</.link>
-            </li>
-          </ul>
-        </details>
-        """
-      else
-        ""
-      end
-
-    saved_view_assigns =
-      if opts[:saved_views] do
-        """
-            saved_view_module={@saved_view_module}
-            saved_view_context={@saved_view_context}
-        """
-      else
-        ""
-      end
-
-    """
-    <div class="flex items-center gap-4 mb-6">
-      <h1 class="text-3xl font-bold">#{schema_name} Data View</h1>
-      #{saved_views_dropdown}
-    </div>
-
-    <div :if={@show_view_configurator}>
-      <.live_component
-        module={SelectoComponents.Form}
-        id="config"
-        view_config={@view_config}
-        selecto={@selecto}
-        executed={@executed}
-        applied_view={nil}
-        active_tab={@active_tab}
-        views={@views}
-        #{if opts[:enable_modal], do: "enable_modal_detail={true}", else: ""}#{saved_view_assigns}
-      />
-    </div>
-
-    <.live_component
-      module={SelectoComponents.Results}
-      selecto={@selecto}
-      query_results={@query_results}
-      applied_view={@applied_view}
-      executed={@executed}
-      views={@views}
-      view_meta={@view_meta}
-      id="results"
-    />
-    """
+  defp output_app_name(opts) do
+    (opts[:app_name] || Application.get_env(:selecto_mix, :app_name, "my_app"))
+    |> to_string()
+    |> Macro.underscore()
   end
 
-  defp render_inline_header(schema_name, _schema_underscore, opts) do
-    if opts[:saved_views] do
-      """
-      <div class="flex items-center gap-4 mb-6">
-            <h1 class="text-3xl font-bold">#{schema_name} Explorer</h1>
-
-            <details :if={@available_saved_views != []} id="saved-views-dropdown" class="dropdown">
-              <summary class="btn btn-sm btn-outline gap-1">Saved Views</summary>
-              <ul class="menu dropdown-content z-[1] mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-2 shadow">
-                <li :for={v <- @available_saved_views}>
-                  <.link href={\"\#{@path}?saved_view=\#{v}\"}>{v}</.link>
-                </li>
-              </ul>
-            </details>
-          </div>
-      """
-    else
-      """
-      <h1 class="text-3xl font-bold mb-6">#{schema_name} Explorer</h1>
-      """
-    end
-  end
-
-  defp get_app_name_from_schema_parts(schema_parts) do
-    # For module names like Elixir.SelectoTest.Store.Film, extract "selecto_test"
-    # Skip "Elixir" prefix if present
-    relevant_parts =
-      case schema_parts do
-        ["Elixir" | rest] -> rest
-        parts -> parts
-      end
-
-    app_name =
-      case List.first(relevant_parts) do
-        name when is_binary(name) ->
-          name |> Macro.underscore()
-
-        name when is_atom(name) ->
-          name |> to_string() |> Macro.underscore()
-
-        _ ->
-          "app"
-      end
-
-    app_name
-  end
-
-  defp add_route_suggestion(igniter, schema, opts) do
-    schema_parts = schema |> to_string() |> String.split(".")
-    # Remove Elixir prefix if present
-    clean_parts =
-      case schema_parts do
-        ["Elixir" | rest] -> rest
-        parts -> parts
-      end
-
-    app_name = List.first(clean_parts)
-    schema_name = List.last(clean_parts)
-    schema_underscore = Macro.underscore(schema_name)
-
-    # Use custom path if provided
-    route_path = opts[:path] || schema_underscore
-    # Remove leading slash if present for the route suggestion
-    route_path = String.replace_prefix(route_path, "/", "")
-
-    _live_module = "#{app_name}Web.#{schema_name}Live"
-
-    route_suggestion = """
-
-    Add this route to your router.ex:
-      live "/#{route_path}", #{schema_name}Live, :index
-    """
-
-    Igniter.add_notice(igniter, route_suggestion)
+  defp add_route_suggestion(igniter, source, opts) do
+    Igniter.add_notice(igniter, LiveViewGenerator.route_suggestion(source, opts))
   end
 
   defp add_success_message(igniter, message) do

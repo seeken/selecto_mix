@@ -18,16 +18,21 @@ defmodule SelectoMix.DomainGenerator do
   - Documentation and usage examples
   """
   def generate_domain_file(schema_module, config, opts \\ []) do
-    module_name = get_domain_module_name(schema_module, config)
+    module_name = get_domain_module_name(schema_module, config, opts)
     overlay_module_name = SelectoMix.OverlayGenerator.overlay_module_name(module_name)
     saved_views_use = generate_saved_views_use(opts)
+    kind = source_kind(schema_module, config)
+    source_label = source_label(schema_module, config)
+    generation_description = generation_description(kind)
+    usage_examples = usage_examples(kind, schema_module, module_name)
+    regeneration_command = regeneration_command(kind, schema_module, config)
 
     """
     defmodule #{module_name} do
       @moduledoc \"\"\"
-      Selecto domain configuration for #{inspect(schema_module)}.
+      Selecto domain configuration for #{source_label}.
 
-      This file was automatically generated from the Ecto schema.
+      This file was automatically generated from #{generation_description}.
 
       ## Customization with Overlay Files
 
@@ -46,14 +51,7 @@ defmodule SelectoMix.DomainGenerator do
 
       ## Usage
 
-          # Basic usage
-          selecto = Selecto.configure(#{module_name}.domain(), MyApp.Repo)
-
-          # With Ecto integration
-          selecto = Selecto.from_ecto(MyApp.Repo, #{inspect(schema_module)})
-
-          # Execute queries
-          {:ok, {rows, columns, aliases}} = Selecto.execute(selecto)
+      #{usage_examples}
 
       ## Legacy Customization (Deprecated)
 
@@ -90,33 +88,33 @@ defmodule SelectoMix.DomainGenerator do
       
       To regenerate this file after schema changes:
       
-          mix selecto.gen.domain #{inspect(schema_module)}
+          #{regeneration_command}
           
       Additional options:
       
           # Force regenerate (overwrites customizations)
-          mix selecto.gen.domain #{inspect(schema_module)} --force
+          #{regeneration_command} --force
           
           # Preview changes without writing files
-          mix selecto.gen.domain #{inspect(schema_module)} --dry-run
+          #{regeneration_command} --dry-run
           
           # Include associations as joins
-          mix selecto.gen.domain #{inspect(schema_module)} --include-associations
+          #{regeneration_command} --include-associations
           
           # Generate with LiveView files
-          mix selecto.gen.domain #{inspect(schema_module)} --live
+          #{regeneration_command} --live
           
           # Generate with saved views support
-          mix selecto.gen.domain #{inspect(schema_module)} --live --saved-views
+          #{regeneration_command} --live --saved-views
           
           # Expand specific associated schemas with full columns/associations
-          mix selecto.gen.domain #{inspect(schema_module)} --expand-schemas categories,tags
+          #{regeneration_command} --expand-schemas categories,tags
           
       Your customizations will be preserved during regeneration (unless --force is used).
       \"\"\"
     #{saved_views_use}
       @doc \"\"\"
-      Returns the Selecto domain configuration for #{inspect(schema_module)}.
+      Returns the Selecto domain configuration for #{source_label}.
 
       This merges the base domain configuration with any overlay customizations.
       \"\"\"
@@ -152,13 +150,21 @@ defmodule SelectoMix.DomainGenerator do
   end
 
   @doc """
+  Resolve the generated domain module name for a source/config pair.
+  """
+  def domain_module_name(source, config, opts \\ []) do
+    get_domain_module_name(source, config, opts)
+  end
+
+  @doc """
   Generate the core domain configuration map.
   """
   def generate_domain_map(config) do
     timestamp = DateTime.utc_now() |> DateTime.to_iso8601()
     custom_metadata = generate_custom_metadata(config)
+    generated_from = generated_from_label(config)
 
-    "%{\n      # Generated from schema: #{config[:schema_module]}\n" <>
+    "%{\n      # Generated from: #{generated_from}\n" <>
       "      # Last updated: #{timestamp}\n      \n" <>
       "      source: #{generate_source_config(config)},\n" <>
       "      schemas: #{generate_schemas_config(config)},\n" <>
@@ -176,25 +182,26 @@ defmodule SelectoMix.DomainGenerator do
       "      # Query pagination settings\n" <>
       "      pagination: #{generate_pagination_config(config)},\n" <>
       "      \n" <>
-      "      # Pivot table configuration (Selecto 0.3.0+)\n" <>
-      "      pivot: #{generate_pivot_config(config)},\n      \n" <>
+      "      # Retarget table configuration (Selecto 0.3.0+)\n" <>
+      "      retarget: #{generate_retarget_config(config)},\n      \n" <>
       "      # Join configurations\n" <>
       "      joins: #{generate_joins_config(config)}#{custom_metadata}\n    }"
   end
 
   # Private generation functions
 
-  defp get_domain_module_name(schema_module, config) do
+  defp get_domain_module_name(schema_module, config, opts) do
     base_name =
       config[:metadata][:module_name] ||
-        Module.split(schema_module) |> List.last()
+        fallback_module_name(schema_module)
 
     _context_name = config[:metadata][:context_name] || "Domains"
 
     # Generate appropriate module name - use schema module as source of truth
     # KEY FIX: Use schema module
     app_name =
-      Application.get_env(:selecto_mix, :app_name) ||
+      opts[:app_name] ||
+        Application.get_env(:selecto_mix, :app_name) ||
         infer_app_name_from_schema(schema_module) ||
         "MyApp"
 
@@ -489,17 +496,20 @@ defmodule SelectoMix.DomainGenerator do
     associations = config[:associations] || %{}
     expand_schemas_list = config[:expand_schemas_list] || []
     expand_modes = config[:expand_modes] || %{}
+    expanded_schemas = config[:expanded_schemas] || %{}
 
     # Generate schema configurations for associations
     # Include through associations - selecto now handles them
     schema_configs =
       associations
-      |> Enum.map(fn {_assoc_name, assoc_config} ->
-        # Use the singular schema name, not the queryable/association name
-        related_schema = assoc_config[:related_schema]
-        schema_name = get_schema_name_from_module(related_schema)
-        table_name = guess_table_name(related_schema)
+      |> Enum.map(fn {assoc_name, assoc_config} ->
+        related_schema = association_related_schema(assoc_config)
+        schema_name = association_schema_key(assoc_name, assoc_config)
+        table_name = association_related_table(assoc_config, schema_name)
         related_schema_string = inspect(related_schema)
+
+        expanded_schema =
+          Map.get(expanded_schemas, schema_name) || Map.get(expanded_schemas, assoc_name)
 
         # Check if this schema should be expanded
         should_expand = should_expand_schema?(schema_name, related_schema, expand_schemas_list)
@@ -507,16 +517,26 @@ defmodule SelectoMix.DomainGenerator do
         # Check if there's a special join mode for this schema
         join_mode = get_join_mode_for_schema(schema_name, expand_modes)
 
-        if should_expand do
-          generate_expanded_schema_config(
-            schema_name,
-            related_schema,
-            table_name,
-            join_mode,
-            assoc_config
-          )
-        else
-          generate_placeholder_schema_config(schema_name, related_schema_string, table_name)
+        cond do
+          is_map(expanded_schema) ->
+            generate_preexpanded_schema_config(
+              schema_name,
+              expanded_schema,
+              join_mode,
+              assoc_config
+            )
+
+          should_expand ->
+            generate_expanded_schema_config(
+              schema_name,
+              related_schema,
+              table_name,
+              join_mode,
+              assoc_config
+            )
+
+          true ->
+            generate_placeholder_schema_config(schema_name, related_schema_string, table_name)
         end
       end)
       |> Enum.join(",\n      ")
@@ -546,6 +566,42 @@ defmodule SelectoMix.DomainGenerator do
       end)
 
     result
+  end
+
+  defp generate_preexpanded_schema_config(schema_name, expanded_schema, join_mode, assoc_config) do
+    fields = expanded_schema[:fields] || []
+    field_types = expanded_schema[:field_types] || expanded_schema[:columns] || %{}
+    primary_key = expanded_schema[:primary_key] || :id
+    associations = expanded_schema[:associations] || %{}
+
+    table_name =
+      expanded_schema[:source_table] || expanded_schema[:table_name] || to_string(schema_name)
+
+    columns_config =
+      generate_columns_config_with_mode(fields, field_types, join_mode, primary_key, assoc_config)
+
+    associations_config = generate_nested_associations_config(associations)
+
+    mode_comment =
+      case join_mode do
+        {:tag, _} -> "            # Join mode: tag (many-to-many with ID-based filtering)\n"
+        {:star, _} -> "            # Join mode: star (lookup table with ID-based filtering)\n"
+        {:lookup, _} -> "            # Join mode: lookup (small reference table)\n"
+        _ -> ""
+      end
+
+    schema_name_key = inspect(schema_name)
+
+    "#{schema_name_key} => %{\n" <>
+      "            # Expanded schema configuration for #{table_name}\n" <>
+      mode_comment <>
+      "            source_table: \"#{table_name}\",\n" <>
+      "            primary_key: #{inspect(primary_key)},\n" <>
+      "            fields: #{inspect(fields)},\n" <>
+      "            redact_fields: [],\n" <>
+      "            columns: #{columns_config},\n" <>
+      "            associations: #{associations_config}\n" <>
+      "          }"
   end
 
   # Get join mode configuration for a schema if specified
@@ -843,6 +899,16 @@ defmodule SelectoMix.DomainGenerator do
     _ -> "unknown_table"
   end
 
+  defp guess_table_name(schema_module) when is_binary(schema_module) do
+    schema_module
+    |> String.split(".")
+    |> List.last()
+    |> Macro.underscore()
+    |> Igniter.Inflex.pluralize()
+  rescue
+    _ -> schema_module
+  end
+
   defp guess_table_name(_), do: "unknown_table"
 
   defp generate_domain_name(config) do
@@ -970,7 +1036,7 @@ defmodule SelectoMix.DomainGenerator do
       "      }"
   end
 
-  defp generate_pivot_config(_config) do
+  defp generate_retarget_config(_config) do
     "%{}"
   end
 
@@ -986,20 +1052,17 @@ defmodule SelectoMix.DomainGenerator do
 
   defp generate_helper_functions(schema_module, config) do
     suggested_queries = generate_suggested_queries(config)
+    kind = source_kind(schema_module, config)
+    source_helpers = source_specific_helper_functions(kind, schema_module, config)
 
     [
       "@doc \"Create a new Selecto instance configured with this domain.\"",
-      "def new(repo, opts \\\\ []) do",
+      "def new(connection, opts \\\\ []) do",
       "  # Enable validation by default in development and test environments",
       "  validate = Keyword.get(opts, :validate, Mix.env() in [:dev, :test])",
       "  opts = Keyword.put(opts, :validate, validate)",
       "  ",
-      "  Selecto.configure(domain(), repo, opts)",
-      "end",
-      "",
-      "@doc \"Create a Selecto instance using Ecto integration.\"",
-      "def from_ecto(repo, opts \\\\ []) do",
-      "  Selecto.from_ecto(repo, #{inspect(schema_module)}, opts)",
+      "  Selecto.configure(domain(), connection, opts)",
       "end",
       "",
       "@doc \"Validate the domain configuration (Selecto 0.3.0+).\"",
@@ -1020,9 +1083,7 @@ defmodule SelectoMix.DomainGenerator do
       "  end",
       "end",
       "",
-      "@doc \"Get the schema module this domain represents.\"",
-      "def schema_module, do: #{inspect(schema_module)}",
-      "",
+      source_helpers,
       "@doc \"Get available fields (derived from columns to avoid duplication).\"",
       "def available_fields do",
       "  domain().source.columns |> Map.keys()",
@@ -1045,6 +1106,7 @@ defmodule SelectoMix.DomainGenerator do
       "  |> Selecto.execute_one()",
       "end"
     ]
+    |> List.flatten()
     |> Enum.join("\n    ")
     |> Kernel.<>("#{suggested_queries}")
   end
@@ -1379,6 +1441,202 @@ defmodule SelectoMix.DomainGenerator do
     |> Kernel.<>("_id")
   end
 
+  defp source_specific_helper_functions(:ecto, schema_module, _config) do
+    [
+      "@doc \"Create a Selecto instance using Ecto integration.\"",
+      "def from_ecto(repo, opts \\\\ []) do",
+      "  Selecto.from_ecto(repo, #{inspect(schema_module)}, opts)",
+      "end",
+      "",
+      "@doc \"Get the schema module this domain represents.\"",
+      "def schema_module, do: #{inspect(schema_module)}",
+      ""
+    ]
+  end
+
+  defp source_specific_helper_functions(:db, _schema_module, config) do
+    source_table = config[:table_name] || "unknown_table"
+    adapter = inspect(config[:adapter] || get_in(config, [:metadata, :adapter]))
+
+    [
+      "@doc \"Get the source table this domain represents.\"",
+      "def source_table, do: #{inspect(source_table)}",
+      "",
+      "@doc \"Get the adapter used to introspect this domain.\"",
+      "def adapter_module, do: #{adapter}",
+      ""
+    ]
+  end
+
+  defp source_specific_helper_functions(_, schema_module, _config) do
+    [
+      "@doc \"Get the source identifier for this domain.\"",
+      "def schema_module, do: #{inspect(schema_module)}",
+      ""
+    ]
+  end
+
+  defp source_kind(source, config) do
+    cond do
+      config[:source_type] == :db -> :db
+      match?({:db, _, _, _}, source) -> :db
+      match?({:db, _, _, _, _}, source) -> :db
+      match?({:postgrex, _, _}, source) -> :db
+      match?({:postgrex, _, _, _}, source) -> :db
+      is_binary(source) -> :db
+      true -> :ecto
+    end
+  end
+
+  defp source_label(source, config) do
+    case source_kind(source, config) do
+      :db -> inspect(config[:table_name] || source)
+      :ecto -> inspect(source)
+    end
+  end
+
+  defp generation_description(:db), do: "database introspection"
+  defp generation_description(:ecto), do: "the Ecto schema"
+  defp generation_description(_kind), do: "schema introspection"
+
+  defp usage_examples(:db, _source, module_name) do
+    """
+          # Basic usage
+          selecto = Selecto.configure(#{module_name}.domain(), MyApp.Database)
+
+          # Execute queries
+          {:ok, {rows, columns, aliases}} = Selecto.execute(selecto)
+    """
+  end
+
+  defp usage_examples(:ecto, source, module_name) do
+    """
+          # Basic usage
+          selecto = Selecto.configure(#{module_name}.domain(), MyApp.Repo)
+
+          # With Ecto integration
+          selecto = Selecto.from_ecto(MyApp.Repo, #{inspect(source)})
+
+          # Execute queries
+          {:ok, {rows, columns, aliases}} = Selecto.execute(selecto)
+    """
+  end
+
+  defp regeneration_command(:db, _source, config) do
+    table_name = config[:table_name] || "table_name"
+    adapter_name = adapter_cli_name(config[:adapter])
+    "mix selecto.gen.domain --adapter #{adapter_name} --table #{table_name}"
+  end
+
+  defp regeneration_command(:ecto, source, _config) do
+    "mix selecto.gen.domain #{inspect(source)}"
+  end
+
+  defp generated_from_label(config) do
+    cond do
+      config[:source_type] == :db ->
+        "table #{config[:table_name]}"
+
+      config[:schema_module] ->
+        inspect(config[:schema_module])
+
+      config[:table_name] ->
+        "table #{config[:table_name]}"
+
+      true ->
+        "unknown source"
+    end
+  end
+
+  defp fallback_module_name(schema_module) when is_atom(schema_module) do
+    schema_module |> Module.split() |> List.last()
+  end
+
+  defp fallback_module_name(schema_module) when is_binary(schema_module) do
+    schema_module
+    |> singularize_word()
+    |> Macro.camelize()
+  end
+
+  defp fallback_module_name({:db, _adapter, _conn, table_name}) do
+    fallback_module_name(table_name)
+  end
+
+  defp fallback_module_name({:db, _adapter, _conn, table_name, _opts}) do
+    fallback_module_name(table_name)
+  end
+
+  defp fallback_module_name(other), do: other |> to_string() |> Macro.camelize()
+
+  defp association_related_schema(assoc_config) do
+    assoc_config[:related_schema] || assoc_config[:related_module_name] ||
+      assoc_config[:related_table]
+  end
+
+  defp association_schema_key(assoc_name, assoc_config) do
+    cond do
+      module_name = assoc_config[:related_module_name] ->
+        module_name
+        |> to_string()
+        |> Macro.underscore()
+        |> String.to_atom()
+
+      related_schema = assoc_config[:related_schema] ->
+        get_schema_name_from_module(related_schema)
+
+      related_table = assoc_config[:related_table] ->
+        related_table
+        |> singularize_word()
+        |> String.to_atom()
+
+      true ->
+        assoc_name
+    end
+  end
+
+  defp association_related_table(assoc_config, schema_name) do
+    assoc_config[:related_table] || assoc_config[:queryable] || guess_table_name(schema_name)
+  end
+
+  defp singularize_word(word) when is_binary(word) do
+    cond do
+      String.ends_with?(word, "ies") ->
+        String.replace_suffix(word, "ies", "y")
+
+      String.ends_with?(word, "sses") ->
+        String.replace_suffix(word, "sses", "ss")
+
+      String.ends_with?(word, "ses") ->
+        String.replace_suffix(word, "ses", "s")
+
+      String.ends_with?(word, "s") and not String.ends_with?(word, "ss") ->
+        String.replace_suffix(word, "s", "")
+
+      true ->
+        word
+    end
+  end
+
+  defp adapter_cli_name(nil), do: "postgresql"
+
+  defp adapter_cli_name(adapter) when is_atom(adapter) do
+    cond do
+      Code.ensure_loaded?(adapter) and function_exported?(adapter, :name, 0) ->
+        adapter.name() |> to_string()
+
+      true ->
+        adapter
+        |> Module.split()
+        |> Enum.at(-2, "PostgreSQL")
+        |> String.replace_prefix("SelectoDB", "")
+        |> normalize_adapter_cli_name()
+    end
+  end
+
+  defp normalize_adapter_cli_name("PostgreSQL"), do: "postgresql"
+  defp normalize_adapter_cli_name("MSSQL"), do: "mssql"
+  defp normalize_adapter_cli_name(name), do: Macro.underscore(name)
+
   # New helper functions for advanced Selecto features
 
   # Unused - kept for future CTE support
@@ -1425,11 +1683,22 @@ defmodule SelectoMix.DomainGenerator do
     |> List.first()
   end
 
+  defp infer_app_name_from_schema({:db, _adapter, _conn, _table_name}), do: "MyApp"
+  defp infer_app_name_from_schema({:db, _adapter, _conn, _table_name, _opts}), do: "MyApp"
+
   defp infer_app_name_from_schema(_), do: "MyApp"
 
   defp get_schema_name_from_module(schema_module) when is_atom(schema_module) do
     schema_module
     |> Module.split()
+    |> List.last()
+    |> Macro.underscore()
+    |> String.to_atom()
+  end
+
+  defp get_schema_name_from_module(schema_module) when is_binary(schema_module) do
+    schema_module
+    |> String.split(".")
     |> List.last()
     |> Macro.underscore()
     |> String.to_atom()

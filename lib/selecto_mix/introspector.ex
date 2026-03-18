@@ -58,6 +58,8 @@ defmodule SelectoMix.Introspector do
 
   @type source ::
           module()
+          | {:db, module(), term(), table_name :: String.t()}
+          | {:db, module(), term(), table_name :: String.t(), keyword()}
           | {:postgrex, pid() | atom(), table_name :: String.t()}
           | {:postgrex, pid() | atom(), table_name :: String.t(), schema :: String.t()}
 
@@ -94,6 +96,12 @@ defmodule SelectoMix.Introspector do
   """
   def introspect(source, opts \\ []) do
     case source do
+      {:db, adapter, connection, table_name} ->
+        introspect_db({:db, adapter, connection, table_name, []}, opts)
+
+      {:db, adapter, connection, table_name, source_opts} ->
+        introspect_db({:db, adapter, connection, table_name, source_opts}, opts)
+
       # Ecto schema module
       module when is_atom(module) ->
         SelectoMix.Introspector.Ecto.introspect(module, opts)
@@ -124,5 +132,53 @@ defmodule SelectoMix.Introspector do
   defp introspect_postgrex({:postgrex, conn, table_name, schema}, opts) do
     opts = Keyword.put(opts, :schema, schema)
     SelectoMix.Introspector.Postgres.introspect_table(conn, table_name, opts)
+  end
+
+  defp introspect_db({:db, adapter, connection, table_name, source_opts}, opts) do
+    with :ok <- ensure_adapter_ready(adapter),
+         true <- function_exported?(adapter, :introspect_table, 3) do
+      merged_opts = Keyword.merge(source_opts, opts)
+
+      case adapter.introspect_table(connection, table_name, merged_opts) do
+        {:ok, metadata} ->
+          {:ok, normalize_db_metadata(metadata, adapter, table_name, merged_opts)}
+
+        {:error, _reason} = error ->
+          error
+      end
+    else
+      false -> {:error, {:adapter_missing_introspection, adapter}}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp ensure_adapter_ready(adapter) do
+    cond do
+      not Code.ensure_loaded?(adapter) ->
+        {:error, {:adapter_not_loaded, adapter}}
+
+      function_exported?(adapter, :supports?, 1) and not adapter.supports?(:schema_introspection) ->
+        {:error, {:adapter_missing_schema_introspection, adapter}}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp normalize_db_metadata(metadata, adapter, table_name, opts) do
+    metadata
+    |> Map.put_new(:table_name, table_name)
+    |> Map.put_new(:schema, Keyword.get(opts, :schema, "public"))
+    |> Map.put_new(:source, adapter_source_name(adapter))
+    |> Map.put(:source_type, :db)
+    |> Map.put(:adapter, adapter)
+  end
+
+  defp adapter_source_name(adapter) do
+    if function_exported?(adapter, :name, 0) do
+      adapter.name()
+    else
+      :db
+    end
   end
 end

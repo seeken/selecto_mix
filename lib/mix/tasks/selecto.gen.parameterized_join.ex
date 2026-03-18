@@ -138,14 +138,22 @@ defmodule Mix.Tasks.Selecto.Gen.ParameterizedJoin do
       [name, type_and_opts] ->
         {type, opts} = parse_type_and_options(type_and_opts)
 
-        param = %{name: String.to_atom(name), type: type}
-        param = if opts[:required], do: Map.put(param, :required, true), else: param
-        param = if opts[:default], do: Map.put(param, :default, opts[:default]), else: param
+        with {:ok, param_name} <- normalize_identifier(name) do
+          param = %{name: param_name, type: type}
+          param = if opts[:required], do: Map.put(param, :required, true), else: param
 
-        param =
-          if opts[:description], do: Map.put(param, :description, opts[:description]), else: param
+          param =
+            if Map.has_key?(opts, :default),
+              do: Map.put(param, :default, opts[:default]),
+              else: param
 
-        {:ok, param}
+          param =
+            if opts[:description],
+              do: Map.put(param, :description, opts[:description]),
+              else: param
+
+          {:ok, param}
+        end
 
       _ ->
         {:error, "Expected format NAME:TYPE[,options]"}
@@ -241,9 +249,14 @@ defmodule Mix.Tasks.Selecto.Gen.ParameterizedJoin do
       |> Enum.reduce(%{}, fn field_spec, acc ->
         case String.split(String.trim(field_spec), ":") do
           [name, type] ->
-            field_name = String.to_atom(String.trim(name))
-            field_type = parse_type(String.trim(type))
-            Map.put(acc, field_name, %{type: field_type})
+            case normalize_identifier(name) do
+              {:ok, field_name} ->
+                field_type = parse_type(String.trim(type))
+                Map.put(acc, field_name, %{type: field_type})
+
+              {:error, _reason} ->
+                acc
+            end
 
           _ ->
             acc
@@ -309,12 +322,14 @@ defmodule Mix.Tasks.Selecto.Gen.ParameterizedJoin do
       formatted_params =
         parameters
         |> Enum.map(fn param ->
-          lines = ["        %{name: #{inspect(param.name)}, type: #{inspect(param.type)}"]
+          lines = [
+            "        %{name: #{format_atom_literal(param.name)}, type: #{inspect(param.type)}"
+          ]
 
           lines = if Map.get(param, :required), do: lines ++ [", required: true"], else: lines
 
           lines =
-            if Map.get(param, :default),
+            if Map.has_key?(param, :default),
               do: lines ++ [", default: #{inspect(param.default)}"],
               else: lines
 
@@ -338,7 +353,7 @@ defmodule Mix.Tasks.Selecto.Gen.ParameterizedJoin do
       formatted_fields =
         fields
         |> Enum.map(fn {field_name, field_config} ->
-          "        #{inspect(field_name)} => %{type: #{inspect(field_config.type)}}"
+          "        #{format_atom_literal(field_name)} => %{type: #{inspect(field_config.type)}}"
         end)
         |> Enum.join(",\n")
 
@@ -394,4 +409,16 @@ defmodule Mix.Tasks.Selecto.Gen.ParameterizedJoin do
     |> Enum.map(&String.capitalize/1)
     |> Enum.join(" ")
   end
+
+  defp normalize_identifier(name) when is_binary(name) do
+    trimmed = String.trim(name)
+
+    if String.match?(trimmed, ~r/^[a-zA-Z_][a-zA-Z0-9_]*$/) do
+      {:ok, trimmed}
+    else
+      {:error, "Invalid identifier #{inspect(name)}"}
+    end
+  end
+
+  defp format_atom_literal(name) when is_binary(name), do: ":#{name}"
 end

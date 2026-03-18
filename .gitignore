@@ -24,3 +24,5 @@ selecto_mix-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+.expert/

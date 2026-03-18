@@ -170,7 +170,7 @@ defmodule SelectoMix.OverlayGenerator do
   # Private helper functions
 
   defp generate_redaction_example(config) do
-    columns = get_in(config, [:source, :columns]) || %{}
+    columns = extract_columns(config)
 
     # Find fields that might be sensitive
     sensitive_fields =
@@ -196,7 +196,7 @@ defmodule SelectoMix.OverlayGenerator do
   end
 
   defp generate_column_examples_dsl(config) do
-    columns = get_in(config, [:source, :columns]) || %{}
+    columns = extract_columns(config)
 
     # Pick a few example columns to show patterns
     examples =
@@ -278,7 +278,7 @@ defmodule SelectoMix.OverlayGenerator do
   end
 
   defp generate_filter_examples_dsl(config) do
-    columns = get_in(config, [:source, :columns]) || %{}
+    columns = extract_columns(config)
 
     # Find a good example column for filtering
     example_field =
@@ -377,7 +377,7 @@ defmodule SelectoMix.OverlayGenerator do
   end
 
   defp generate_jsonb_schema_examples(config) do
-    columns = get_in(config, [:source, :columns]) || config[:field_types] || %{}
+    columns = extract_columns(config, config[:field_types] || %{})
 
     # Find JSONB columns
     jsonb_columns =
@@ -451,5 +451,18 @@ defmodule SelectoMix.OverlayGenerator do
       # end
     """
     |> String.trim_trailing()
+  end
+
+  defp extract_columns(config, default \\ %{}) do
+    cond do
+      is_map(config[:columns]) ->
+        config[:columns]
+
+      is_map(config[:source]) and is_map(config[:source][:columns]) ->
+        config[:source][:columns]
+
+      true ->
+        default
+    end
   end
 end

@@ -59,6 +59,8 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
   use Mix.Task
   import Mix.Generator
 
+  alias SelectoMix.RawPersistence
+
   @requirements ["app.config"]
 
   def run(args) do
@@ -69,6 +71,8 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
           schema_module: :string,
           table: :string,
           repo: :string,
+          adapter: :string,
+          connection_name: :string,
           migration: :boolean,
           tests: :boolean
         ],
@@ -81,31 +85,90 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
 
     app_name = Macro.underscore(app_module)
 
-    config = %{
-      app_module: app_module,
-      app_name: app_name,
-      context_module: opts[:context_module] || "#{app_module}.FilterSets",
-      schema_module: opts[:schema_module] || "#{app_module}.FilterSets.FilterSet",
-      table: opts[:table] || "filter_sets",
-      repo: opts[:repo] || "#{app_module}.Repo",
-      migration: Keyword.get(opts, :migration, true),
-      tests: Keyword.get(opts, :tests, true)
-    }
+    with {:ok, adapter_mode} <- RawPersistence.parse_adapter(opts[:adapter]) do
+      config = %{
+        app_module: app_module,
+        app_name: app_name,
+        context_module: opts[:context_module] || "#{app_module}.FilterSets",
+        schema_module: opts[:schema_module] || "#{app_module}.FilterSets.FilterSet",
+        table: opts[:table] || "filter_sets",
+        repo: opts[:repo] || "#{app_module}.Repo",
+        migration: Keyword.get(opts, :migration, true),
+        tests: Keyword.get(opts, :tests, true),
+        adapter_mode: adapter_mode,
+        connection_name: RawPersistence.connection_name(app_module, opts)
+      }
 
-    Mix.shell().info("Generating filter sets implementation for #{app_module}...")
+      Mix.shell().info("Generating filter sets implementation for #{app_module}...")
 
-    if config.migration do
-      generate_migration(config)
+      if RawPersistence.raw_mode?(adapter_mode) do
+        maybe_warn_compatibility_options(config)
+
+        if config.migration do
+          generate_raw_sql(config)
+        end
+
+        generate_raw_context(config)
+        print_raw_instructions(config)
+      else
+        if config.migration do
+          generate_migration(config)
+        end
+
+        generate_schema(config)
+        generate_context(config)
+
+        if config.tests do
+          generate_tests(config)
+        end
+
+        print_instructions(config)
+      end
+    else
+      {:error, reason} -> Mix.raise(reason)
+    end
+  end
+
+  defp generate_raw_sql(config) do
+    sql_path = "priv/sql"
+    create_directory(sql_path)
+
+    sql_file = Path.join(sql_path, "create_#{config.table}.sql")
+    create_file(sql_file, RawPersistence.filter_sets_sql(config))
+  end
+
+  defp generate_raw_context(config) do
+    context_path = context_file_path(config.context_module, config.app_name)
+    create_directory(Path.dirname(context_path))
+    create_file(context_path, RawPersistence.filter_sets_context(config))
+  end
+
+  defp print_raw_instructions(config) do
+    Mix.shell().info("""
+
+    Filter sets implementation generated successfully!
+
+    Next steps:
+
+    1. #{RawPersistence.compatibility_notice(config.adapter_mode)}
+
+    2. Configure the adapter in your LiveView:
+
+       def mount(_params, _session, socket) do
+         socket = assign(socket, :filter_sets_adapter, #{config.context_module})
+         {:ok, socket}
+       end
+    """)
+  end
+
+  defp maybe_warn_compatibility_options(config) do
+    if config.schema_module do
+      Mix.shell().info("Note: --schema-module is ignored in adapter-backed filter sets mode")
     end
 
-    generate_schema(config)
-    generate_context(config)
-
-    if config.tests do
-      generate_tests(config)
+    if config.repo do
+      Mix.shell().info("Note: --repo is ignored in adapter-backed filter sets mode")
     end
-
-    print_instructions(config)
   end
 
   defp generate_migration(config) do
