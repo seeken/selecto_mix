@@ -45,14 +45,19 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
 
       assigns = assign(socket, :filter_sets_adapter, MyApp.FilterSets)
 
-  3. Use the filter sets component in your LiveView:
+  3. If you use `SelectoComponents.Form`, the filter sets UI is rendered
+     automatically once `filter_sets_adapter` is assigned.
 
-      <.live_component 
+     If you are wiring the component manually, pass the same assigns the form
+     integration uses:
+
+      <.live_component
         module={SelectoComponents.Filter.FilterSets}
         id="filter-sets"
         filter_sets_adapter={@filter_sets_adapter}
-        user_id={@current_user.id}
-        domain={@domain}
+        user_id={@user_id}
+        domain={@path || @domain}
+        current_filters={@view_config.filters}
       />
   """
 
@@ -536,17 +541,13 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
          {:ok, socket}
        end
 
-    3. Add the filter sets component to your view:
+    3. If you use `SelectoComponents.Form`, the filter sets UI renders automatically
+       once `filter_sets_adapter` is assigned
 
-       <.live_component 
-         module={SelectoComponents.Filter.FilterSets}
-         id="filter-sets"
-         filter_sets_adapter={@filter_sets_adapter}
-         user_id={@current_user.id}
-         domain={@domain}
-       />
+    4. If you wire `SelectoComponents.Filter.FilterSets` manually, pass
+       `filter_sets_adapter`, `user_id`, `domain`, and `current_filters`
 
-    4. (Optional) Add seed data for system filter sets in priv/repo/seeds.exs
+    5. (Optional) Add seed data for system filter sets in priv/repo/seeds.exs
 
     For more information, see the SelectoComponents documentation.
     """)

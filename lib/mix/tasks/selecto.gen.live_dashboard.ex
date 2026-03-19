@@ -85,12 +85,12 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
 
     Next steps:
     1. Restart your Phoenix server
-    2. Visit /dev/dashboard and look for the "Selecto" tab
+    2. Visit your LiveDashboard route (commonly `/dev/dashboard` or `/dashboard`) and look for the "Selecto" tab
     3. The page will show real-time query metrics and performance data
 
-    To enable query hooks for metric collection, add this to your application.ex:
+    Optional: if you want Selecto core query hooks in addition to
+    SelectoComponents metrics, install them during application startup:
 
-        # In your start/2 function, after starting the MetricsCollector
         Selecto.Performance.Hooks.install_default_hooks(
           slow_query_threshold: 100,
           auto_explain_threshold: 500
@@ -385,7 +385,7 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
       end
 
       defp get_cache_stats do
-        # This would be fetched from telemetry metrics or MetricsCollector
+      # Placeholder data - replace with app-specific cache metrics if available.
         %{
           hit_rate: 85,
           hits: 1523,
@@ -394,7 +394,7 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
       end
 
       defp get_index_usage do
-        # This would be fetched from database statistics
+      # Placeholder data - replace with app-specific index statistics if available.
         %{
           most_used: [
             %{name: "idx_film_title", usage_count: 1523},
@@ -497,7 +497,7 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
         updated_content =
           String.replace(
             content,
-            ~r/live_dashboard\s+"\/dashboard",\s*\n\s*metrics:\s*#{web_module}\.Telemetry/,
+            ~r/live_dashboard\s+"\/(?:dev\/)?dashboard",\s*\n\s*metrics:\s*#{web_module}\.Telemetry/,
             """
             live_dashboard "/dashboard",
               metrics: #{web_module}.Telemetry,

@@ -241,7 +241,12 @@ end
 
 - `mix selecto.gen.domain` - Generate Selecto domain configurations
 - `mix selecto.install` - Install Selecto deps + run asset integration (`--development-mode --source your-fork` supported)
-- `mix selecto.update` - Update existing domain configurations after schema changes
+- `mix selecto.gen.saved_views` - Generate persistent saved views support for SelectoComponents
+- `mix selecto.gen.saved_view_configs` - Generate per-view-type saved configuration persistence
+- `mix selecto.gen.exported_views` - Generate exported iframe view persistence
+- `mix selecto.gen.filter_sets` - Generate filter set persistence for SelectoComponents
+- `mix selecto.gen.live_dashboard` - Generate LiveDashboard integration helpers
+- `mix selecto.add_timeouts` - Add timeout configuration helpers for long-running Selecto requests
 
 ## Property Testing
 

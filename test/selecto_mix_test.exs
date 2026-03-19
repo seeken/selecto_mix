@@ -538,6 +538,18 @@ defmodule SelectoMixTest do
 
       assert String.contains?(result, "defmodule ShopWeb.ProductLive")
       assert String.contains?(result, "Selecto.configure(domain, Shop.Database)")
+      assert String.contains?(result, "alias SelectoComponents.Views")
+
+      assert String.contains?(
+               result,
+               "Views.spec(:aggregate, Views.Aggregate, \"Aggregate View\", %{drill_down: :detail})"
+             )
+
+      assert String.contains?(
+               result,
+               "Extension-provided views such as `:map` or `:timeseries` are merged in"
+             )
+
       refute String.contains?(result, "Shop.Repo")
     end
 

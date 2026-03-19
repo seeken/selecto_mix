@@ -380,6 +380,10 @@ defmodule SelectoMix.RawPersistence do
             end
           end
 
+          def load_view_config(name, context, view_type, opts \\ []) do
+            get_view_config(name, context, view_type, opts)
+          end
+
           def save_view_config(name, context, view_type, params, opts \\ []) do
             user_id = Keyword.get(opts, :user_id)
             description = Keyword.get(opts, :description)

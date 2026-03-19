@@ -930,7 +930,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
           IO.puts("\nGenerating SavedViews implementation...")
 
-          case System.cmd("mix", ["selecto.gen.saved_views", app_name_string, "--yes"],
+          case System.cmd("mix", ["selecto.gen.saved_views", app_name_string],
                  stderr_to_stdout: true
                ) do
             {output, 0} ->

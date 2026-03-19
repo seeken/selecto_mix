@@ -1,6 +1,34 @@
 CHANGES
 =======
 
+V 0.4.1
+--------
+
+- Updated `mix selecto.gen.saved_view_configs` generated docs and templates to
+  reflect the current SelectoComponents view-mode set, and added the generated
+  `load_view_config/4` helper expected by current components code.
+- Fixed raw saved view config context generation to emit `load_view_config/4`
+  alongside the existing get/list/save/update/delete helpers.
+- Updated generated LiveView templates to use the canonical
+  `SelectoComponents.Views.spec/4` helper and document that extension-provided
+  views such as `:map` and `:timeseries` are merged automatically.
+- Updated `mix selecto.gen.exported_views` docs/templates to reflect the
+  current exported view-mode set and clarify that `SelectoComponents.Form`
+  renders the exported views manager automatically when configured.
+- Updated `mix selecto.gen.filter_sets` guidance to reflect current
+  `SelectoComponents.Form` integration, where assigning `filter_sets_adapter`
+  is sufficient for the built-in filter sets UI.
+- Updated `mix selecto.gen.live_dashboard` guidance to reflect current
+  dashboard routing conventions and clarify which generated metrics/index
+  sections are placeholders for app-specific data.
+- Updated `mix selecto.add_timeouts` generated monitor output so it no longer
+  references a nonexistent `Selecto.QueryTimeoutMonitor` helper module.
+- Refreshed stale `selecto_mix` task documentation by removing the nonexistent
+  `mix selecto.update` reference and listing the currently shipped generators.
+- Fixed `mix selecto.gen.domain` auto-generation of saved views to stop passing
+  an unsupported `--yes` flag.
+- Bump package version to `0.4.1`.
+
 V 0.4.0
 --------
 

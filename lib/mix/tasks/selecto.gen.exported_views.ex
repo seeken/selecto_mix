@@ -7,6 +7,11 @@ defmodule Mix.Tasks.Selecto.Gen.ExportedViews do
   SelectoComponents exported views with signed iframe access, cache metadata,
   and optional IP allowlists.
 
+  Generated exports persist the currently active view mode. The generated schema
+  accepts the current built-in and extension-contributed view modes used by
+  SelectoComponents, including `detail`, `aggregate`, `graph`, `timeseries`,
+  `chart`, `table`, and `map`.
+
   ## Examples
 
       mix selecto.gen.exported_views MyApp
@@ -220,7 +225,7 @@ defmodule Mix.Tasks.Selecto.Gen.ExportedViews do
       use Ecto.Schema
       import Ecto.Changeset
 
-      @view_types ~w(detail aggregate graph map)
+      @view_types ~w(detail aggregate graph timeseries chart table map)
       @ttl_hours [3, 6, 12]
 
       schema "#{config.table_name}" do
@@ -368,6 +373,7 @@ defmodule Mix.Tasks.Selecto.Gen.ExportedViews do
     2. Assign `exported_view_module`, `exported_view_context`, and `exported_view_endpoint` in your LiveView
     3. Add a wrapper LiveView that delegates to `SelectoComponents.ExportedViews.EmbedLive`
     4. Wire a public route like `/selecto/exported/:public_id`
+    5. If you use `SelectoComponents.Form`, the exported views manager renders automatically once `exported_view_module` is assigned
     """)
   end
 end
