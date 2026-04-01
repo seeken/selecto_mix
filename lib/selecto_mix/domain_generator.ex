@@ -217,6 +217,8 @@ defmodule SelectoMix.DomainGenerator do
     redacted_fields = config[:redacted_fields] || []
     field_types = config[:field_types] || %{}
     polymorphic_config = config[:polymorphic_config]
+    source_kind = config[:source_kind]
+    readonly = config[:readonly]
 
     # Only include redact_fields if there are redacted fields, otherwise use empty list
     redacted_config =
@@ -229,7 +231,9 @@ defmodule SelectoMix.DomainGenerator do
       end
 
     "%{\n        source_table: \"#{table_name}\",\n" <>
-      "        primary_key: #{inspect(primary_key)},\n        \n" <>
+      "        primary_key: #{inspect(primary_key)},\n" <>
+      generate_relation_metadata(source_kind, readonly) <>
+      "        \n" <>
       "        # Available fields from schema\n" <>
       "        # NOTE: This is redundant with columns - consider using Map.keys(columns) instead\n" <>
       "        fields: #{inspect(fields)},\n        \n" <>
@@ -238,6 +242,21 @@ defmodule SelectoMix.DomainGenerator do
       "        columns: #{generate_columns_config(fields, field_types, polymorphic_config)},\n        \n" <>
       "        # Schema associations\n" <>
       "        associations: #{generate_source_associations(config)}\n      }"
+  end
+
+  defp generate_relation_metadata(nil, nil), do: ""
+
+  defp generate_relation_metadata(source_kind, readonly) do
+    []
+    |> maybe_relation_metadata_line(:source_kind, source_kind)
+    |> maybe_relation_metadata_line(:readonly, readonly)
+    |> Enum.join("")
+  end
+
+  defp maybe_relation_metadata_line(lines, _key, nil), do: lines
+
+  defp maybe_relation_metadata_line(lines, key, value) do
+    lines ++ ["        #{key}: #{inspect(value)},\n"]
   end
 
   defp generate_columns_config(fields, field_types, polymorphic_config \\ nil) do
@@ -1553,7 +1572,7 @@ defmodule SelectoMix.DomainGenerator do
   defp generated_from_label(config) do
     cond do
       config[:source_type] == :db ->
-        "table #{config[:table_name]}"
+        relation_label(config[:source_kind], config[:table_name])
 
       config[:schema_module] ->
         inspect(config[:schema_module])
@@ -1565,6 +1584,10 @@ defmodule SelectoMix.DomainGenerator do
         "unknown source"
     end
   end
+
+  defp relation_label(:view, table_name), do: "view #{table_name}"
+  defp relation_label(:materialized_view, table_name), do: "materialized view #{table_name}"
+  defp relation_label(_, table_name), do: "table #{table_name}"
 
   defp fallback_module_name(schema_module) when is_atom(schema_module) do
     schema_module |> Module.split() |> List.last()

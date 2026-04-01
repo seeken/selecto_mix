@@ -4,6 +4,12 @@ CHANGES
 Unreleased
 ----------
 
+- Added `mix selecto.gen.domain` support for `--view`,
+  `--materialized-view`, `--primary-key`, and `--include-views` so existing DB
+  views can be generated as read-only Selecto domain sources.
+- Updated DB-backed domain generation to carry through relation metadata via
+  `source_kind` and `readonly`, and to preserve explicit primary-key overrides
+  for view-backed sources where the database may not expose a usable key.
 - Updated generated domains to always emit a `functions: %{}` section so UDF
   registrations have an explicit home in the base domain config.
 - Preserved existing base-domain `functions` registries during

@@ -34,6 +34,10 @@ defmodule SelectoMix.ConnectionOpts do
     [
       adapter: :string,
       table: :string,
+      view: :string,
+      materialized_view: :string,
+      primary_key: :string,
+      include_views: :boolean,
       database_url: :string,
       host: :string,
       port: :integer,
@@ -53,6 +57,7 @@ defmodule SelectoMix.ConnectionOpts do
     [
       A: :adapter,
       t: :table,
+      v: :view,
       u: :database_url,
       h: :host,
       P: :port,
