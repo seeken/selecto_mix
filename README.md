@@ -105,6 +105,41 @@ Complete Selecto domain configuration with:
 - Customization markers for user modifications
 - Documentation and usage examples
 
+## UDF Generation Workflow
+
+`selecto_mix` now prepares generated domains and overlays for Selecto's named
+function registry.
+
+Generated domain files include an explicit empty `functions: %{}` section so
+base-domain UDF registrations have a stable home when you want them in the
+generated file.
+
+Generated overlay templates also include commented `deffunction` examples so
+custom function registrations can live in the overlay instead of the generated
+domain file:
+
+```elixir
+deffunction "similarity" do
+  kind(:scalar)
+  sql_name("public.similarity")
+  returns(:float)
+  allowed_in([:select, :order_by])
+  arg(:left, :string, source: :selector)
+  arg(:right, :string, source: :value)
+end
+```
+
+Recommended workflow:
+
+1. Run `mix selecto.gen.domain MyApp.User`.
+2. Keep generated structural metadata in the domain file.
+3. Add custom `deffunction` registrations in the overlay file.
+4. Re-run generation as schemas evolve; existing `functions` registries and
+   overlay UDF definitions are preserved.
+
+This keeps schema-derived structure separate from function intent such as
+`allowed_in`, argument `source`, and table-function returned columns.
+
 ## Usage Examples
 
 ### Updato API Scaffolding
