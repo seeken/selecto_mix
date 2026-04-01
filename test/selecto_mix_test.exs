@@ -263,6 +263,35 @@ defmodule SelectoMixTest do
       assert result1[:has_customizations] == true
       assert result2[:has_customizations] == false
     end
+
+    test "parse_existing_config/1 preserves base-domain function registries" do
+      existing_content = """
+      defmodule TestDomain do
+        def base_domain do
+          %{
+            name: "Test",
+            functions: %{
+              "similarity" => %{
+                kind: :scalar,
+                sql_name: "public.similarity",
+                args: [
+                  %{name: :left, type: :string, source: :selector},
+                  %{name: :right, type: :string, source: :value}
+                ],
+                returns: :float,
+                allowed_in: [:select, :order_by]
+              }
+            }
+          }
+        end
+      end
+      """
+
+      parsed = ConfigMerger.parse_existing_config(existing_content)
+
+      assert parsed[:custom_functions] =~ "similarity"
+      assert parsed[:custom_functions] =~ "public.similarity"
+    end
   end
 
   describe "DomainGenerator" do
@@ -318,6 +347,34 @@ defmodule SelectoMixTest do
       assert String.contains?(result, "source:")
       assert String.contains?(result, "source_table: \"tests\"")
       assert String.contains?(result, "primary_key: :id")
+      assert String.contains?(result, "functions: %{}")
+    end
+
+    test "generate_domain_map/1 preserves custom function registries on regeneration" do
+      config = %{
+        schema_module: TestSchema,
+        table_name: "tests",
+        primary_key: :id,
+        fields: [:id, :name],
+        field_types: %{id: :integer, name: :string},
+        associations: %{},
+        suggested_defaults: %{
+          default_selected: [:name],
+          default_filters: %{},
+          default_order: []
+        },
+        metadata: %{module_name: "Test"},
+        preserved_customizations: %{
+          custom_functions:
+            "%{\n        \"similarity\" => %{kind: :scalar, sql_name: \"public.similarity\"}\n      }"
+        }
+      }
+
+      result = DomainGenerator.generate_domain_map(config)
+
+      assert String.contains?(result, "functions: %{")
+      assert String.contains?(result, "public.similarity")
+      assert String.contains?(result, "# CUSTOM")
     end
 
     test "generate_domain_map/1 emits many-to-many join table metadata" do
@@ -520,6 +577,7 @@ defmodule SelectoMixTest do
       assert result =~ "defmodule Shop.SelectoDomains.Overlays.ProductDomainOverlay"
       assert result =~ "# defcolumn :price do"
       assert result =~ "# deffilter \"active\" do"
+      assert result =~ "# deffunction \"similarity\" do"
     end
   end
 

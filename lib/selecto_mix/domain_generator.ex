@@ -173,6 +173,8 @@ defmodule SelectoMix.DomainGenerator do
       "      default_selected: #{generate_default_selected(config)},\n      \n" <>
       "      # Suggested filters (add/remove as needed)\n" <>
       "      filters: #{generate_filters_config(config)},\n      \n" <>
+      "      # Named UDF registry (prefer overlay deffunction for custom additions)\n" <>
+      "      functions: #{generate_functions_config(config)},\n      \n" <>
       "      # Subfilters for relationship-based filtering (Selecto 0.3.0+)\n" <>
       "      subfilters: #{generate_subfilters_config(config)},\n" <>
       "      \n" <>
@@ -965,6 +967,22 @@ defmodule SelectoMix.DomainGenerator do
         |> Enum.join(",\n      ")
 
       "%{\n      #{formatted_filters}\n    }"
+    end
+  end
+
+  defp generate_functions_config(config) do
+    preserved_functions = get_in(config, [:preserved_customizations, :custom_functions])
+    functions = config[:functions] || %{}
+
+    cond do
+      is_binary(preserved_functions) and String.trim(preserved_functions) != "" ->
+        preserved_functions <> " # CUSTOM"
+
+      is_map(functions) and map_size(functions) > 0 ->
+        inspect(functions, pretty: true, width: 60)
+
+      true ->
+        "%{}"
     end
   end
 

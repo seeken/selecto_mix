@@ -56,6 +56,7 @@ defmodule SelectoMix.ConfigMerger do
         domain_config: config,
         custom_fields: extract_custom_fields(file_content),
         custom_filters: extract_custom_filters(file_content),
+        custom_functions: extract_custom_functions(file_content),
         custom_joins: extract_custom_joins(file_content),
         custom_metadata: extract_custom_metadata(file_content),
         has_customizations: detect_customizations(file_content),
@@ -163,6 +164,14 @@ defmodule SelectoMix.ConfigMerger do
     end)
   end
 
+  defp extract_custom_functions(content) do
+    with {:ok, functions_ast} <- extract_domain_section_ast(content, :functions) do
+      Macro.to_string(functions_ast)
+    else
+      _ -> nil
+    end
+  end
+
   defp extract_custom_joins(content) do
     # Extract custom join configurations
     join_matches = Regex.scan(~r/(\w+):\s*%\{[^}]*# CUSTOM JOIN/, content)
@@ -240,7 +249,8 @@ defmodule SelectoMix.ConfigMerger do
       # Keep existing metadata
       custom_metadata: existing_config[:custom_metadata] || %{},
       custom_fields: existing_config[:custom_fields] || [],
-      custom_filters: existing_config[:custom_filters] || %{}
+      custom_filters: existing_config[:custom_filters] || %{},
+      custom_functions: existing_config[:custom_functions]
     })
   end
 
@@ -271,9 +281,52 @@ defmodule SelectoMix.ConfigMerger do
       preserved_customizations: %{
         custom_metadata: existing_config[:custom_metadata] || %{},
         custom_fields: existing_config[:custom_fields] || [],
-        custom_filters: existing_config[:custom_filters] || %{}
+        custom_filters: existing_config[:custom_filters] || %{},
+        custom_functions: existing_config[:custom_functions]
       }
     })
+  end
+
+  defp extract_domain_section_ast(content, section_key) do
+    with {:ok, ast} <- Code.string_to_quoted(content),
+         {:ok, domain_map_ast} <- extract_base_domain_map_ast(ast),
+         {:ok, section_ast} <- extract_map_value_ast(domain_map_ast, section_key) do
+      {:ok, section_ast}
+    else
+      _ -> {:error, :section_not_found}
+    end
+  end
+
+  defp extract_base_domain_map_ast(ast) do
+    {_ast, found} =
+      Macro.prewalk(ast, nil, fn
+        {:def, _, [{:base_domain, _, _}, [do: body]]} = node, nil ->
+          {node, extract_map_ast(body)}
+
+        node, acc ->
+          {node, acc}
+      end)
+
+    case found do
+      {:%{}, _, _} = map_ast -> {:ok, map_ast}
+      _ -> {:error, :base_domain_not_found}
+    end
+  end
+
+  defp extract_map_ast({:__block__, _, expressions}) when is_list(expressions) do
+    expressions
+    |> Enum.reverse()
+    |> Enum.find_value(&extract_map_ast/1)
+  end
+
+  defp extract_map_ast({:%{}, _, _} = map_ast), do: map_ast
+  defp extract_map_ast(_), do: nil
+
+  defp extract_map_value_ast({:%{}, _, entries}, section_key) do
+    case Enum.find(entries, fn {key_ast, _value_ast} -> key_ast == section_key end) do
+      {_, value_ast} -> {:ok, value_ast}
+      nil -> {:error, :key_not_found}
+    end
   end
 
   defp merge_fields_conservatively(new_fields, existing_fields) do
