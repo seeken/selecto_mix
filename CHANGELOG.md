@@ -10,6 +10,9 @@ Unreleased
 - Updated DB-backed domain generation to carry through relation metadata via
   `source_kind` and `readonly`, and to preserve explicit primary-key overrides
   for view-backed sources where the database may not expose a usable key.
+- Added `mix selecto.gen.view` for dry-run publication of registered
+  `published_views`, printing the compiled Selecto SQL and generated `CREATE
+  VIEW` / `CREATE MATERIALIZED VIEW` DDL for inspection.
 - Updated generated domains to always emit a `functions: %{}` section so UDF
   registrations have an explicit home in the base domain config.
 - Preserved existing base-domain `functions` registries during

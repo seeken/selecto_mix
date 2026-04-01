@@ -43,6 +43,17 @@ defmodule SelectoMix.AdapterPersistenceTaskTest do
     assert output =~ "lib/tmp_app/exported_view_context.ex"
   end
 
+  test "gen.view task validates usage on dry run" do
+    {output, 0} =
+      System.cmd(
+        "mix",
+        ["selecto.gen.view", "TmpApp.ReportingDomain", "active_customers", "--dry-run"],
+        stderr_to_stdout: true
+      )
+
+    assert output =~ "could not be loaded"
+  end
+
   test "filter_sets task generates SQLite raw persistence files" do
     in_tmp_dir("selecto_mix_filter_sets_sqlite", fn ->
       Mix.Task.reenable("selecto.gen.filter_sets")
