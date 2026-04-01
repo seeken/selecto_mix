@@ -72,6 +72,9 @@ defmodule Mix.Tasks.Selecto.Gen.View do
 
         DDL:
         #{result.ddl}
+
+        Suggested indexes:
+        #{render_index_suggestions(result.index_statements)}
         """)
 
         igniter
@@ -122,6 +125,7 @@ defmodule Mix.Tasks.Selecto.Gen.View do
       kind: result.kind,
       database_name: result.database_name,
       ddl: result.ddl,
+      index_statements: result.index_statements,
       repo_module: repo_module,
       timestamp: timestamp(),
       migration_name: "publish_#{Macro.underscore(view_name)}"
@@ -140,6 +144,7 @@ defmodule Mix.Tasks.Selecto.Gen.View do
 
     ddl = indent_sql(config.ddl, 6)
     drop_sql = drop_statement(config.kind, config.database_name) |> indent_sql(6)
+    index_comments = render_index_comment_block(Map.get(config, :index_statements, []))
     triple_quote = ~s(\"\"\")
 
     [
@@ -157,10 +162,31 @@ defmodule Mix.Tasks.Selecto.Gen.View do
       drop_sql,
       "    #{triple_quote})",
       "  end",
+      index_comments,
       "end",
       ""
     ]
+    |> Enum.reject(&(&1 == ""))
     |> Enum.join("\n")
+  end
+
+  defp render_index_comment_block([]), do: ""
+
+  defp render_index_comment_block(index_statements) do
+    [
+      "",
+      "  # Suggested follow-up indexes for this published view:",
+      Enum.map(index_statements, &"  # execute(\"#{&1}\")")
+    ]
+    |> List.flatten()
+    |> Enum.join("\n")
+  end
+
+  defp render_index_suggestions([]), do: "  (none)"
+
+  defp render_index_suggestions(index_statements) do
+    index_statements
+    |> Enum.map_join("\n", &"  - #{&1}")
   end
 
   defp drop_statement(:materialized_view, database_name),

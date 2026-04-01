@@ -61,12 +61,19 @@ defmodule SelectoMix.AdapterPersistenceTaskTest do
         migration_name: "publish_active_customers",
         kind: :view,
         database_name: "reporting.active_customers",
-        ddl: "CREATE VIEW reporting.active_customers AS\nselect 1;"
+        ddl: "CREATE VIEW reporting.active_customers AS\nselect 1;",
+        index_statements: [
+          "CREATE INDEX active_customers_id_idx ON reporting.active_customers (id);"
+        ]
       })
 
     assert migration =~ "defmodule TmpApp.Repo.Migrations.PublishActiveCustomers"
     assert migration =~ "CREATE VIEW reporting.active_customers AS"
     assert migration =~ "DROP VIEW IF EXISTS reporting.active_customers;"
+    assert migration =~ "# Suggested follow-up indexes for this published view:"
+
+    assert migration =~
+             "# execute(\"CREATE INDEX active_customers_id_idx ON reporting.active_customers (id);\")"
   end
 
   test "filter_sets task generates SQLite raw persistence files" do

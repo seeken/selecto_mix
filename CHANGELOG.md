@@ -16,6 +16,9 @@ Unreleased
 - Extended `mix selecto.gen.view` to generate Ecto migration files for
   published views, using the same validated DDL path for `up` and matching drop
   statements for `down`.
+- Added published-view index suggestion rendering to `mix selecto.gen.view`
+  dry-run output and generated migration comments so follow-up indexing guidance
+  stays attached to the published view artifact.
 - Updated generated domains to always emit a `functions: %{}` section so UDF
   registrations have an explicit home in the base domain config.
 - Preserved existing base-domain `functions` registries during
