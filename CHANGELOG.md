@@ -1,6 +1,16 @@
 CHANGES
 =======
 
+Unreleased
+----------
+
+- Updated generated domains to always emit a `functions: %{}` section so UDF
+  registrations have an explicit home in the base domain config.
+- Preserved existing base-domain `functions` registries during
+  `mix selecto.gen.domain` regeneration instead of dropping custom UDF specs.
+- Added commented `deffunction` examples to generated overlay templates for
+  scalar and table UDF registrations.
+
 V 0.4.1
 --------
 
