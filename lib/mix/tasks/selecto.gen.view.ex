@@ -1,11 +1,13 @@
 defmodule Mix.Tasks.Selecto.Gen.View do
   @shortdoc "Generate SQL/DDL for a published Selecto view"
   @moduledoc """
-  Generate dry-run SQL and DDL for a published view registered in a Selecto domain.
+  Generate SQL/DDL artifacts for a published view registered in a Selecto domain.
 
   ## Examples
 
       mix selecto.gen.view MyApp.ReportingDomain active_customers --dry-run
+
+      mix selecto.gen.view MyApp.ReportingDomain active_customers --repo-module MyApp.Repo
   """
 
   use Igniter.Mix.Task
@@ -16,8 +18,8 @@ defmodule Mix.Tasks.Selecto.Gen.View do
       group: :selecto,
       example: "mix selecto.gen.view MyApp.ReportingDomain active_customers --dry-run",
       positional: [:domain_module, :view_name],
-      schema: [dry_run: :boolean],
-      aliases: [d: :dry_run]
+      schema: [dry_run: :boolean, repo_module: :string],
+      aliases: [d: :dry_run, r: :repo_module]
     }
   end
 
@@ -27,6 +29,7 @@ defmodule Mix.Tasks.Selecto.Gen.View do
     domain_arg = Map.get(igniter.args.positional, :domain_module)
     view_name = Map.get(igniter.args.positional, :view_name)
     dry_run? = Map.get(opts, :dry_run, false)
+    repo_module = parse_module_name(Map.get(opts, :repo_module) || default_repo_module())
 
     cond do
       blank?(domain_arg) or blank?(view_name) ->
@@ -36,11 +39,14 @@ defmodule Mix.Tasks.Selecto.Gen.View do
         )
 
       true ->
-        generate_view(igniter, domain_arg, view_name, dry_run?)
+        generate_view(igniter, domain_arg, view_name, dry_run?, repo_module)
     end
   end
 
-  defp generate_view(igniter, domain_arg, view_name, dry_run?) do
+  @doc false
+  def render_migration_for_test(config), do: render_migration_template(config)
+
+  defp generate_view(igniter, domain_arg, view_name, dry_run?, repo_module) do
     domain_module = Module.concat([domain_arg])
 
     with true <- Code.ensure_loaded?(domain_module),
@@ -70,8 +76,12 @@ defmodule Mix.Tasks.Selecto.Gen.View do
 
         igniter
       else
-        Igniter.add_notice(
-          igniter,
+        config = build_generation_config(domain_module, view_name, result, repo_module)
+
+        igniter
+        |> Igniter.create_new_file(migration_file_path(config), render_migration_template(config))
+        |> Igniter.add_notice("Generated migration: #{migration_file_path(config)}")
+        |> Igniter.add_notice(
           "Generated published view SQL for #{view_name}. Re-run with --dry-run to inspect the compiled DDL output."
         )
       end
@@ -104,6 +114,87 @@ defmodule Mix.Tasks.Selecto.Gen.View do
       {:error, ["Selecto.ViewPublisher.build_sql/2 is unavailable in the current project"]}
     end
   end
+
+  defp build_generation_config(domain_module, view_name, result, repo_module) do
+    %{
+      domain_module: domain_module,
+      view_name: view_name,
+      kind: result.kind,
+      database_name: result.database_name,
+      ddl: result.ddl,
+      repo_module: repo_module,
+      timestamp: timestamp(),
+      migration_name: "publish_#{Macro.underscore(view_name)}"
+    }
+  end
+
+  defp migration_file_path(config) do
+    "priv/repo/migrations/#{config.timestamp}_#{config.migration_name}.exs"
+  end
+
+  defp render_migration_template(config) do
+    migration_module =
+      Module.concat([
+        "#{config.repo_module}.Migrations.#{Macro.camelize(config.migration_name)}"
+      ])
+
+    ddl = indent_sql(config.ddl, 6)
+    drop_sql = drop_statement(config.kind, config.database_name) |> indent_sql(6)
+    triple_quote = ~s(\"\"\")
+
+    [
+      "defmodule #{inspect(migration_module)} do",
+      "  use Ecto.Migration",
+      "",
+      "  def up do",
+      "    execute(#{triple_quote}",
+      ddl,
+      "    #{triple_quote})",
+      "  end",
+      "",
+      "  def down do",
+      "    execute(#{triple_quote}",
+      drop_sql,
+      "    #{triple_quote})",
+      "  end",
+      "end",
+      ""
+    ]
+    |> Enum.join("\n")
+  end
+
+  defp drop_statement(:materialized_view, database_name),
+    do: "DROP MATERIALIZED VIEW IF EXISTS #{database_name};"
+
+  defp drop_statement(_kind, database_name), do: "DROP VIEW IF EXISTS #{database_name};"
+
+  defp indent_sql(sql, spaces) do
+    padding = String.duplicate(" ", spaces)
+
+    sql
+    |> String.split("\n")
+    |> Enum.map_join("\n", &(padding <> &1))
+  end
+
+  defp default_repo_module do
+    Mix.Project.config()[:app]
+    |> to_string()
+    |> Macro.camelize()
+    |> Kernel.<>(".Repo")
+  end
+
+  defp parse_module_name(module_string) when is_binary(module_string),
+    do: Module.concat([module_string])
+
+  defp parse_module_name(module) when is_atom(module), do: module
+
+  defp timestamp do
+    {{year, month, day}, {hour, minute, second}} = :calendar.universal_time()
+    "#{year}#{pad(month)}#{pad(day)}#{pad(hour)}#{pad(minute)}#{pad(second)}"
+  end
+
+  defp pad(number) when number < 10, do: "0#{number}"
+  defp pad(number), do: to_string(number)
 
   defp blank?(value), do: is_nil(value) or value == ""
 end

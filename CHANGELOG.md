@@ -13,6 +13,9 @@ Unreleased
 - Added `mix selecto.gen.view` for dry-run publication of registered
   `published_views`, printing the compiled Selecto SQL and generated `CREATE
   VIEW` / `CREATE MATERIALIZED VIEW` DDL for inspection.
+- Extended `mix selecto.gen.view` to generate Ecto migration files for
+  published views, using the same validated DDL path for `up` and matching drop
+  statements for `down`.
 - Updated generated domains to always emit a `functions: %{}` section so UDF
   registrations have an explicit home in the base domain config.
 - Preserved existing base-domain `functions` registries during

@@ -54,6 +54,21 @@ defmodule SelectoMix.AdapterPersistenceTaskTest do
     assert output =~ "could not be loaded"
   end
 
+  test "gen.view task renders migration template for published view ddl" do
+    migration =
+      Mix.Tasks.Selecto.Gen.View.render_migration_for_test(%{
+        repo_module: TmpApp.Repo,
+        migration_name: "publish_active_customers",
+        kind: :view,
+        database_name: "reporting.active_customers",
+        ddl: "CREATE VIEW reporting.active_customers AS\nselect 1;"
+      })
+
+    assert migration =~ "defmodule TmpApp.Repo.Migrations.PublishActiveCustomers"
+    assert migration =~ "CREATE VIEW reporting.active_customers AS"
+    assert migration =~ "DROP VIEW IF EXISTS reporting.active_customers;"
+  end
+
   test "filter_sets task generates SQLite raw persistence files" do
     in_tmp_dir("selecto_mix_filter_sets_sqlite", fn ->
       Mix.Task.reenable("selecto.gen.filter_sets")
