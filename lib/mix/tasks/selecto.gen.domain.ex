@@ -1,7 +1,7 @@
 defmodule Mix.Tasks.Selecto.Gen.Domain do
   @shortdoc "Generate Selecto domain configuration from Ecto schemas"
   @moduledoc """
-  Generate Selecto domain configuration from Ecto schemas with Igniter support.
+  Generate Selecto domain configuration from Ecto schemas or database relations with Igniter support.
 
   This task automatically discovers Ecto schemas in your project and generates
   corresponding Selecto domain configurations. It preserves user customizations
@@ -27,27 +27,37 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       # Expand associated schemas with full columns/associations
       mix selecto.gen.domain Blog.Post --expand-schemas categories,tags,authors
 
+      # Generate a read-only domain from an existing database view
+      mix selecto.gen.domain --adapter postgresql --view reporting.active_customers --primary-key customer_id
+
+      # Generate from a materialized view
+      mix selecto.gen.domain --adapter postgresql --materialized-view reporting.daily_rollup --primary-key customer_id
+
       # Use special join modes for optimized queries
       mix selecto.gen.domain Product --expand-tag Tags:name --expand-star Category:category_name
 
   ## Options
 
-    * `--all` - Generate domains for all discovered Ecto schemas
-    * `--output` - Specify output directory (default: lib/APP_NAME/selecto_domains)
-    * `--force` - Overwrite existing domain files without merging customizations
-    * `--dry-run` - Show what would be generated without creating files
-    * `--include-associations` - Include associations as joins (default: true)
-    * `--exclude` - Comma-separated list of schemas to exclude
-    * `--live` - Generate LiveView files for the domain
-    * `--saved-views` - Generate saved views implementation (requires --live)
-    * `--expand-schemas` - Comma-separated list of associated schemas to fully expand with columns and associations
+     * `--all` - Generate domains for all discovered Ecto schemas
+     * `--output` - Specify output directory (default: lib/APP_NAME/selecto_domains)
+     * `--force` - Overwrite existing domain files without merging customizations
+     * `--dry-run` - Show what would be generated without creating files
+     * `--include-associations` - Include associations as joins (default: true)
+     * `--exclude` - Comma-separated list of schemas to exclude
+     * `--live` - Generate LiveView files for the domain
+     * `--saved-views` - Generate saved views implementation (requires --live)
+     * `--expand-schemas` - Comma-separated list of associated schemas to fully expand with columns and associations
     * `--expand-tag` - Many-to-many tag mode: TableName:display_field (uses IDs, prevents denormalization)
     * `--expand-star` - Star schema mode: TableName:display_field (lookup table with ID-based filtering)
     * `--expand-lookup` - Lookup table mode: TableName:display_field (small reference tables)
     * `--expand-polymorphic` - Polymorphic association: field_name:type_field,id_field:Type1,Type2,Type3
-    * `--parameterized-joins` - Generate example parameterized join configurations
-    * `--path` - Custom path for the LiveView route (e.g., /products instead of /product)
-    * `--enable-modal` - Enable modal detail view for row clicks in LiveView (requires --live)
+     * `--parameterized-joins` - Generate example parameterized join configurations
+     * `--path` - Custom path for the LiveView route (e.g., /products instead of /product)
+     * `--enable-modal` - Enable modal detail view for row clicks in LiveView (requires --live)
+     * `--view` - Introspect an existing database view as a read-only domain source
+     * `--materialized-view` - Introspect an existing materialized view as a read-only domain source
+     * `--primary-key` - Explicit primary key column for DB views/materialized views
+     * `--include-views` - Include views and materialized views when generating DB-backed domains with `--all`
 
   ## File Generation
 
@@ -187,6 +197,16 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         igniter
         |> Igniter.add_warning("--saved-views flag requires --live flag to be set")
 
+      parsed_args[:view] && parsed_args[:materialized_view] ->
+        igniter
+        |> Igniter.add_warning("Specify only one of --view or --materialized-view")
+
+      (parsed_args[:view] || parsed_args[:materialized_view]) && is_nil(parsed_args[:primary_key]) ->
+        igniter
+        |> Igniter.add_warning(
+          "View-backed generation requires --primary-key because views often do not expose a detectable key"
+        )
+
       parsed_args[:table] && is_nil(parsed_args[:adapter]) ->
         igniter
         |> Igniter.add_warning(
@@ -201,6 +221,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   defp db_mode?(parsed_args, schemas_arg) do
     parsed_args[:adapter] ||
       parsed_args[:table] ||
+      parsed_args[:view] ||
+      parsed_args[:materialized_view] ||
       parsed_args[:database_url] ||
       parsed_args[:database] ||
       (parsed_args[:host] && schemas_arg == "")
@@ -233,7 +255,9 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
       tables =
         cond do
-          opts[:all] -> discover_all_tables(adapter, conn, db_schema)
+          opts[:all] -> discover_all_relations(adapter, conn, db_schema, opts)
+          view = opts[:view] -> [view]
+          materialized_view = opts[:materialized_view] -> [materialized_view]
           table = opts[:table] -> [table]
           true -> []
         end
@@ -243,7 +267,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       if Enum.empty?(tables) do
         Igniter.add_warning(
           igniter,
-          "No tables specified. Use one of: mix selecto.gen.domain --adapter postgresql --table TABLE_NAME or --all"
+          "No DB source specified. Use one of: mix selecto.gen.domain --adapter postgresql --table TABLE_NAME, --view VIEW_NAME, --materialized-view VIEW_NAME, or --all"
         )
       else
         process_db_tables(igniter, adapter, conn, tables, Map.put(opts, :db_schema, db_schema))
@@ -264,36 +288,82 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     end
   end
 
-  defp discover_all_tables(adapter, conn, db_schema) do
+  defp discover_all_relations(adapter, conn, db_schema, opts) do
     cond do
       not Code.ensure_loaded?(adapter) ->
         []
+
+      function_exported?(adapter, :list_relations, 2) ->
+        case adapter.list_relations(conn,
+               schema: db_schema,
+               include_views: opts[:include_views] || false
+             ) do
+          {:ok, relations} ->
+            relations
+            |> Enum.reject(&(&1.name in ConnectionOpts.system_tables()))
+
+          {:error, _reason} ->
+            []
+        end
 
       not function_exported?(adapter, :list_tables, 2) ->
         []
 
       true ->
         case adapter.list_tables(conn, schema: db_schema) do
-          {:ok, tables} -> Enum.reject(tables, &(&1 in ConnectionOpts.system_tables()))
-          {:error, _reason} -> []
+          {:ok, tables} ->
+            tables
+            |> Enum.reject(&(&1 in ConnectionOpts.system_tables()))
+            |> Enum.map(&%{name: &1, source_kind: :table})
+
+          {:error, _reason} ->
+            []
         end
     end
   end
 
-  defp process_db_tables(igniter, adapter, conn, tables, opts) do
+  defp process_db_tables(igniter, adapter, conn, relations, opts) do
     output_dir = get_output_directory(igniter, opts[:output])
     opts = Map.put_new(opts, :app_name, Igniter.Project.Application.app_name(igniter))
 
     if opts[:dry_run] do
-      show_dry_run_summary(tables, output_dir, opts)
+      show_dry_run_summary(Enum.map(relations, & &1.name), output_dir, opts)
       igniter
     else
-      Enum.reduce(tables, igniter, fn table, acc_igniter ->
+      Enum.reduce(relations, igniter, fn relation, acc_igniter ->
+        source_kind = relation_source_kind(opts, relation)
+
         source =
-          {:db, adapter, conn, table, schema: opts[:db_schema], expand: opts[:expand] || false}
+          {:db, adapter, conn, relation.name,
+           [
+             schema: opts[:db_schema],
+             expand: opts[:expand] || false,
+             source_kind: source_kind,
+             primary_key: parse_primary_key_override(opts[:primary_key])
+           ]}
 
         generate_domain_for_source(acc_igniter, source, output_dir, opts)
       end)
+    end
+  end
+
+  defp relation_source_kind(opts, relation) do
+    cond do
+      opts[:materialized_view] -> :materialized_view
+      opts[:view] -> :view
+      true -> relation[:source_kind] || :table
+    end
+  end
+
+  defp parse_primary_key_override(nil), do: nil
+  defp parse_primary_key_override(value) when is_atom(value), do: value
+
+  defp parse_primary_key_override(value) when is_binary(value) do
+    value
+    |> String.trim()
+    |> case do
+      "" -> nil
+      trimmed -> String.to_atom(trimmed)
     end
   end
 
@@ -930,7 +1000,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
           IO.puts("\nGenerating SavedViews implementation...")
 
-          case System.cmd("mix", ["selecto.gen.saved_views", app_name_string, "--yes"],
+          case System.cmd("mix", ["selecto.gen.saved_views", app_name_string],
                  stderr_to_stdout: true
                ) do
             {output, 0} ->

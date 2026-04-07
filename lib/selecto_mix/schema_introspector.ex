@@ -82,6 +82,8 @@ defmodule SelectoMix.SchemaIntrospector do
           metadata: extra_metadata,
           columns: Map.get(metadata, :columns, %{}),
           source: Map.get(metadata, :source),
+          source_kind: Map.get(metadata, :source_kind),
+          readonly: Map.get(metadata, :readonly),
           source_type: Map.get(metadata, :source_type, source_type_for(source)),
           adapter: Map.get(metadata, :adapter)
         }

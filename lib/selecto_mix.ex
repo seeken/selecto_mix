@@ -3,22 +3,26 @@ defmodule SelectoMix do
   Mix tasks and tooling for automatic Selecto configuration generation.
 
   SelectoMix provides utilities to automatically generate Selecto domain
-  configurations from Ecto schemas, preserving user customizations across
-  regenerations and supporting incremental updates when schemas change.
+  configurations from Ecto schemas, preserve user customizations across
+  regenerations, and scaffold related SelectoComponents persistence helpers.
 
   ## Key Features
 
   - **Automatic Schema Discovery**: Finds and introspects all Ecto schemas in your project
   - **Intelligent Configuration Generation**: Creates comprehensive Selecto domains with suggested defaults
   - **Customization Preservation**: Maintains user modifications when regenerating files
-  - **Incremental Updates**: Detects schema changes and updates only what's necessary
   - **Igniter Integration**: Uses modern Elixir project modification tools
+  - **Persistence Scaffolds**: Generates saved views, saved view configs,
+    exported views, and filter set persistence modules
 
   ## Main Mix Tasks
 
   - `mix selecto.gen.domain` - Generate Selecto domain configurations from Ecto schemas
   - `mix selecto.install` - Install Selecto dependencies and setup project structure
-  - `mix selecto.update` - Update existing domain configurations after schema changes
+  - `mix selecto.gen.saved_views` - Generate persistent saved views support
+  - `mix selecto.gen.saved_view_configs` - Generate per-view-type saved config persistence
+  - `mix selecto.gen.exported_views` - Generate exported iframe view persistence
+  - `mix selecto.gen.filter_sets` - Generate filter set persistence
 
   ## Getting Started
 
@@ -26,7 +30,7 @@ defmodule SelectoMix do
   2. Run `mix selecto.install` to setup basic structure
   3. Generate domains with `mix selecto.gen.domain --all`
   4. Customize the generated domains as needed
-  5. Re-run generation after schema changes - customizations will be preserved
+  5. Re-run `mix selecto.gen.domain` after schema changes - customizations will be preserved
 
   ## Configuration
 

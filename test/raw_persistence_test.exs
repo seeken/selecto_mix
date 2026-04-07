@@ -70,6 +70,7 @@ defmodule SelectoMix.RawPersistenceTest do
       assert context =~ "defmodule TmpApp.SavedViewConfigContext"
       assert context =~ "SelectoDBPostgreSQL.Adapter"
       assert context =~ "def get_view_config(name, context, view_type, opts \\ [])"
+      assert context =~ "def load_view_config(name, context, view_type, opts \\ [])"
       assert context =~ "def decode_view_config(view_config)"
     end
   end

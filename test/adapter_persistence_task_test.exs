@@ -29,6 +29,53 @@ defmodule SelectoMix.AdapterPersistenceTaskTest do
     assert output =~ "lib/tmp_app/saved_view_config_context.ex"
   end
 
+  test "exported_views task supports dry run" do
+    {output, 0} =
+      System.cmd(
+        "mix",
+        ["selecto.gen.exported_views", "TmpApp", "--dry-run"],
+        stderr_to_stdout: true
+      )
+
+    assert output =~ "Selecto ExportedViews Generation (DRY RUN)"
+    assert output =~ "priv/repo/migrations/"
+    assert output =~ "lib/tmp_app/exported_view.ex"
+    assert output =~ "lib/tmp_app/exported_view_context.ex"
+  end
+
+  test "gen.view task validates usage on dry run" do
+    {output, 0} =
+      System.cmd(
+        "mix",
+        ["selecto.gen.view", "TmpApp.ReportingDomain", "active_customers", "--dry-run"],
+        stderr_to_stdout: true
+      )
+
+    assert output =~ "could not be loaded"
+  end
+
+  test "gen.view task renders migration template for published view ddl" do
+    migration =
+      Mix.Tasks.Selecto.Gen.View.render_migration_for_test(%{
+        repo_module: TmpApp.Repo,
+        migration_name: "publish_active_customers",
+        kind: :view,
+        database_name: "reporting.active_customers",
+        ddl: "CREATE VIEW reporting.active_customers AS\nselect 1;",
+        index_statements: [
+          "CREATE INDEX active_customers_id_idx ON reporting.active_customers (id);"
+        ]
+      })
+
+    assert migration =~ "defmodule TmpApp.Repo.Migrations.PublishActiveCustomers"
+    assert migration =~ "CREATE VIEW reporting.active_customers AS"
+    assert migration =~ "DROP VIEW IF EXISTS reporting.active_customers;"
+    assert migration =~ "# Suggested follow-up indexes for this published view:"
+
+    assert migration =~
+             "# execute(\"CREATE INDEX active_customers_id_idx ON reporting.active_customers (id);\")"
+  end
+
   test "filter_sets task generates SQLite raw persistence files" do
     in_tmp_dir("selecto_mix_filter_sets_sqlite", fn ->
       Mix.Task.reenable("selecto.gen.filter_sets")

@@ -23,6 +23,7 @@ defmodule SelectoMix.OverlayGenerator do
     overlay_module_name = overlay_module_name(module_name)
     column_examples = generate_column_examples_dsl(config)
     filter_examples = generate_filter_examples_dsl(config)
+    function_examples = generate_function_examples_dsl()
     redaction_example = generate_redaction_example(config)
     jsonb_examples = generate_jsonb_schema_examples(config)
     query_member_examples = generate_query_member_examples_dsl()
@@ -37,13 +38,14 @@ defmodule SelectoMix.OverlayGenerator do
 
       ## Purpose
 
-      Use this overlay file to:
-      - Customize column display properties (labels, formats, aggregations)
-      - Add redaction to sensitive fields
-      - Define custom filters
-      - Define JSONB schemas for structured data columns
-      - Define named query members (CTE/VALUES/subquery/LATERAL/UNNEST presets)
-      - Add domain-specific validations (future)
+       Use this overlay file to:
+       - Customize column display properties (labels, formats, aggregations)
+       - Add redaction to sensitive fields
+       - Define custom filters
+       - Register named UDFs with `deffunction`
+       - Define JSONB schemas for structured data columns
+       - Define named query members (CTE/VALUES/subquery/LATERAL/UNNEST presets)
+       - Add domain-specific validations (future)
       - Configure custom transformations (future)
 
       ## DSL Usage
@@ -60,12 +62,24 @@ defmodule SelectoMix.OverlayGenerator do
             aggregate_functions [:sum, :avg]
           end
 
-          # Custom filters with deffilter
-          deffilter "price_range" do
-            name "Price Range"
-            type :string
-            description "Filter by price range"
-          end
+           # Custom filters with deffilter
+           deffilter "price_range" do
+             name "Price Range"
+             type :string
+             description "Filter by price range"
+           end
+
+           # UDF registrations with deffunction
+           deffunction "similarity" do
+             kind :scalar
+             sql_name "public.similarity"
+             args [
+               %{name: :left, type: :string, source: :selector},
+               %{name: :right, type: :string, source: :value}
+             ]
+             returns :float
+             allowed_in [:select, :order_by]
+           end
 
           # JSONB schema definitions with defjsonb_schema
           defjsonb_schema :attributes do
@@ -129,6 +143,9 @@ defmodule SelectoMix.OverlayGenerator do
 
       # Uncomment and add custom filters
     #{filter_examples}
+
+      # Uncomment and register domain UDFs
+    #{function_examples}
     #{query_member_examples}
     #{jsonb_examples}
     end
@@ -325,6 +342,33 @@ defmodule SelectoMix.OverlayGenerator do
           # end
         """
     end
+    |> String.trim_trailing()
+  end
+
+  defp generate_function_examples_dsl do
+    """
+      # deffunction "similarity" do
+      #   kind :scalar
+      #   sql_name "public.similarity"
+      #   args [
+      #     %{name: :left, type: :string, source: :selector},
+      #     %{name: :right, type: :string, source: :value}
+      #   ]
+      #   returns :float
+      #   allowed_in [:select, :order_by]
+      # end
+
+      # deffunction "nearby_points" do
+      #   kind :table
+      #   sql_name "gis.nearby_points"
+      #   args [
+      #     %{name: :origin, type: :geometry, source: :selector},
+      #     %{name: :radius_m, type: :integer, source: :value}
+      #   ]
+      #   returns %{columns: %{id: %{type: :integer}, distance_m: %{type: :float}}}
+      #   allowed_in [:lateral, :query_member]
+      # end
+    """
     |> String.trim_trailing()
   end
 

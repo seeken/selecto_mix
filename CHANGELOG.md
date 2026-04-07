@@ -1,6 +1,63 @@
 CHANGES
 =======
 
+V 0.4.2
+----------
+
+- Added `mix selecto.gen.domain` support for `--view`,
+  `--materialized-view`, `--primary-key`, and `--include-views` so existing DB
+  views can be generated as read-only Selecto domain sources.
+- Updated DB-backed domain generation to carry through relation metadata via
+  `source_kind` and `readonly`, and to preserve explicit primary-key overrides
+  for view-backed sources where the database may not expose a usable key.
+- Added `mix selecto.gen.view` for dry-run publication of registered
+  `published_views`, printing the compiled Selecto SQL and generated `CREATE
+  VIEW` / `CREATE MATERIALIZED VIEW` DDL for inspection.
+- Extended `mix selecto.gen.view` to generate Ecto migration files for
+  published views, using the same validated DDL path for `up` and matching drop
+  statements for `down`.
+- Added published-view index suggestion rendering to `mix selecto.gen.view`
+  dry-run output and generated migration comments so follow-up indexing guidance
+  stays attached to the published view artifact.
+- Updated generated domains to always emit a `functions: %{}` section so UDF
+  registrations have an explicit home in the base domain config.
+- Preserved existing base-domain `functions` registries during
+  `mix selecto.gen.domain` regeneration instead of dropping custom UDF specs.
+- Added commented `deffunction` examples to generated overlay templates for
+  scalar and table UDF registrations.
+- Updated installer dependency baselines and README guidance for the coordinated
+  ecosystem release, keeping generated Selecto dependency ranges broad
+  (`>= ... and < 0.5.0`) instead of pin-like exact versions.
+- Bump package version to `0.4.2`.
+
+V 0.4.1
+--------
+
+- Updated `mix selecto.gen.saved_view_configs` generated docs and templates to
+  reflect the current SelectoComponents view-mode set, and added the generated
+  `load_view_config/4` helper expected by current components code.
+- Fixed raw saved view config context generation to emit `load_view_config/4`
+  alongside the existing get/list/save/update/delete helpers.
+- Updated generated LiveView templates to use the canonical
+  `SelectoComponents.Views.spec/4` helper and document that extension-provided
+  views such as `:map` and `:timeseries` are merged automatically.
+- Updated `mix selecto.gen.exported_views` docs/templates to reflect the
+  current exported view-mode set and clarify that `SelectoComponents.Form`
+  renders the exported views manager automatically when configured.
+- Updated `mix selecto.gen.filter_sets` guidance to reflect current
+  `SelectoComponents.Form` integration, where assigning `filter_sets_adapter`
+  is sufficient for the built-in filter sets UI.
+- Updated `mix selecto.gen.live_dashboard` guidance to reflect current
+  dashboard routing conventions and clarify which generated metrics/index
+  sections are placeholders for app-specific data.
+- Updated `mix selecto.add_timeouts` generated monitor output so it no longer
+  references a nonexistent `Selecto.QueryTimeoutMonitor` helper module.
+- Refreshed stale `selecto_mix` task documentation by removing the nonexistent
+  `mix selecto.update` reference and listing the currently shipped generators.
+- Fixed `mix selecto.gen.domain` auto-generation of saved views to stop passing
+  an unsupported `--yes` flag.
+- Bump package version to `0.4.1`.
+
 V 0.4.0
 --------
 

@@ -4,7 +4,8 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViewConfigs do
   Generate SavedViewConfigs implementation for separate view type configurations.
 
   This task generates the necessary files to implement saved view configurations
-  that are separate by view type (detail, aggregate, graph) in your SelectoComponents application.
+  that are separate by view type (for example: detail, aggregate, graph,
+  timeseries, chart, table, map) in your SelectoComponents application.
 
   ## Examples
 
@@ -330,7 +331,7 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViewConfigs do
       use Ecto.Schema
       import Ecto.Changeset
 
-      @view_types ~w(detail aggregate graph)
+      @view_types ~w(detail aggregate graph timeseries chart table map)
 
       schema "#{config.table_name}" do
         field :name, :string
@@ -409,6 +410,13 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViewConfigs do
               end
 
             #{inspect(config.repo_module)}.one(query)
+          end
+
+          @doc \"\"\"
+          Load a saved view configuration by name, context, and view type.
+          \"\"\"
+          def load_view_config(name, context, view_type, opts \\ []) do
+            get_view_config(name, context, view_type, opts)
           end
 
           @doc \"\"\"

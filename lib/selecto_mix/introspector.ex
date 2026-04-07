@@ -170,9 +170,17 @@ defmodule SelectoMix.Introspector do
     |> Map.put_new(:table_name, table_name)
     |> Map.put_new(:schema, Keyword.get(opts, :schema, "public"))
     |> Map.put_new(:source, adapter_source_name(adapter))
+    |> Map.put_new(:source_kind, Keyword.get(opts, :source_kind, :table))
+    |> Map.put_new(:readonly, Keyword.get(opts, :source_kind, :table) != :table)
+    |> maybe_override_primary_key(Keyword.get(opts, :primary_key))
     |> Map.put(:source_type, :db)
     |> Map.put(:adapter, adapter)
   end
+
+  defp maybe_override_primary_key(metadata, nil), do: metadata
+
+  defp maybe_override_primary_key(metadata, primary_key),
+    do: Map.put(metadata, :primary_key, primary_key)
 
   defp adapter_source_name(adapter) do
     if function_exported?(adapter, :name, 0) do

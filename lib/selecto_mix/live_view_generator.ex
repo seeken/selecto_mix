@@ -72,11 +72,17 @@ defmodule SelectoMix.LiveViewGenerator do
 
       3. Run `mix assets.build`
 
+      The generated base views include `:aggregate`, `:detail`, and `:graph`.
+      Extension-provided views such as `:map` or `:timeseries` are merged in
+      automatically when available for the configured domain.
+
       That's it! The drag-and-drop query builder and charts will work automatically.
       \"\"\"
 
       use #{web_module}, :live_view
       use SelectoComponents.Form
+
+      alias SelectoComponents.Views
 
       @impl true
       def mount(_params, _session, socket) do
@@ -86,9 +92,9 @@ defmodule SelectoMix.LiveViewGenerator do
         selecto = Selecto.configure(domain, #{connection_ref})
 
         views = [
-          {:aggregate, SelectoComponents.Views.Aggregate, "Aggregate View", %{drill_down: :detail}},
-          {:detail, SelectoComponents.Views.Detail, "Detail View", %{}},
-          {:graph, SelectoComponents.Views.Graph, "Graph View", %{}}
+          Views.spec(:aggregate, Views.Aggregate, "Aggregate View", %{drill_down: :detail}),
+          Views.spec(:detail, Views.Detail, "Detail View", %{}),
+          Views.spec(:graph, Views.Graph, "Graph View", %{})
         ]
 
         state = get_initial_state(views, selecto)

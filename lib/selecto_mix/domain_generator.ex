@@ -173,6 +173,8 @@ defmodule SelectoMix.DomainGenerator do
       "      default_selected: #{generate_default_selected(config)},\n      \n" <>
       "      # Suggested filters (add/remove as needed)\n" <>
       "      filters: #{generate_filters_config(config)},\n      \n" <>
+      "      # Named UDF registry (prefer overlay deffunction for custom additions)\n" <>
+      "      functions: #{generate_functions_config(config)},\n      \n" <>
       "      # Subfilters for relationship-based filtering (Selecto 0.3.0+)\n" <>
       "      subfilters: #{generate_subfilters_config(config)},\n" <>
       "      \n" <>
@@ -215,6 +217,8 @@ defmodule SelectoMix.DomainGenerator do
     redacted_fields = config[:redacted_fields] || []
     field_types = config[:field_types] || %{}
     polymorphic_config = config[:polymorphic_config]
+    source_kind = config[:source_kind]
+    readonly = config[:readonly]
 
     # Only include redact_fields if there are redacted fields, otherwise use empty list
     redacted_config =
@@ -227,7 +231,9 @@ defmodule SelectoMix.DomainGenerator do
       end
 
     "%{\n        source_table: \"#{table_name}\",\n" <>
-      "        primary_key: #{inspect(primary_key)},\n        \n" <>
+      "        primary_key: #{inspect(primary_key)},\n" <>
+      generate_relation_metadata(source_kind, readonly) <>
+      "        \n" <>
       "        # Available fields from schema\n" <>
       "        # NOTE: This is redundant with columns - consider using Map.keys(columns) instead\n" <>
       "        fields: #{inspect(fields)},\n        \n" <>
@@ -236,6 +242,21 @@ defmodule SelectoMix.DomainGenerator do
       "        columns: #{generate_columns_config(fields, field_types, polymorphic_config)},\n        \n" <>
       "        # Schema associations\n" <>
       "        associations: #{generate_source_associations(config)}\n      }"
+  end
+
+  defp generate_relation_metadata(nil, nil), do: ""
+
+  defp generate_relation_metadata(source_kind, readonly) do
+    []
+    |> maybe_relation_metadata_line(:source_kind, source_kind)
+    |> maybe_relation_metadata_line(:readonly, readonly)
+    |> Enum.join("")
+  end
+
+  defp maybe_relation_metadata_line(lines, _key, nil), do: lines
+
+  defp maybe_relation_metadata_line(lines, key, value) do
+    lines ++ ["        #{key}: #{inspect(value)},\n"]
   end
 
   defp generate_columns_config(fields, field_types, polymorphic_config \\ nil) do
@@ -968,6 +989,22 @@ defmodule SelectoMix.DomainGenerator do
     end
   end
 
+  defp generate_functions_config(config) do
+    preserved_functions = get_in(config, [:preserved_customizations, :custom_functions])
+    functions = config[:functions] || %{}
+
+    cond do
+      is_binary(preserved_functions) and String.trim(preserved_functions) != "" ->
+        preserved_functions <> " # CUSTOM"
+
+      is_map(functions) and map_size(functions) > 0 ->
+        inspect(functions, pretty: true, width: 60)
+
+      true ->
+        "%{}"
+    end
+  end
+
   defp format_filter_config(filter_config) when is_map(filter_config) do
     inspect(filter_config, pretty: true, width: 60)
   end
@@ -1535,7 +1572,7 @@ defmodule SelectoMix.DomainGenerator do
   defp generated_from_label(config) do
     cond do
       config[:source_type] == :db ->
-        "table #{config[:table_name]}"
+        relation_label(config[:source_kind], config[:table_name])
 
       config[:schema_module] ->
         inspect(config[:schema_module])
@@ -1547,6 +1584,10 @@ defmodule SelectoMix.DomainGenerator do
         "unknown source"
     end
   end
+
+  defp relation_label(:view, table_name), do: "view #{table_name}"
+  defp relation_label(:materialized_view, table_name), do: "materialized view #{table_name}"
+  defp relation_label(_, table_name), do: "table #{table_name}"
 
   defp fallback_module_name(schema_module) when is_atom(schema_module) do
     schema_module |> Module.split() |> List.last()

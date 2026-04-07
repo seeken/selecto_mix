@@ -9,6 +9,15 @@ defmodule SelectoDBMSSQL.Adapter do
 
   def list_tables(_connection, _opts), do: {:ok, ["orders"]}
 
+  def list_relations(_connection, opts) do
+    if Keyword.get(opts, :include_views, false) do
+      {:ok,
+       [%{name: "orders", source_kind: :table}, %{name: "active_orders", source_kind: :view}]}
+    else
+      {:ok, [%{name: "orders", source_kind: :table}]}
+    end
+  end
+
   def introspect_table(_connection, "orders", opts) do
     schema = Keyword.get(opts, :schema, "dbo")
 
@@ -56,6 +65,15 @@ defmodule SelectoDBSQLite.Adapter do
 
   def list_tables(_connection, _opts), do: {:ok, ["orders"]}
 
+  def list_relations(_connection, opts) do
+    if Keyword.get(opts, :include_views, false) do
+      {:ok,
+       [%{name: "orders", source_kind: :table}, %{name: "active_orders", source_kind: :view}]}
+    else
+      {:ok, [%{name: "orders", source_kind: :table}]}
+    end
+  end
+
   def introspect_table(_connection, "orders", _opts) do
     {:ok,
      %{
@@ -96,6 +114,15 @@ defmodule SelectoDBMySQL.Adapter do
   def supports?(_feature), do: false
 
   def list_tables(_connection, _opts), do: {:ok, ["orders"]}
+
+  def list_relations(_connection, opts) do
+    if Keyword.get(opts, :include_views, false) do
+      {:ok,
+       [%{name: "orders", source_kind: :table}, %{name: "active_orders", source_kind: :view}]}
+    else
+      {:ok, [%{name: "orders", source_kind: :table}]}
+    end
+  end
 
   def introspect_table(_connection, "orders", opts) do
     schema = Keyword.get(opts, :schema, "shop_dev")
@@ -139,6 +166,15 @@ defmodule SelectoDBMariaDB.Adapter do
   def supports?(_feature), do: false
 
   def list_tables(_connection, _opts), do: {:ok, ["orders"]}
+
+  def list_relations(_connection, opts) do
+    if Keyword.get(opts, :include_views, false) do
+      {:ok,
+       [%{name: "orders", source_kind: :table}, %{name: "active_orders", source_kind: :view}]}
+    else
+      {:ok, [%{name: "orders", source_kind: :table}]}
+    end
+  end
 
   def introspect_table(_connection, "orders", opts) do
     schema = Keyword.get(opts, :schema, "shop_dev")
@@ -263,6 +299,35 @@ defmodule SelectoMixTest do
       assert result1[:has_customizations] == true
       assert result2[:has_customizations] == false
     end
+
+    test "parse_existing_config/1 preserves base-domain function registries" do
+      existing_content = """
+      defmodule TestDomain do
+        def base_domain do
+          %{
+            name: "Test",
+            functions: %{
+              "similarity" => %{
+                kind: :scalar,
+                sql_name: "public.similarity",
+                args: [
+                  %{name: :left, type: :string, source: :selector},
+                  %{name: :right, type: :string, source: :value}
+                ],
+                returns: :float,
+                allowed_in: [:select, :order_by]
+              }
+            }
+          }
+        end
+      end
+      """
+
+      parsed = ConfigMerger.parse_existing_config(existing_content)
+
+      assert parsed[:custom_functions] =~ "similarity"
+      assert parsed[:custom_functions] =~ "public.similarity"
+    end
   end
 
   describe "DomainGenerator" do
@@ -318,6 +383,58 @@ defmodule SelectoMixTest do
       assert String.contains?(result, "source:")
       assert String.contains?(result, "source_table: \"tests\"")
       assert String.contains?(result, "primary_key: :id")
+      assert String.contains?(result, "functions: %{}")
+    end
+
+    test "generate_domain_map/1 emits view source metadata when present" do
+      config = %{
+        schema_module: TestSchema,
+        table_name: "reporting.active_customers",
+        primary_key: :customer_id,
+        source_kind: :view,
+        readonly: true,
+        fields: [:customer_id, :name],
+        field_types: %{customer_id: :integer, name: :string},
+        associations: %{},
+        suggested_defaults: %{
+          default_selected: [:name],
+          default_filters: %{},
+          default_order: []
+        },
+        metadata: %{module_name: "ActiveCustomer"}
+      }
+
+      result = DomainGenerator.generate_domain_map(config)
+
+      assert String.contains?(result, "source_kind: :view")
+      assert String.contains?(result, "readonly: true")
+    end
+
+    test "generate_domain_map/1 preserves custom function registries on regeneration" do
+      config = %{
+        schema_module: TestSchema,
+        table_name: "tests",
+        primary_key: :id,
+        fields: [:id, :name],
+        field_types: %{id: :integer, name: :string},
+        associations: %{},
+        suggested_defaults: %{
+          default_selected: [:name],
+          default_filters: %{},
+          default_order: []
+        },
+        metadata: %{module_name: "Test"},
+        preserved_customizations: %{
+          custom_functions:
+            "%{\n        \"similarity\" => %{kind: :scalar, sql_name: \"public.similarity\"}\n      }"
+        }
+      }
+
+      result = DomainGenerator.generate_domain_map(config)
+
+      assert String.contains?(result, "functions: %{")
+      assert String.contains?(result, "public.similarity")
+      assert String.contains?(result, "# CUSTOM")
     end
 
     test "generate_domain_map/1 emits many-to-many join table metadata" do
@@ -480,6 +597,33 @@ defmodule SelectoMixTest do
       assert String.contains?(result, "mix selecto.gen.domain --adapter mariadb --table orders")
     end
 
+    test "schema introspector preserves explicit view metadata for db sources" do
+      source =
+        {:db, SelectoDBMSSQL.Adapter, :fake_conn, "orders",
+         schema: "reporting", source_kind: :view, primary_key: :customer_id}
+
+      config =
+        SchemaIntrospector.introspect_schema(source,
+          schema: "reporting",
+          source_kind: :view,
+          primary_key: :customer_id,
+          include_associations: true
+        )
+
+      assert config.primary_key == :customer_id
+      assert config.source_kind == :view
+      assert config.readonly == true
+    end
+
+    test "connection opts schema includes view discovery flags" do
+      schema = ConnectionOpts.connection_schema()
+
+      assert schema[:include_views] == :boolean
+      assert schema[:view] == :string
+      assert schema[:materialized_view] == :string
+      assert schema[:primary_key] == :string
+    end
+
     test "connection opts parse convenience flags" do
       opts =
         ConnectionOpts.from_parsed_args(%{
@@ -520,6 +664,7 @@ defmodule SelectoMixTest do
       assert result =~ "defmodule Shop.SelectoDomains.Overlays.ProductDomainOverlay"
       assert result =~ "# defcolumn :price do"
       assert result =~ "# deffilter \"active\" do"
+      assert result =~ "# deffunction \"similarity\" do"
     end
   end
 
@@ -538,6 +683,18 @@ defmodule SelectoMixTest do
 
       assert String.contains?(result, "defmodule ShopWeb.ProductLive")
       assert String.contains?(result, "Selecto.configure(domain, Shop.Database)")
+      assert String.contains?(result, "alias SelectoComponents.Views")
+
+      assert String.contains?(
+               result,
+               "Views.spec(:aggregate, Views.Aggregate, \"Aggregate View\", %{drill_down: :detail})"
+             )
+
+      assert String.contains?(
+               result,
+               "Extension-provided views such as `:map` or `:timeseries` are merged in"
+             )
+
       refute String.contains?(result, "Shop.Repo")
     end
 
