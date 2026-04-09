@@ -1,6 +1,16 @@
 CHANGES
 =======
 
+V 0.4.3
+----------
+
+- Fixed schema introspection and domain generation so `:binary_id` and `:uuid`
+  fields stay UUID-aware instead of degrading to plain strings in generated
+  Selecto configs.
+- Added regression coverage for binary-id primary keys and UUID columns in the
+  schema introspector and generated domain map output.
+- Bump package version to `0.4.3`.
+
 V 0.4.2
 ----------
 

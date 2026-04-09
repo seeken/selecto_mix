@@ -210,6 +210,18 @@ end
 
 defmodule SelectoMixTest do
   use ExUnit.Case
+
+  defmodule UuidSchema do
+    use Ecto.Schema
+
+    @primary_key {:public_id, :binary_id, autogenerate: false}
+
+    schema "uuid_records" do
+      field(:legacy_uuid, Ecto.UUID)
+      field(:name, :string)
+    end
+  end
+
   doctest SelectoMix
 
   alias SelectoMix.{
@@ -256,6 +268,14 @@ defmodule SelectoMixTest do
       # This would fail with a real schema module, but shows error handling
       result = SchemaIntrospector.introspect_schema(NonExistentSchema, [])
       assert Map.has_key?(result, :error)
+    end
+
+    test "preserves binary_id and uuid column metadata" do
+      config = SchemaIntrospector.introspect_schema(UuidSchema, [])
+
+      assert config.primary_key == :public_id
+      assert config.field_types.public_id == :binary_id
+      assert config.field_types.legacy_uuid == :uuid
     end
   end
 
@@ -408,6 +428,29 @@ defmodule SelectoMixTest do
 
       assert String.contains?(result, "source_kind: :view")
       assert String.contains?(result, "readonly: true")
+    end
+
+    test "generate_domain_map/1 preserves uuid-aware field types" do
+      config = %{
+        schema_module: UuidSchema,
+        table_name: "uuid_records",
+        primary_key: :public_id,
+        fields: [:public_id, :legacy_uuid, :name],
+        field_types: %{public_id: :binary_id, legacy_uuid: :uuid, name: :string},
+        associations: %{},
+        suggested_defaults: %{
+          default_selected: [:name],
+          default_filters: %{},
+          default_order: []
+        },
+        metadata: %{module_name: "UuidRecord"}
+      }
+
+      result = DomainGenerator.generate_domain_map(config)
+
+      assert String.contains?(result, "primary_key: :public_id")
+      assert String.contains?(result, ":public_id => %{type: :binary_id}")
+      assert String.contains?(result, ":legacy_uuid => %{type: :uuid}")
     end
 
     test "generate_domain_map/1 preserves custom function registries on regeneration" do
