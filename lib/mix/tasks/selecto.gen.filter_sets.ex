@@ -65,6 +65,7 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
   import Mix.Generator
 
   alias SelectoMix.RawPersistence
+  alias SelectoMix.GeneratorFiles
 
   @requirements ["app.config"]
 
@@ -101,7 +102,12 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
         migration: Keyword.get(opts, :migration, true),
         tests: Keyword.get(opts, :tests, true),
         adapter_mode: adapter_mode,
-        connection_name: RawPersistence.connection_name(app_module, opts)
+        connection_name: RawPersistence.connection_name(app_module, opts),
+        existing_migration_file:
+          GeneratorFiles.existing_migration_file(
+            "priv/repo/migrations",
+            "create_#{opts[:table] || "filter_sets"}"
+          )
       }
 
       Mix.shell().info("Generating filter sets implementation for #{app_module}...")
@@ -177,43 +183,51 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
   end
 
   defp generate_migration(config) do
-    migration_path = "priv/repo/migrations"
-    create_directory(migration_path)
+    if config.existing_migration_file do
+      Mix.shell().info(
+        "Skipping migration generation, using existing file: #{config.existing_migration_file}"
+      )
 
-    timestamp = timestamp()
-    migration_file = Path.join(migration_path, "#{timestamp}_create_filter_sets.exs")
+      :ok
+    else
+      migration_path = "priv/repo/migrations"
+      create_directory(migration_path)
 
-    migration_content = """
-    defmodule #{config.repo}.Migrations.CreateFilterSets do
-      use Ecto.Migration
+      timestamp = timestamp()
+      migration_file = Path.join(migration_path, "#{timestamp}_create_filter_sets.exs")
 
-      def change do
-        create table(:#{config.table}, primary_key: false) do
-          add :id, :binary_id, primary_key: true
-          add :name, :string, null: false
-          add :description, :text
-          add :domain, :string, null: false
-          add :filters, :map, null: false
-          add :user_id, :string, null: false
-          add :is_default, :boolean, default: false, null: false
-          add :is_shared, :boolean, default: false, null: false
-          add :is_system, :boolean, default: false, null: false
-          add :usage_count, :integer, default: 0, null: false
+      migration_content = """
+      defmodule #{config.repo}.Migrations.CreateFilterSets do
+        use Ecto.Migration
 
-          timestamps()
+        def change do
+          create table(:#{config.table}, primary_key: false) do
+            add :id, :binary_id, primary_key: true
+            add :name, :string, null: false
+            add :description, :text
+            add :domain, :string, null: false
+            add :filters, :map, null: false
+            add :user_id, :string, null: false
+            add :is_default, :boolean, default: false, null: false
+            add :is_shared, :boolean, default: false, null: false
+            add :is_system, :boolean, default: false, null: false
+            add :usage_count, :integer, default: 0, null: false
+
+            timestamps()
+          end
+
+          create index(:#{config.table}, [:user_id, :domain])
+          create index(:#{config.table}, [:domain, :is_shared])
+          create index(:#{config.table}, [:domain, :is_system])
+          create index(:#{config.table}, [:user_id, :is_default])
+          create unique_index(:#{config.table}, [:user_id, :domain, :name])
         end
-
-        create index(:#{config.table}, [:user_id, :domain])
-        create index(:#{config.table}, [:domain, :is_shared])
-        create index(:#{config.table}, [:domain, :is_system])
-        create index(:#{config.table}, [:user_id, :is_default])
-        create unique_index(:#{config.table}, [:user_id, :domain, :name])
       end
-    end
-    """
+      """
 
-    create_file(migration_file, migration_content)
-    Mix.shell().info("Created migration: #{migration_file}")
+      create_file(migration_file, migration_content)
+      Mix.shell().info("Created migration: #{migration_file}")
+    end
   end
 
   defp generate_schema(config) do

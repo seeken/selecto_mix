@@ -126,10 +126,6 @@ defmodule SelectoMix.LiveViewGenerator do
         \"\"\"
       end
 
-      @impl true
-      def handle_event("toggle_show_view_configurator", _params, socket) do
-        {:noreply, assign(socket, show_view_configurator: !socket.assigns.show_view_configurator)}
-      end
     end
     """
   end

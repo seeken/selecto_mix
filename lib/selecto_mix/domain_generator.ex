@@ -519,47 +519,37 @@ defmodule SelectoMix.DomainGenerator do
     expand_modes = config[:expand_modes] || %{}
     expanded_schemas = config[:expanded_schemas] || %{}
 
-    # Generate schema configurations for associations
-    # Include through associations - selecto now handles them
-    schema_configs =
-      associations
-      |> Enum.map(fn {assoc_name, assoc_config} ->
-        related_schema = association_related_schema(assoc_config)
-        schema_name = association_schema_key(assoc_name, assoc_config)
-        table_name = association_related_table(assoc_config, schema_name)
-        related_schema_string = inspect(related_schema)
+    {schema_order, schema_candidates} =
+      Enum.reduce(associations, {[], %{}}, fn {assoc_name, assoc_config}, {order, candidates} ->
+        candidate =
+          build_schema_config_candidate(
+            assoc_name,
+            assoc_config,
+            expanded_schemas,
+            expand_schemas_list,
+            expand_modes
+          )
 
-        expanded_schema =
-          Map.get(expanded_schemas, schema_name) || Map.get(expanded_schemas, assoc_name)
+        schema_name = candidate.schema_name
 
-        # Check if this schema should be expanded
-        should_expand = should_expand_schema?(schema_name, related_schema, expand_schemas_list)
+        case Map.get(candidates, schema_name) do
+          nil ->
+            {[schema_name | order], Map.put(candidates, schema_name, candidate)}
 
-        # Check if there's a special join mode for this schema
-        join_mode = get_join_mode_for_schema(schema_name, expand_modes)
-
-        cond do
-          is_map(expanded_schema) ->
-            generate_preexpanded_schema_config(
-              schema_name,
-              expanded_schema,
-              join_mode,
-              assoc_config
-            )
-
-          should_expand ->
-            generate_expanded_schema_config(
-              schema_name,
-              related_schema,
-              table_name,
-              join_mode,
-              assoc_config
-            )
-
-          true ->
-            generate_placeholder_schema_config(schema_name, related_schema_string, table_name)
+          existing_candidate ->
+            {order,
+             Map.put(
+               candidates,
+               schema_name,
+               preferred_schema_candidate(existing_candidate, candidate)
+             )}
         end
       end)
+
+    schema_configs =
+      schema_order
+      |> Enum.reverse()
+      |> Enum.map(&Map.fetch!(schema_candidates, &1).content)
       |> Enum.join(",\n      ")
 
     if schema_configs == "" do
@@ -567,6 +557,56 @@ defmodule SelectoMix.DomainGenerator do
     else
       "%{\n      #{schema_configs}\n    }"
     end
+  end
+
+  defp build_schema_config_candidate(
+         assoc_name,
+         assoc_config,
+         expanded_schemas,
+         expand_schemas_list,
+         expand_modes
+       ) do
+    related_schema = association_related_schema(assoc_config)
+    schema_name = association_schema_key(assoc_name, assoc_config)
+    table_name = association_related_table(assoc_config, schema_name)
+    related_schema_string = inspect(related_schema)
+
+    expanded_schema =
+      Map.get(expanded_schemas, schema_name) || Map.get(expanded_schemas, assoc_name)
+
+    should_expand = should_expand_schema?(schema_name, related_schema, expand_schemas_list)
+    join_mode = get_join_mode_for_schema(schema_name, expand_modes)
+
+    {priority, content} =
+      cond do
+        is_map(expanded_schema) ->
+          {2,
+           generate_preexpanded_schema_config(
+             schema_name,
+             expanded_schema,
+             join_mode,
+             assoc_config
+           )}
+
+        should_expand ->
+          {1,
+           generate_expanded_schema_config(
+             schema_name,
+             related_schema,
+             table_name,
+             join_mode,
+             assoc_config
+           )}
+
+        true ->
+          {0, generate_placeholder_schema_config(schema_name, related_schema_string, table_name)}
+      end
+
+    %{schema_name: schema_name, priority: priority, content: content}
+  end
+
+  defp preferred_schema_candidate(existing_candidate, candidate) do
+    if candidate.priority > existing_candidate.priority, do: candidate, else: existing_candidate
   end
 
   defp should_expand_schema?(schema_name, related_schema, expand_schemas_list) do

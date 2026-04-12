@@ -59,6 +59,7 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViews do
   use Igniter.Mix.Task
 
   alias SelectoMix.RawPersistence
+  alias SelectoMix.GeneratorFiles
 
   @impl Igniter.Mix.Task
   def info(_argv, _composing_task) do
@@ -109,7 +110,15 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViews do
 
   defp generate_saved_views_implementation(igniter, app_name, opts) do
     with {:ok, adapter_mode} <- RawPersistence.parse_adapter(opts[:adapter]) do
-      config = build_generation_config(app_name, opts, adapter_mode)
+      config =
+        build_generation_config(app_name, opts, adapter_mode)
+        |> Map.put(
+          :existing_migration_file,
+          GeneratorFiles.existing_migration_file(
+            "priv/repo/migrations",
+            "create_#{opts[:table_name] || "saved_views"}"
+          )
+        )
 
       cond do
         RawPersistence.raw_mode?(adapter_mode) and opts[:dry_run] ->
@@ -193,10 +202,16 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViews do
   end
 
   defp generate_migration_file(igniter, config) do
-    file_path = migration_file_path(config)
-    content = render_migration_template(config)
+    case Map.get(config, :existing_migration_file) do
+      nil ->
+        file_path = migration_file_path(config)
+        content = render_migration_template(config)
 
-    Igniter.create_new_file(igniter, file_path, content)
+        Igniter.create_new_file(igniter, file_path, content)
+
+      _existing_file ->
+        igniter
+    end
   end
 
   defp generate_schema_file(igniter, config) do
@@ -465,8 +480,14 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViews do
   defp pad(i), do: to_string(i)
 
   defp add_success_messages(igniter, config) do
+    migration_notice =
+      case Map.get(config, :existing_migration_file) do
+        nil -> "Generated migration: #{migration_file_path(config)}"
+        existing_file -> "Using existing migration: #{existing_file}"
+      end
+
     igniter
-    |> Igniter.add_notice("Generated migration: #{migration_file_path(config)}")
+    |> Igniter.add_notice(migration_notice)
     |> Igniter.add_notice("Generated schema: #{inspect(config.schema_module)}")
     |> Igniter.add_notice("Generated context: #{inspect(config.context_module)}")
     |> Igniter.add_notice("""

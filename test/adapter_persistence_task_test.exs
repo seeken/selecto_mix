@@ -15,6 +15,38 @@ defmodule SelectoMix.AdapterPersistenceTaskTest do
     assert output =~ "lib/tmp_app/saved_view_context.ex"
   end
 
+  test "saved_views task reuses an existing migration for the same table" do
+    in_tmp_dir("selecto_mix_saved_views_idempotent", fn ->
+      File.write!(".formatter.exs", "[inputs: []]\n")
+      Mix.Task.reenable("selecto.gen.saved_views")
+
+      Mix.Task.run("selecto.gen.saved_views", [
+        "TmpApp",
+        "--yes",
+        "--context-module",
+        "TmpApp.SavedViewContextA",
+        "--schema-module",
+        "TmpApp.SavedViewA"
+      ])
+
+      initial_migrations = Path.wildcard("priv/repo/migrations/*_create_saved_views.exs")
+      assert length(initial_migrations) == 1
+
+      Mix.Task.reenable("selecto.gen.saved_views")
+
+      Mix.Task.run("selecto.gen.saved_views", [
+        "TmpApp",
+        "--yes",
+        "--context-module",
+        "TmpApp.SavedViewContextB",
+        "--schema-module",
+        "TmpApp.SavedViewB"
+      ])
+
+      assert Path.wildcard("priv/repo/migrations/*_create_saved_views.exs") == initial_migrations
+    end)
+  end
+
   test "saved_view_configs task supports PostgreSQL dry run" do
     {output, 0} =
       System.cmd(
@@ -111,6 +143,37 @@ defmodule SelectoMix.AdapterPersistenceTaskTest do
       assert sql =~ "filters JSONB NOT NULL DEFAULT '{}'"
       assert sql =~ "NOW()"
       assert context =~ "SelectoDBPostgreSQL.Adapter"
+    end)
+  end
+
+  test "filter_sets task reuses an existing migration for the same table" do
+    in_tmp_dir("selecto_mix_filter_sets_idempotent", fn ->
+      Mix.Task.reenable("selecto.gen.filter_sets")
+
+      Mix.Tasks.Selecto.Gen.FilterSets.run([
+        "TmpApp",
+        "--context-module",
+        "TmpApp.FilterSetsA",
+        "--schema-module",
+        "TmpApp.FilterSets.FilterSetA",
+        "--no-tests"
+      ])
+
+      initial_migrations = Path.wildcard("priv/repo/migrations/*_create_filter_sets.exs")
+      assert length(initial_migrations) == 1
+
+      Mix.Task.reenable("selecto.gen.filter_sets")
+
+      Mix.Tasks.Selecto.Gen.FilterSets.run([
+        "TmpApp",
+        "--context-module",
+        "TmpApp.FilterSetsB",
+        "--schema-module",
+        "TmpApp.FilterSets.FilterSetB",
+        "--no-tests"
+      ])
+
+      assert Path.wildcard("priv/repo/migrations/*_create_filter_sets.exs") == initial_migrations
     end)
   end
 
