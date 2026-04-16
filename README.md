@@ -84,7 +84,7 @@ That keeps generated structure and user-authored behavior separate.
 
 ## UDF Workflow
 
-Generated domains now include a stable `functions: %{}` section.
+Generated domains include a stable `functions: %{}` section.
 
 Generated overlays include `deffunction` examples so named function registrations can live outside regenerated files.
 

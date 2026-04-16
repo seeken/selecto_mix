@@ -268,6 +268,9 @@ defmodule SelectoMix.SchemaIntrospector do
   defp map_ecto_type_to_selecto(ecto_type) do
     case ecto_type do
       :id -> :integer
+      :binary_id -> :binary_id
+      :uuid -> :uuid
+      Ecto.UUID -> :uuid
       :integer -> :integer
       :string -> :string
       :binary -> :string

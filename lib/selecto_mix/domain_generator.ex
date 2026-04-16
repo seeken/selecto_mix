@@ -792,7 +792,8 @@ defmodule SelectoMix.DomainGenerator do
   defp simplify_ecto_type({:parameterized, Ecto.Enum, _}), do: :string
   defp simplify_ecto_type({:array, inner_type}), do: {:array, simplify_ecto_type(inner_type)}
   defp simplify_ecto_type(:id), do: :integer
-  defp simplify_ecto_type(:binary_id), do: :string
+  defp simplify_ecto_type(:binary_id), do: :binary_id
+  defp simplify_ecto_type(:uuid), do: :uuid
   defp simplify_ecto_type(:naive_datetime), do: :naive_datetime
   defp simplify_ecto_type(:utc_datetime), do: :utc_datetime
   defp simplify_ecto_type(type) when is_atom(type), do: type
