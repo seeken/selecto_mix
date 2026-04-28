@@ -583,8 +583,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         app_name = output_app_name(opts)
         schema_name = LiveViewGenerator.source_live_name(schema) |> Macro.underscore()
 
-        live_file = "lib/#{app_name}_web/live/#{schema_name}_live.ex"
-        html_file = "lib/#{app_name}_web/live/#{schema_name}_live.html.heex"
+        live_file = "lib/#{app_name}_web/#{schema_name}_live.ex"
+        html_file = "lib/#{app_name}_web/#{schema_name}_live.html.heex"
 
         IO.puts("    → #{live_file}")
         IO.puts("    → #{html_file}")

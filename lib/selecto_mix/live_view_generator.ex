@@ -6,13 +6,13 @@ defmodule SelectoMix.LiveViewGenerator do
   def live_view_file_path(app_name, source) do
     app_name = app_name |> to_string() |> Macro.underscore()
     schema_name = source_live_name(source) |> Macro.underscore()
-    "lib/#{app_name}_web/live/#{schema_name}_live.ex"
+    "lib/#{app_name}_web/#{schema_name}_live.ex"
   end
 
   def live_view_html_file_path(app_name, source) do
     app_name = app_name |> to_string() |> Macro.underscore()
     schema_name = source_live_name(source) |> Macro.underscore()
-    "lib/#{app_name}_web/live/#{schema_name}_live.html.heex"
+    "lib/#{app_name}_web/#{schema_name}_live.html.heex"
   end
 
   def render_live_view_template(app_name, source, domain_module, opts, components_location) do
@@ -102,33 +102,6 @@ defmodule SelectoMix.LiveViewGenerator do
     #{saved_views_code}
 
         {:ok, assign(socket, state), layout: {#{web_module}.Layouts, :root}}
-      end
-
-      @impl true
-      def render(assigns) do
-        ~H\"\"\"
-        <div class="container mx-auto px-4 py-8">
-          #{render_inline_header(schema_name, opts)}
-
-          <.live_component
-            module={SelectoComponents.Form}
-            id="#{schema_underscore}-form"
-            #{if opts[:enable_modal], do: "enable_modal_detail={true}", else: ""}
-            {assigns}
-          />
-
-          <.live_component
-            module={SelectoComponents.Results}
-            id="#{schema_underscore}-results"
-            {assigns}
-          />
-        </div>
-        \"\"\"
-      end
-
-      @impl true
-      def handle_event("toggle_show_view_configurator", _params, socket) do
-        {:noreply, assign(socket, show_view_configurator: !socket.assigns.show_view_configurator)}
       end
     end
     """
@@ -245,29 +218,6 @@ defmodule SelectoMix.LiveViewGenerator do
 
       _ ->
         "#{app_name}.Repo"
-    end
-  end
-
-  defp render_inline_header(schema_name, opts) do
-    if opts[:saved_views] do
-      """
-      <div class="flex items-center gap-4 mb-6">
-            <h1 class="text-3xl font-bold">#{schema_name} Explorer</h1>
-
-            <details :if={@available_saved_views != []} id="saved-views-dropdown" class="dropdown">
-              <summary class="btn btn-sm btn-outline gap-1">Saved Views</summary>
-              <ul class="menu dropdown-content z-[1] mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-2 shadow">
-                <li :for={v <- @available_saved_views}>
-                  <.link href={\"\#{@path}?saved_view=\#{v}\"}>{v}</.link>
-                </li>
-              </ul>
-            </details>
-          </div>
-      """
-    else
-      """
-      <h1 class="text-3xl font-bold mb-6">#{schema_name} Explorer</h1>
-      """
     end
   end
 

@@ -130,17 +130,17 @@ defmodule Mix.Tasks.Selecto.Install do
           %{
             app: :selecto,
             repo: nil,
-            dep: "{:selecto, \">= 0.4.3 and < 0.5.0\", override: true}"
+            dep: "{:selecto, \">= 0.4.5 and < 0.5.0\", override: true}"
           },
           %{
             app: :selecto_db_postgresql,
             repo: nil,
-            dep: "{:selecto_db_postgresql, \">= 0.4.2 and < 0.5.0\", override: true}"
+            dep: "{:selecto_db_postgresql, \">= 0.4.3 and < 0.5.0\", override: true}"
           },
           %{
             app: :selecto_components,
             repo: nil,
-            dep: "{:selecto_components, \">= 0.4.5 and < 0.5.0\", override: true}"
+            dep: "{:selecto_components, \">= 0.4.7 and < 0.5.0\", override: true}"
           }
         ]
       end

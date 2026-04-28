@@ -738,6 +738,8 @@ defmodule SelectoMixTest do
                "Extension-provided views such as `:map` or `:timeseries` are merged in"
              )
 
+      refute String.contains?(result, "def render(assigns)")
+      refute String.contains?(result, ~S(def handle_event("toggle_show_view_configurator"))
       refute String.contains?(result, "Shop.Repo")
     end
 
@@ -745,10 +747,10 @@ defmodule SelectoMixTest do
       source = {:db, SelectoDBPostgreSQL.Adapter, :fake_conn, "order_items", schema: "public"}
 
       assert LiveViewGenerator.live_view_file_path("shop", source) ==
-               "lib/shop_web/live/order_item_live.ex"
+               "lib/shop_web/order_item_live.ex"
 
       assert LiveViewGenerator.live_view_html_file_path("shop", source) ==
-               "lib/shop_web/live/order_item_live.html.heex"
+               "lib/shop_web/order_item_live.html.heex"
     end
   end
 

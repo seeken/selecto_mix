@@ -1,6 +1,17 @@
 CHANGES
 =======
 
+V 0.4.4
+----------
+
+- Updated installer and README dependency baselines for the coordinated point
+  release: `selecto >= 0.4.5`, `selecto_db_postgresql >= 0.4.3`, and
+  `selecto_components >= 0.4.7`.
+- Fixed generated LiveView output to avoid duplicate `render/1` and
+  `toggle_show_view_configurator` definitions, and to emit colocated HEEx
+  templates beside the generated LiveView module so Phoenix can render them.
+- Bump package version to `0.4.4`.
+
 V 0.4.3
 ----------
 
