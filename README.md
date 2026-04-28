@@ -17,7 +17,7 @@ Use it when you want to:
 ```elixir
 def deps do
   [
-    {:selecto_mix, ">= 0.4.4 and < 0.5.0"},
+    {:selecto_mix, ">= 0.4.5 and < 0.5.0"},
     {:selecto, ">= 0.4.5 and < 0.5.0"},
     {:selecto_db_postgresql, ">= 0.4.3 and < 0.5.0"},
     {:postgrex, ">= 0.0.0"},

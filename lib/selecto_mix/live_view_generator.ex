@@ -142,19 +142,18 @@ defmodule SelectoMix.LiveViewGenerator do
       #{saved_views_dropdown}
     </div>
 
-    <div :if={@show_view_configurator}>
-      <.live_component
-        module={SelectoComponents.Form}
-        id="config"
-        view_config={@view_config}
-        selecto={@selecto}
-        executed={@executed}
-        applied_view={nil}
-        active_tab={@active_tab}
-        views={@views}
-        #{if opts[:enable_modal], do: "enable_modal_detail={true}", else: ""}#{saved_view_assigns}
-      />
-    </div>
+    <.live_component
+      module={SelectoComponents.Form}
+      id="config"
+      view_config={@view_config}
+      selecto={@selecto}
+      executed={@executed}
+      applied_view={nil}
+      active_tab={@active_tab}
+      views={@views}
+      #{if opts[:enable_modal], do: "enable_modal_detail={true}\n      ", else: ""}show_view_configurator={@show_view_configurator}
+      #{saved_view_assigns}
+    />
 
     <.live_component
       module={SelectoComponents.Results}

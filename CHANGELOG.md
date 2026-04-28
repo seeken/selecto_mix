@@ -1,6 +1,15 @@
 CHANGES
 =======
 
+V 0.4.5
+----------
+
+- Fixed generated LiveView templates so the SelectoComponents form/controller
+  is always rendered, with collapsed/expanded state passed into the component,
+  instead of hiding the whole controller and leaving generated pages blank.
+- Updated README dependency guidance for `selecto_mix >= 0.4.5`.
+- Bump package version to `0.4.5`.
+
 V 0.4.4
 ----------
 

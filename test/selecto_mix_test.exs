@@ -752,6 +752,21 @@ defmodule SelectoMixTest do
       assert LiveViewGenerator.live_view_html_file_path("shop", source) ==
                "lib/shop_web/order_item_live.html.heex"
     end
+
+    test "renders form controller even when initially collapsed" do
+      source = {:db, SelectoDBPostgreSQL.Adapter, :fake_conn, "products", schema: "public"}
+
+      result =
+        LiveViewGenerator.render_live_view_html_template(source,
+          enable_modal: true,
+          saved_views: true
+        )
+
+      refute String.contains?(result, ~S(<div :if={@show_view_configurator}>))
+      assert String.contains?(result, "show_view_configurator={@show_view_configurator}")
+      assert String.contains?(result, "enable_modal_detail={true}\n")
+      assert String.contains?(result, "saved_view_module={@saved_view_module}")
+    end
   end
 
   describe "integration" do
