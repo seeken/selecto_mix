@@ -401,6 +401,7 @@ defmodule SelectoMixTest do
 
       assert is_binary(result)
       assert String.contains?(result, "source:")
+      assert String.contains?(result, "schema_version: 1")
       assert String.contains?(result, "source_table: \"tests\"")
       assert String.contains?(result, "primary_key: :id")
       assert String.contains?(result, "functions: %{}")
