@@ -171,13 +171,22 @@ defmodule SelectoMix.LiveViewGenerator do
   def route_suggestion(source, opts) do
     schema_name = source_live_name(source)
     schema_underscore = Macro.underscore(schema_name)
-    route_path = opts[:path] || schema_underscore
-    route_path = String.replace_prefix(route_path, "/", "")
+
+    route_path =
+      (opts[:path] || schema_underscore)
+      |> to_string()
+      |> String.trim("/")
+
+    domain_module = opts[:domain_module] || "#{schema_name}Domain"
 
     """
 
-    Add this route to your router.ex:
+    Add these routes to your router.ex:
       live "/#{route_path}", #{schema_name}Live, :index
+
+      forward "#{query_contract_route_path(route_path)}",
+              SelectoComponents.QueryContract.Plug,
+              domain: #{domain_module}.domain()
     """
   end
 
@@ -219,6 +228,9 @@ defmodule SelectoMix.LiveViewGenerator do
         "#{app_name}.Repo"
     end
   end
+
+  defp query_contract_route_path(""), do: "/query-contract.json"
+  defp query_contract_route_path(route_path), do: "/#{route_path}/query-contract.json"
 
   defp singularize_table_name(table_name) do
     cond do

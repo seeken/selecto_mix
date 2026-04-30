@@ -754,6 +754,22 @@ defmodule SelectoMixTest do
                "lib/shop_web/order_item_live.html.heex"
     end
 
+    test "renders router snippet with query contract endpoint" do
+      source = {:db, SelectoDBPostgreSQL.Adapter, :fake_conn, "products", schema: "public"}
+
+      result =
+        LiveViewGenerator.route_suggestion(source,
+          path: "/reports/products",
+          domain_module: "Shop.SelectoDomains.ProductDomain"
+        )
+
+      assert result =~ "Add these routes to your router.ex:"
+      assert result =~ ~s(live "/reports/products", ProductLive, :index)
+      assert result =~ ~s(forward "/reports/products/query-contract.json")
+      assert result =~ "SelectoComponents.QueryContract.Plug"
+      assert result =~ "domain: Shop.SelectoDomains.ProductDomain.domain()"
+    end
+
     test "renders form controller even when initially collapsed" do
       source = {:db, SelectoDBPostgreSQL.Adapter, :fake_conn, "products", schema: "public"}
 

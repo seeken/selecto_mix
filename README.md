@@ -59,6 +59,10 @@ Generate a domain plus LiveView wiring:
 mix selecto.gen.domain MyApp.Catalog.Product --live
 ```
 
+The generated router notice includes the LiveView route and an optional
+`SelectoComponents.QueryContract.Plug` route for serving
+`query-contract.json`.
+
 ## Core Workflow
 
 Recommended workflow:

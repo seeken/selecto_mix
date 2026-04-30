@@ -4,6 +4,9 @@ CHANGES
 V 0.4.5
 ----------
 
+- Updated generated LiveView route guidance to include a
+  `SelectoComponents.QueryContract.Plug` `query-contract.json` endpoint beside
+  the Explorer route.
 - Fixed generated LiveView templates so the SelectoComponents form/controller
   is always rendered, with collapsed/expanded state passed into the component,
   instead of hiding the whole controller and leaving generated pages blank.

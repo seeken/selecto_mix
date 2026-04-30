@@ -1073,6 +1073,14 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   end
 
   defp add_route_suggestion(igniter, source, opts) do
+    app_name = Igniter.Project.Application.app_name(igniter) |> to_string() |> Macro.camelize()
+    domain_config = SelectoMix.SchemaIntrospector.introspect_schema(source, Map.to_list(opts))
+
+    domain_module =
+      SelectoMix.DomainGenerator.domain_module_name(source, domain_config, app_name: app_name)
+
+    opts = Map.put(opts, :domain_module, domain_module)
+
     Igniter.add_notice(igniter, LiveViewGenerator.route_suggestion(source, opts))
   end
 
