@@ -180,21 +180,29 @@ defmodule SelectoMix.LiveViewGenerator do
     domain_module = opts[:domain_module] || "#{schema_name}Domain"
     domain_id = opts[:domain_id] || schema_underscore
     domain_path = opts[:domain_path] || domain_route_path(route_path)
+    query_contract_url = query_contract_route_path(route_path)
+    query_guide_url = query_guide_route_path(route_path)
 
     """
 
     Add these routes to your router.ex:
       live "/#{route_path}", #{schema_name}Live, :index
 
-      forward "#{query_contract_route_path(route_path)}",
+      forward "#{query_contract_url}",
               SelectoComponents.QueryContract.Plug,
-              domain: #{domain_module}.domain()
+              domain: #{domain_module}.domain(),
+              domain_id: "#{domain_id}",
+              domain_path: "#{domain_path}",
+              query_contract_url: "#{query_contract_url}",
+              query_guide_url: "#{query_guide_url}"
 
-      forward "#{query_guide_route_path(route_path)}",
+      forward "#{query_guide_url}",
               SelectoComponents.QueryContract.Guide.Plug,
               domain: #{domain_module}.domain(),
               domain_id: "#{domain_id}",
-              domain_path: "#{domain_path}"
+              domain_path: "#{domain_path}",
+              query_contract_url: "#{query_contract_url}",
+              query_guide_url: "#{query_guide_url}"
     """
   end
 
