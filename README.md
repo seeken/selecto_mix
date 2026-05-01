@@ -60,9 +60,11 @@ mix selecto.gen.domain MyApp.Catalog.Product --live
 ```
 
 The generated router notice includes the LiveView route plus optional
-`SelectoComponents.QueryContract.Plug` and
-`SelectoComponents.QueryContract.Guide.Plug` routes for serving
-`query-contract.json` and a compact Markdown `query-guide.md`.
+`SelectoComponents.QueryContract.Plug`,
+`SelectoComponents.QueryContract.Guide.Plug`, and
+`SelectoComponents.QueryContract.IntentValidator.Plug` routes for serving
+`query-contract.json`, a compact Markdown `query-guide.md`, and a
+non-executing query intent validator.
 
 ## Core Workflow
 

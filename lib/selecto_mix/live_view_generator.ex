@@ -182,6 +182,7 @@ defmodule SelectoMix.LiveViewGenerator do
     domain_path = opts[:domain_path] || domain_route_path(route_path)
     query_contract_url = query_contract_route_path(route_path)
     query_guide_url = query_guide_route_path(route_path)
+    query_intent_validation_url = query_intent_validation_route_path(route_path)
 
     """
 
@@ -198,6 +199,14 @@ defmodule SelectoMix.LiveViewGenerator do
 
       forward "#{query_guide_url}",
               SelectoComponents.QueryContract.Guide.Plug,
+              domain: #{domain_module}.domain(),
+              domain_id: "#{domain_id}",
+              domain_path: "#{domain_path}",
+              query_contract_url: "#{query_contract_url}",
+              query_guide_url: "#{query_guide_url}"
+
+      forward "#{query_intent_validation_url}",
+              SelectoComponents.QueryContract.IntentValidator.Plug,
               domain: #{domain_module}.domain(),
               domain_id: "#{domain_id}",
               domain_path: "#{domain_path}",
@@ -250,6 +259,9 @@ defmodule SelectoMix.LiveViewGenerator do
 
   defp query_guide_route_path(""), do: "/query-guide.md"
   defp query_guide_route_path(route_path), do: "/#{route_path}/query-guide.md"
+
+  defp query_intent_validation_route_path(""), do: "/query-intent/validate"
+  defp query_intent_validation_route_path(route_path), do: "/#{route_path}/query-intent/validate"
 
   defp domain_route_path(""), do: "/"
   defp domain_route_path(route_path), do: "/#{route_path}"

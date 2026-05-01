@@ -774,6 +774,8 @@ defmodule SelectoMixTest do
       assert result =~ ~s(forward "/reports/products/query-guide.md")
       assert result =~ "SelectoComponents.QueryContract.Guide.Plug"
       assert result =~ ~s(domain_id: "product")
+      assert result =~ ~s(forward "/reports/products/query-intent/validate")
+      assert result =~ "SelectoComponents.QueryContract.IntentValidator.Plug"
     end
 
     test "renders form controller even when initially collapsed" do
