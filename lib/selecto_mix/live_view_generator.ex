@@ -178,6 +178,8 @@ defmodule SelectoMix.LiveViewGenerator do
       |> String.trim("/")
 
     domain_module = opts[:domain_module] || "#{schema_name}Domain"
+    domain_id = opts[:domain_id] || schema_underscore
+    domain_path = opts[:domain_path] || domain_route_path(route_path)
 
     """
 
@@ -187,6 +189,12 @@ defmodule SelectoMix.LiveViewGenerator do
       forward "#{query_contract_route_path(route_path)}",
               SelectoComponents.QueryContract.Plug,
               domain: #{domain_module}.domain()
+
+      forward "#{query_guide_route_path(route_path)}",
+              SelectoComponents.QueryContract.Guide.Plug,
+              domain: #{domain_module}.domain(),
+              domain_id: "#{domain_id}",
+              domain_path: "#{domain_path}"
     """
   end
 
@@ -231,6 +239,12 @@ defmodule SelectoMix.LiveViewGenerator do
 
   defp query_contract_route_path(""), do: "/query-contract.json"
   defp query_contract_route_path(route_path), do: "/#{route_path}/query-contract.json"
+
+  defp query_guide_route_path(""), do: "/query-guide.md"
+  defp query_guide_route_path(route_path), do: "/#{route_path}/query-guide.md"
+
+  defp domain_route_path(""), do: "/"
+  defp domain_route_path(route_path), do: "/#{route_path}"
 
   defp singularize_table_name(table_name) do
     cond do

@@ -768,6 +768,10 @@ defmodule SelectoMixTest do
       assert result =~ ~s(forward "/reports/products/query-contract.json")
       assert result =~ "SelectoComponents.QueryContract.Plug"
       assert result =~ "domain: Shop.SelectoDomains.ProductDomain.domain()"
+      assert result =~ ~s(forward "/reports/products/query-guide.md")
+      assert result =~ "SelectoComponents.QueryContract.Guide.Plug"
+      assert result =~ ~s(domain_id: "product")
+      assert result =~ ~s(domain_path: "/reports/products")
     end
 
     test "renders form controller even when initially collapsed" do
