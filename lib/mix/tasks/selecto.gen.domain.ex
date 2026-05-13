@@ -4,8 +4,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   Generate Selecto domain configuration from Ecto schemas or database relations with Igniter support.
 
   This task automatically discovers Ecto schemas in your project and generates
-  corresponding Selecto domain configurations. It preserves user customizations
-  when re-run and supports incremental updates when database schemas change.
+  corresponding Selecto domain configurations. Generated base files are
+  regenerated intentionally; app-specific customizations belong in overlays.
 
   ## Examples
 
@@ -21,7 +21,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       # Generate with specific output directory
       mix selecto.gen.domain Blog.Post --output lib/blog/selecto_domains
 
-      # Force regenerate (overwrites customizations)
+      # Force regenerate the generated base file
       mix selecto.gen.domain Blog.Post --force
 
       # Expand associated schemas with full columns/associations
@@ -40,11 +40,12 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
      * `--all` - Generate domains for all discovered Ecto schemas
      * `--output` - Specify output directory (default: lib/APP_NAME/selecto_domains)
-     * `--force` - Overwrite existing domain files without merging customizations
+     * `--force` - Overwrite existing generated domain files
      * `--dry-run` - Show what would be generated without creating files
      * `--include-associations` - Include associations as joins (default: true)
      * `--exclude` - Comma-separated list of schemas to exclude
      * `--live` - Generate LiveView files for the domain
+     * `--studio-artifacts` - Generate a host-app Studio inspection provider module
      * `--saved-views` - Generate saved views implementation (requires --live)
      * `--expand-schemas` - Comma-separated list of associated schemas to fully expand with columns and associations
     * `--expand-tag` - Many-to-many tag mode: TableName:display_field (uses IDs, prevents denormalization)
@@ -68,25 +69,30 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   - `live/SCHEMA_NAME_live.ex` - LiveView module
   - `live/SCHEMA_NAME_live.html.heex` - LiveView template
 
+  With `--studio-artifacts` flag, additionally generates:
+  - `schemas/SCHEMA_NAME_domain_artifacts.ex` - trusted inspection provider
+    module for `SelectoStudio.DomainArtifacts` host-app registration
+
   With `--saved-views` flag, additionally generates:
   - SavedView schema and context modules (if not already present)
   - Saved views integration in the LiveView
 
-  ## Customization Preservation
+  ## Customization
 
-  When re-running the task, user customizations are preserved by:
-  - Detecting custom fields, filters, and joins
-  - Merging new schema fields with existing customizations
-  - Preserving custom domain metadata and configuration
-  - Backing up original files before major changes
-
-  The generated files include special markers that help identify
-  generated vs. customized sections.
+  Generated domain files are treated as generated code. Put app-specific
+  customizations in the generated overlay module so schema refreshes can
+  replace the base domain intentionally.
   """
 
   use Igniter.Mix.Task
 
-  alias SelectoMix.{AdapterResolver, Connection, ConnectionOpts, LiveViewGenerator}
+  alias SelectoMix.{
+    AdapterResolver,
+    Connection,
+    ConnectionOpts,
+    LiveViewGenerator,
+    StudioArtifactsGenerator
+  }
 
   @impl Igniter.Mix.Task
   def info(_argv, _composing_task) do
@@ -104,6 +110,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
           include_associations: :boolean,
           exclude: :string,
           live: :boolean,
+          studio_artifacts: :boolean,
           saved_views: :boolean,
           expand_schemas: :string,
           expand_tag: :keep,
@@ -187,6 +194,31 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         process_schemas(validated_igniter, schemas, updated_args)
       end
     end
+  end
+
+  @doc false
+  def artifact_guidance(
+        domain_module,
+        artifact_path,
+        docs_path \\ nil,
+        inspection_path \\ nil,
+        diagram_path \\ nil
+      ) do
+    docs_path = docs_path || default_docs_path(artifact_path)
+    inspection_path = inspection_path || default_inspection_path(artifact_path)
+    diagram_path = diagram_path || default_diagram_path(artifact_path)
+
+    """
+
+    Domain artifact follow-up:
+      mix selecto.domain.export #{domain_module} --output #{artifact_path}
+      mix selecto.domain.check #{artifact_path}
+      mix selecto.domain.import #{artifact_path} --check
+      mix selecto.domain.inspect #{artifact_path}
+      mix selecto.domain.describe #{artifact_path} --output #{inspection_path}
+      mix selecto.domain.diagram #{inspection_path} --output #{diagram_path}
+      mix selecto.domain.docs #{artifact_path} --output #{docs_path}
+    """
   end
 
   # Private functions
@@ -568,6 +600,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     Include associations: #{opts[:include_associations]}
     Force overwrite: #{opts[:force] || false}
     Generate LiveView: #{opts[:live] || false}
+    Generate Studio artifacts provider: #{opts[:studio_artifacts] || false}
     Generate Saved Views: #{opts[:saved_views] || false}
 
     Sources to process:
@@ -583,11 +616,15 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         app_name = output_app_name(opts)
         schema_name = LiveViewGenerator.source_live_name(schema) |> Macro.underscore()
 
-        live_file = "lib/#{app_name}_web/live/#{schema_name}_live.ex"
-        html_file = "lib/#{app_name}_web/live/#{schema_name}_live.html.heex"
+        live_file = "lib/#{app_name}_web/#{schema_name}_live.ex"
+        html_file = "lib/#{app_name}_web/#{schema_name}_live.html.heex"
 
         IO.puts("    → #{live_file}")
         IO.puts("    → #{html_file}")
+      end
+
+      if opts[:studio_artifacts] do
+        IO.puts("    → #{studio_artifacts_file_path(output_dir, schema)}")
       end
     end)
 
@@ -606,7 +643,9 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       |> ensure_directory_exists(output_dir)
       |> generate_domain_file(source, domain_file, opts)
       |> generate_overlay_file(source, domain_file, opts)
+      |> maybe_generate_studio_artifacts_file(source, output_dir, opts)
       |> add_success_message("Generated Selecto domain for #{display_source(source)}")
+      |> add_artifact_guidance(source, opts)
 
     # Generate LiveView files if requested
     if opts[:live] && ecto_source?(source) do
@@ -644,8 +683,21 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     |> Macro.underscore()
   end
 
+  defp source_display_name(source) do
+    source
+    |> LiveViewGenerator.source_live_name()
+    |> Macro.underscore()
+    |> String.replace("_", " ")
+    |> String.split()
+    |> Enum.map_join(" ", &String.capitalize/1)
+  end
+
   defp domain_file_path(output_dir, source) do
     Path.join([output_dir, "#{source_basename(source)}_domain.ex"])
+  end
+
+  defp studio_artifacts_file_path(output_dir, source) do
+    Path.join([output_dir, "#{source_basename(source)}_domain_artifacts.ex"])
   end
 
   defp ensure_directory_exists(igniter, dir_path) do
@@ -660,7 +712,6 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   end
 
   defp generate_domain_file(igniter, source, file_path, opts) do
-    existing_content = read_existing_domain_file(igniter, file_path)
     # Convert map opts to keyword list for SchemaIntrospector
     opts_list = Map.to_list(opts)
     domain_config = SelectoMix.SchemaIntrospector.introspect_schema(source, opts_list)
@@ -701,14 +752,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         config_with_modes
       end
 
-    merged_config =
-      if opts[:force] do
-        config_with_poly
-      else
-        SelectoMix.ConfigMerger.merge_with_existing(config_with_poly, existing_content)
-      end
-
-    merged_config = Map.put(merged_config, :adapter, domain_config[:adapter])
+    generated_config = Map.put(config_with_poly, :adapter, domain_config[:adapter])
 
     # Add schema_module to opts for saved views context inference
     app_name = Igniter.Project.Application.app_name(igniter) |> to_string() |> Macro.camelize()
@@ -719,15 +763,22 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       |> Map.put(:app_name, app_name)
 
     content =
-      SelectoMix.DomainGenerator.generate_domain_file(source, merged_config, opts_with_schema)
+      SelectoMix.DomainGenerator.generate_domain_file(source, generated_config, opts_with_schema)
 
-    # For now, delete the existing file and create a new one
-    # This is a workaround until we figure out the proper Igniter API
-    if opts[:force] && File.exists?(file_path) do
-      File.rm!(file_path)
+    cond do
+      File.exists?(file_path) && !opts[:force] ->
+        Igniter.add_warning(
+          igniter,
+          "Domain file already exists at #{file_path}; not overwriting. Move customizations to the overlay and rerun with --force to regenerate the base domain."
+        )
+
+      true ->
+        if opts[:force] && File.exists?(file_path) do
+          File.rm!(file_path)
+        end
+
+        Igniter.create_new_file(igniter, file_path, content)
     end
-
-    Igniter.create_new_file(igniter, file_path, content)
   end
 
   # defp generate_queries_file(igniter, schema, file_path, opts) do
@@ -777,11 +828,34 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     end
   end
 
-  defp read_existing_domain_file(_igniter, file_path) do
-    case File.read(file_path) do
-      {:ok, content} -> content
-      {:error, :enoent} -> nil
-      {:error, _reason} -> nil
+  defp maybe_generate_studio_artifacts_file(igniter, _source, _output_dir, opts)
+       when not is_map_key(opts, :studio_artifacts),
+       do: igniter
+
+  defp maybe_generate_studio_artifacts_file(igniter, _source, _output_dir, %{
+         studio_artifacts: false
+       }),
+       do: igniter
+
+  defp maybe_generate_studio_artifacts_file(igniter, source, output_dir, opts) do
+    file_path = studio_artifacts_file_path(output_dir, source)
+
+    cond do
+      File.exists?(file_path) and not opts[:force] ->
+        igniter
+        |> add_success_message("Studio artifacts provider already exists at #{file_path}")
+        |> add_studio_artifacts_guidance(source, opts)
+
+      true ->
+        if opts[:force] && File.exists?(file_path), do: File.rm!(file_path)
+
+        domain_module = domain_module_for_source(igniter, source, opts)
+        content = StudioArtifactsGenerator.provider_module(domain_module)
+
+        igniter
+        |> Igniter.create_new_file(file_path, content)
+        |> add_success_message("Generated Studio artifacts provider at #{file_path}")
+        |> add_studio_artifacts_guidance(source, opts)
     end
   end
 
@@ -1051,11 +1125,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
   defp render_live_view_template(igniter, source, opts) do
     app_name = Igniter.Project.Application.app_name(igniter) |> to_string() |> Macro.camelize()
-
-    domain_config = SelectoMix.SchemaIntrospector.introspect_schema(source, Map.to_list(opts))
-
-    domain_module =
-      SelectoMix.DomainGenerator.domain_module_name(source, domain_config, app_name: app_name)
+    domain_module = domain_module_for_source(igniter, source, opts)
 
     LiveViewGenerator.render_live_view_template(
       app_name,
@@ -1072,7 +1142,76 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     |> Macro.underscore()
   end
 
+  defp domain_module_for_source(igniter, source, opts) do
+    app_name = Igniter.Project.Application.app_name(igniter) |> to_string() |> Macro.camelize()
+    domain_config = SelectoMix.SchemaIntrospector.introspect_schema(source, Map.to_list(opts))
+
+    SelectoMix.DomainGenerator.domain_module_name(source, domain_config, app_name: app_name)
+  end
+
+  defp add_artifact_guidance(igniter, source, opts) do
+    domain_module = domain_module_for_source(igniter, source, opts)
+    artifact_path = domain_artifact_path(source)
+    docs_path = domain_docs_path(source)
+    inspection_path = domain_inspection_path(source)
+    diagram_path = domain_diagram_path(source)
+
+    Igniter.add_notice(
+      igniter,
+      artifact_guidance(domain_module, artifact_path, docs_path, inspection_path, diagram_path)
+    )
+  end
+
+  defp add_studio_artifacts_guidance(igniter, source, opts) do
+    domain_module = domain_module_for_source(igniter, source, opts)
+    artifact_module = StudioArtifactsGenerator.artifact_module_name(domain_module)
+
+    Igniter.add_notice(
+      igniter,
+      StudioArtifactsGenerator.integration_guidance(
+        domain_id: source_basename(source),
+        domain_name: source_display_name(source),
+        artifact_module: artifact_module
+      )
+    )
+  end
+
+  defp domain_artifact_path(source) do
+    Path.join(["priv", "selecto", "#{source_basename(source)}.normalized.json"])
+  end
+
+  defp domain_docs_path(source) do
+    Path.join(["docs", "selecto", "#{source_basename(source)}.md"])
+  end
+
+  defp domain_inspection_path(source) do
+    Path.join(["priv", "selecto", "#{source_basename(source)}.inspection.json"])
+  end
+
+  defp domain_diagram_path(source) do
+    Path.join(["docs", "selecto", "#{source_basename(source)}.diagram.mmd"])
+  end
+
+  defp default_docs_path(artifact_path) do
+    artifact_name = Path.basename(artifact_path, ".normalized.json")
+    Path.join(["docs", "selecto", "#{artifact_name}.md"])
+  end
+
+  defp default_inspection_path(artifact_path) do
+    artifact_name = Path.basename(artifact_path, ".normalized.json")
+    Path.join(["priv", "selecto", "#{artifact_name}.inspection.json"])
+  end
+
+  defp default_diagram_path(artifact_path) do
+    artifact_name = Path.basename(artifact_path, ".normalized.json")
+    Path.join(["docs", "selecto", "#{artifact_name}.diagram.mmd"])
+  end
+
   defp add_route_suggestion(igniter, source, opts) do
+    domain_module = domain_module_for_source(igniter, source, opts)
+
+    opts = Map.put(opts, :domain_module, domain_module)
+
     Igniter.add_notice(igniter, LiveViewGenerator.route_suggestion(source, opts))
   end
 

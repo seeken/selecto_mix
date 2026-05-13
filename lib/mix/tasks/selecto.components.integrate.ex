@@ -179,12 +179,9 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
 
     case File.read(app_js_path) do
       {:ok, content} ->
-        has_legacy_hook_setup = stale_selecto_hook_setup?(content)
-
         cond do
           String.contains?(content, "phoenix-colocated/selecto_components") &&
             String.contains?(content, "...selectoComponentsHooks") &&
-            !has_legacy_hook_setup &&
               !opts[:force] ->
             if opts[:check] do
               :already_configured
@@ -267,19 +264,8 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
 
   defp patch_app_js(content) do
     content
-    |> normalize_legacy_selecto_hooks_import()
-    |> remove_local_selecto_hooks_import()
-    |> remove_tree_builder_hook_import()
     |> add_import_to_js()
     |> add_hooks_to_livesocket()
-  end
-
-  defp normalize_legacy_selecto_hooks_import(content) do
-    String.replace(
-      content,
-      ~r/import\s+selectoHooks\s+from\s+["']\.\.\/\.\.\/(?:vendor|deps)\/selecto_components\/assets\/js\/hooks["'];?/,
-      "import {hooks as selectoComponentsHooks} from \"phoenix-colocated/selecto_components\""
-    )
   end
 
   defp add_import_to_js(content) do
@@ -383,23 +369,10 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
     end
   end
 
-  defp remove_local_selecto_hooks_import(content) do
-    Regex.replace(
-      ~r/^\s*import\s+selectoHooks\s+from\s+["']\.\/selecto_hooks["'];?\s*\n/m,
-      content,
-      ""
-    )
-  end
-
-  defp remove_tree_builder_hook_import(content) do
-    Regex.replace(~r/^\s*import\s+TreeBuilderHook\s+from\s+[^\n]+\n/m, content, "")
-  end
-
   defp add_hooks_to_livesocket(content) do
     cond do
       String.contains?(content, "hooks:") &&
-        String.contains?(content, "...selectoComponentsHooks") &&
-          !stale_selecto_hook_setup?(content) ->
+          String.contains?(content, "...selectoComponentsHooks") ->
         # Already fully configured
         content
 
@@ -452,22 +425,12 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
 
   defp sanitize_livesocket_hooks(hooks_body) do
     hooks_body
-    |> String.replace(~r/\bTreeBuilder\s*:\s*TreeBuilderHook\s*,?\s*/, "")
-    |> String.replace(~r/\.\.\.selectoHooks\s*,?\s*/, "")
     |> String.replace(~r/\s+,/, ",")
     |> String.replace(~r/,\s*,+/, ", ")
     |> String.trim()
     |> String.trim_leading(",")
     |> String.trim_trailing(",")
     |> String.trim()
-  end
-
-  defp stale_selecto_hook_setup?(content) do
-    String.contains?(content, "/selecto_components/assets/js/hooks") ||
-      String.contains?(content, "./selecto_hooks") ||
-      String.contains?(content, "...selectoHooks") ||
-      String.contains?(content, "TreeBuilderHook") ||
-      String.contains?(content, "TreeBuilder: TreeBuilderHook")
   end
 
   defp get_selecto_components_path() do

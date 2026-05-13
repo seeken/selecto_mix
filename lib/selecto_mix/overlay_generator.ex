@@ -27,6 +27,8 @@ defmodule SelectoMix.OverlayGenerator do
     redaction_example = generate_redaction_example(config)
     jsonb_examples = generate_jsonb_schema_examples(config)
     query_member_examples = generate_query_member_examples_dsl()
+    choice_source_examples = generate_choice_source_examples_dsl(config)
+    write_contract_examples = generate_write_contract_examples_dsl(config)
 
     """
     defmodule #{overlay_module_name} do
@@ -45,6 +47,8 @@ defmodule SelectoMix.OverlayGenerator do
        - Register named UDFs with `deffunction`
        - Define JSONB schemas for structured data columns
        - Define named query members (CTE/VALUES/subquery/LATERAL/UNNEST presets)
+       - Bind fields to choice sources with resolver constraint policies
+       - Define write contracts, actions, and capabilities for Updato/tooling
        - Add domain-specific validations (future)
       - Configure custom transformations (future)
 
@@ -120,6 +124,40 @@ defmodule SelectoMix.OverlayGenerator do
             ordinality "tag_position"
           end
 
+          # Choice-source metadata for async pickers and membership validation
+          defsource_relationship(:customer, %{
+            target_domain: :customers,
+            source_field: :customer_id,
+            target_field: :id,
+            source_path: "customer"
+          })
+
+          defchoice_source(:customer_choices, %{
+            domain: :customers,
+            value_field: :id,
+            label_field: :name,
+            source_relationship: :customer,
+            constraint_policy: %{domain_of_interest: :fail_closed},
+            presentation: %{control: :autocomplete, mode: :async, cardinality: :one}
+          })
+
+          # Write contract metadata
+          defwrite_operation :update do
+            enabled true
+            require_filter true
+            returning :record
+          end
+
+          defwrite_field :name do
+            insertable true
+            updatable true
+            required_on [:insert]
+          end
+
+          defcapability "entity.write" do
+            operations [:insert, :update]
+          end
+
       ## How It Works
 
       The DSL compiles into an overlay configuration map that is merged with the
@@ -147,6 +185,8 @@ defmodule SelectoMix.OverlayGenerator do
       # Uncomment and register domain UDFs
     #{function_examples}
     #{query_member_examples}
+    #{choice_source_examples}
+    #{write_contract_examples}
     #{jsonb_examples}
     end
     """
@@ -409,6 +449,122 @@ defmodule SelectoMix.OverlayGenerator do
       # end
     """
     |> String.trim_trailing()
+  end
+
+  defp generate_write_contract_examples_dsl(config) do
+    field_name =
+      config
+      |> extract_columns()
+      |> writable_example_field()
+
+    """
+
+      # Optional write contract metadata (projected by SelectoUpdato.DomainContract)
+      # defwrite_operation :insert do
+      #   enabled true
+      #   returning :record
+      # end
+
+      # defwrite_operation :update do
+      #   enabled true
+      #   require_filter true
+      #   returning :record
+      # end
+
+      # defwrite_field :#{field_name} do
+      #   insertable true
+      #   updatable true
+      #   required_on [:insert]
+      # end
+
+      # defcapability "entity.write" do
+      #   operations [:insert, :update]
+      # end
+    """
+    |> String.trim_trailing()
+  end
+
+  defp generate_choice_source_examples_dsl(config) do
+    source_field = choice_source_example_field(config)
+    relationship_id = choice_source_relationship_id(source_field)
+    choice_source_id = :"#{relationship_id}_choices"
+    target_domain = :"#{relationship_id}s"
+    source_path = to_string(relationship_id)
+
+    """
+
+      # Optional choice-source metadata for async pickers and membership validation
+      # Keep tenant/actor/filter scope server-owned in your resolver. If a trusted
+      # Domain-of-Interest filter cannot be enforced, `:fail_closed` lets the
+      # resolver return a closed result instead of a partial option set.
+      # defcolumn :#{source_field} do
+      #   choice_source :#{choice_source_id}
+      #   reference %{
+      #     choice_source: :#{choice_source_id},
+      #     value_source: "#{source_path}.id",
+      #     caption_source: "#{source_path}.name"
+      #   }
+      # end
+
+      # defsource_relationship(:#{relationship_id}, %{
+      #   target_domain: :#{target_domain},
+      #   source_field: :#{source_field},
+      #   target_field: :id,
+      #   source_path: "#{source_path}"
+      # })
+
+      # defchoice_source(:#{choice_source_id}, %{
+      #   domain: :#{target_domain},
+      #   value_field: :id,
+      #   label_field: :name,
+      #   source_relationship: :#{relationship_id},
+      #   constraint_policy: %{domain_of_interest: :fail_closed},
+      #   presentation: %{control: :autocomplete, mode: :async, cardinality: :one}
+      # })
+    """
+    |> String.trim_trailing()
+  end
+
+  defp choice_source_example_field(config) do
+    config
+    |> extract_columns()
+    |> Enum.map(fn {field_name, _column_config} -> field_name end)
+    |> Enum.find(&foreign_key_field?/1) ||
+      :related_id
+  end
+
+  defp foreign_key_field?(field_name) do
+    field_name = to_string(field_name)
+    field_name != "id" and String.ends_with?(field_name, "_id")
+  end
+
+  defp choice_source_relationship_id(field_name) do
+    field_name
+    |> to_string()
+    |> String.replace_suffix("_id", "")
+    |> case do
+      "" -> "related"
+      value -> value
+    end
+    |> String.to_atom()
+  end
+
+  defp writable_example_field(columns) do
+    fields =
+      columns
+      |> Enum.reject(fn {field_name, _column_config} ->
+        to_string(field_name) in ["id", "inserted_at", "updated_at"]
+      end)
+
+    Enum.find_value(fields, fn {field_name, column_config} ->
+      if Map.get(column_config, :type) == :string, do: field_name
+    end) ||
+      fields
+      |> List.first()
+      |> case do
+        {field_name, _column_config} -> field_name
+        nil -> :field_name
+      end
   end
 
   defp humanize(atom_or_string) do

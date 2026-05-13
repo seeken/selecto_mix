@@ -217,7 +217,7 @@ defmodule SelectoMixTest do
     @primary_key {:public_id, :binary_id, autogenerate: false}
 
     schema "uuid_records" do
-      field(:legacy_uuid, Ecto.UUID)
+      field(:external_uuid, Ecto.UUID)
       field(:name, :string)
     end
   end
@@ -226,12 +226,12 @@ defmodule SelectoMixTest do
 
   alias SelectoMix.{
     AdapterResolver,
-    ConfigMerger,
     ConnectionOpts,
     DomainGenerator,
     LiveViewGenerator,
     OverlayGenerator,
-    SchemaIntrospector
+    SchemaIntrospector,
+    StudioArtifactsGenerator
   }
 
   describe "SelectoMix basic functionality" do
@@ -275,78 +275,7 @@ defmodule SelectoMixTest do
 
       assert config.primary_key == :public_id
       assert config.field_types.public_id == :binary_id
-      assert config.field_types.legacy_uuid == :uuid
-    end
-  end
-
-  describe "ConfigMerger" do
-    test "merge_with_existing/2 with nil existing content" do
-      new_config = %{schema_module: TestSchema, fields: [:id, :name]}
-      result = ConfigMerger.merge_with_existing(new_config, nil)
-
-      assert result == new_config
-    end
-
-    test "merge_with_existing/2 with existing content" do
-      new_config = %{schema_module: TestSchema, fields: [:id, :name, :email]}
-
-      existing_content = """
-      defmodule TestDomain do
-        def domain do
-          %{
-            source: %{
-              fields: [:id, :name] # CUSTOM: added custom field
-            }
-          }
-        end
-      end
-      """
-
-      result = ConfigMerger.merge_with_existing(new_config, existing_content)
-
-      # Should preserve customizations
-      assert Map.has_key?(result, :preserve_existing)
-    end
-
-    test "detect_customizations/1 finds custom markers" do
-      content_with_custom = "field: :test # CUSTOM"
-      content_without_custom = "field: :test"
-
-      # Test through parse_existing_config since detect_customizations is private
-      result1 = ConfigMerger.parse_existing_config(content_with_custom)
-      result2 = ConfigMerger.parse_existing_config(content_without_custom)
-
-      assert result1[:has_customizations] == true
-      assert result2[:has_customizations] == false
-    end
-
-    test "parse_existing_config/1 preserves base-domain function registries" do
-      existing_content = """
-      defmodule TestDomain do
-        def base_domain do
-          %{
-            name: "Test",
-            functions: %{
-              "similarity" => %{
-                kind: :scalar,
-                sql_name: "public.similarity",
-                args: [
-                  %{name: :left, type: :string, source: :selector},
-                  %{name: :right, type: :string, source: :value}
-                ],
-                returns: :float,
-                allowed_in: [:select, :order_by]
-              }
-            }
-          }
-        end
-      end
-      """
-
-      parsed = ConfigMerger.parse_existing_config(existing_content)
-
-      assert parsed[:custom_functions] =~ "similarity"
-      assert parsed[:custom_functions] =~ "public.similarity"
+      assert config.field_types.external_uuid == :uuid
     end
   end
 
@@ -401,6 +330,9 @@ defmodule SelectoMixTest do
 
       assert is_binary(result)
       assert String.contains?(result, "source:")
+      assert String.contains?(result, "schema_version: 1")
+      assert String.contains?(result, "domain_version: \"0.1.0\"")
+      assert String.contains?(result, "# domain_fingerprint: \"sha256:...\"")
       assert String.contains?(result, "source_table: \"tests\"")
       assert String.contains?(result, "primary_key: :id")
       assert String.contains?(result, "functions: %{}")
@@ -435,8 +367,8 @@ defmodule SelectoMixTest do
         schema_module: UuidSchema,
         table_name: "uuid_records",
         primary_key: :public_id,
-        fields: [:public_id, :legacy_uuid, :name],
-        field_types: %{public_id: :binary_id, legacy_uuid: :uuid, name: :string},
+        fields: [:public_id, :external_uuid, :name],
+        field_types: %{public_id: :binary_id, external_uuid: :uuid, name: :string},
         associations: %{},
         suggested_defaults: %{
           default_selected: [:name],
@@ -450,10 +382,10 @@ defmodule SelectoMixTest do
 
       assert String.contains?(result, "primary_key: :public_id")
       assert String.contains?(result, ":public_id => %{type: :binary_id}")
-      assert String.contains?(result, ":legacy_uuid => %{type: :uuid}")
+      assert String.contains?(result, ":external_uuid => %{type: :uuid}")
     end
 
-    test "generate_domain_map/1 preserves custom function registries on regeneration" do
+    test "generate_domain_map/1 ignores pre-0.5 in-file custom marker payloads" do
       config = %{
         schema_module: TestSchema,
         table_name: "tests",
@@ -467,7 +399,8 @@ defmodule SelectoMixTest do
           default_order: []
         },
         metadata: %{module_name: "Test"},
-        preserved_customizations: %{
+        functions: %{"rank" => %{kind: :scalar, sql_name: "rank"}},
+        stale_in_file_customizations: %{
           custom_functions:
             "%{\n        \"similarity\" => %{kind: :scalar, sql_name: \"public.similarity\"}\n      }"
         }
@@ -476,8 +409,8 @@ defmodule SelectoMixTest do
       result = DomainGenerator.generate_domain_map(config)
 
       assert String.contains?(result, "functions: %{")
-      assert String.contains?(result, "public.similarity")
-      assert String.contains?(result, "# CUSTOM")
+      assert String.contains?(result, "rank")
+      refute String.contains?(result, "public.similarity")
     end
 
     test "generate_domain_map/1 emits many-to-many join table metadata" do
@@ -590,6 +523,30 @@ defmodule SelectoMixTest do
   end
 
   describe "adapter-backed helpers" do
+    test "gen.domain artifact guidance points to export check and inspect loop" do
+      guidance =
+        Mix.Tasks.Selecto.Gen.Domain.artifact_guidance(
+          "Shop.SelectoDomains.ProductDomain",
+          "priv/selecto/product.normalized.json"
+        )
+
+      assert guidance =~
+               "mix selecto.domain.export Shop.SelectoDomains.ProductDomain --output priv/selecto/product.normalized.json"
+
+      assert guidance =~ "mix selecto.domain.check priv/selecto/product.normalized.json"
+      assert guidance =~ "mix selecto.domain.import priv/selecto/product.normalized.json --check"
+      assert guidance =~ "mix selecto.domain.inspect priv/selecto/product.normalized.json"
+
+      assert guidance =~
+               "mix selecto.domain.describe priv/selecto/product.normalized.json --output priv/selecto/product.inspection.json"
+
+      assert guidance =~
+               "mix selecto.domain.diagram priv/selecto/product.inspection.json --output docs/selecto/product.diagram.mmd"
+
+      assert guidance =~
+               "mix selecto.domain.docs priv/selecto/product.normalized.json --output docs/selecto/product.md"
+    end
+
     test "adapter resolver accepts short adapter names" do
       assert {:ok, SelectoDBPostgreSQL.Adapter} = AdapterResolver.resolve("postgresql")
     end
@@ -746,6 +703,116 @@ defmodule SelectoMixTest do
       assert result =~ "# defcolumn :price do"
       assert result =~ "# deffilter \"active\" do"
       assert result =~ "# deffunction \"similarity\" do"
+      assert result =~ "# defchoice_source(:related_choices, %{"
+      assert result =~ "#   constraint_policy: %{domain_of_interest: :fail_closed}"
+      assert result =~ "# defwrite_operation :insert do"
+      assert result =~ "# defwrite_field :name do"
+      assert result =~ "# defcapability \"entity.write\" do"
+    end
+  end
+
+  describe "StudioArtifactsGenerator" do
+    test "gen.domain --studio-artifacts creates a provider module that compiles" do
+      suffix = System.unique_integer([:positive])
+      schema_module = Module.concat([__MODULE__, "GeneratedStudioProduct#{suffix}"])
+
+      Code.compile_string("""
+      defmodule #{inspect(schema_module)} do
+        use Ecto.Schema
+
+        schema "generated_studio_products_#{suffix}" do
+          field :name, :string
+          field :active, :boolean
+        end
+      end
+      """)
+
+      source_basename =
+        schema_module
+        |> Module.split()
+        |> List.last()
+        |> Macro.underscore()
+
+      output_dir = "lib/shop/selecto_domains"
+      provider_path = Path.join(output_dir, "#{source_basename}_domain_artifacts.ex")
+      domain_path = Path.join(output_dir, "#{source_basename}_domain.ex")
+
+      Mix.Task.reenable("selecto.gen.domain")
+
+      igniter =
+        Igniter.Test.test_project(app_name: :shop)
+        |> Igniter.compose_task("selecto.gen.domain", [
+          inspect(schema_module),
+          "--output",
+          output_dir,
+          "--studio-artifacts"
+        ])
+
+      assert igniter.issues == []
+      Igniter.Test.assert_creates(igniter, domain_path)
+      Igniter.Test.assert_creates(igniter, provider_path)
+
+      provider_source =
+        igniter.rewrite
+        |> Rewrite.source!(provider_path)
+        |> Rewrite.Source.get(:content)
+
+      expected_module =
+        Module.concat([
+          "Shop.SelectoDomains.GeneratedStudioProduct#{suffix}DomainArtifacts"
+        ])
+
+      {compiled, _diagnostics} =
+        Code.with_diagnostics(fn ->
+          Code.compile_string(provider_source)
+        end)
+
+      assert provider_source =~ "Selecto.Domain.normalize(@domain_module.domain())"
+      assert provider_source =~ "Selecto.Domain.describe(normalized)"
+      assert provider_source =~ ~s("domain_version")
+      assert provider_source =~ ~s("domain_fingerprint")
+      assert Keyword.has_key?(compiled, expected_module)
+
+      Igniter.Test.assert_has_notice(igniter, fn notice ->
+        notice =~ "config :selecto_studio, :domain_artifacts" and
+          notice =~ "SelectoStudioWeb.DomainInspectionController"
+      end)
+    end
+
+    test "renders a core Selecto inspection provider module" do
+      result =
+        StudioArtifactsGenerator.provider_module("Shop.SelectoDomains.ProductDomain")
+
+      assert result =~ "defmodule Shop.SelectoDomains.ProductDomainArtifacts"
+      assert result =~ "@domain_module Shop.SelectoDomains.ProductDomain"
+      assert result =~ "Selecto.Domain.normalize(@domain_module.domain())"
+      assert result =~ "Selecto.Domain.describe(normalized)"
+      assert result =~ ~s("format" => "selecto.domain_inspection")
+      assert result =~ ~s("domain_version")
+      assert result =~ ~s("domain_fingerprint")
+      assert result =~ "Map.from_struct()"
+      refute result =~ "SelectoStudio.DomainInspection"
+      refute result =~ "SelectoStudioWeb."
+    end
+
+    test "renders Studio registry and router guidance for host apps" do
+      result =
+        StudioArtifactsGenerator.integration_guidance(
+          domain_id: "product",
+          domain_name: "Product",
+          artifact_module: "Shop.SelectoDomains.ProductDomainArtifacts"
+        )
+
+      assert result =~ "config :selecto_studio, :domain_artifacts"
+      assert result =~ ~s(default: "product")
+      assert result =~ ~s(id: "product")
+
+      assert result =~
+               "inspection: {Shop.SelectoDomains.ProductDomainArtifacts, :inspection_artifact, []}"
+
+      assert result =~ ~s(get "/studio/domain-inspection")
+      assert result =~ ~s(get "/studio/domain-inspection/:domain_id")
+      assert result =~ ~s(post "/studio/domain-inspection")
     end
   end
 
@@ -765,7 +832,13 @@ defmodule SelectoMixTest do
       assert String.contains?(result, "defmodule ShopWeb.ProductLive")
       assert String.contains?(result, "Selecto.configure(domain, Shop.Database)")
       assert String.contains?(result, "alias SelectoComponents.Views")
-      refute String.contains?(result, "def handle_event(\"toggle_show_view_configurator\"")
+      assert String.contains?(result, "choice_source_domain: domain")
+      assert String.contains?(result, "choice_source_transport: :live")
+
+      assert String.contains?(
+               result,
+               "choice_source_context: %{surface: :generated_live_view, path: path}"
+             )
 
       assert String.contains?(
                result,
@@ -777,6 +850,8 @@ defmodule SelectoMixTest do
                "Extension-provided views such as `:map` or `:timeseries` are merged in"
              )
 
+      refute String.contains?(result, "def render(assigns)")
+      refute String.contains?(result, ~S(def handle_event("toggle_show_view_configurator"))
       refute String.contains?(result, "Shop.Repo")
     end
 
@@ -784,10 +859,52 @@ defmodule SelectoMixTest do
       source = {:db, SelectoDBPostgreSQL.Adapter, :fake_conn, "order_items", schema: "public"}
 
       assert LiveViewGenerator.live_view_file_path("shop", source) ==
-               "lib/shop_web/live/order_item_live.ex"
+               "lib/shop_web/order_item_live.ex"
 
       assert LiveViewGenerator.live_view_html_file_path("shop", source) ==
-               "lib/shop_web/live/order_item_live.html.heex"
+               "lib/shop_web/order_item_live.html.heex"
+    end
+
+    test "renders router snippet with query contract endpoint" do
+      source = {:db, SelectoDBPostgreSQL.Adapter, :fake_conn, "products", schema: "public"}
+
+      result =
+        LiveViewGenerator.route_suggestion(source,
+          path: "/reports/products",
+          domain_module: "Shop.SelectoDomains.ProductDomain"
+        )
+
+      assert result =~ "Add these routes to your router.ex:"
+      assert result =~ ~s(live "/reports/products", ProductLive, :index)
+      assert result =~ ~s(forward "/reports/products/query-contract.json")
+      assert result =~ "SelectoComponents.QueryContract.Plug"
+      assert result =~ "domain: Shop.SelectoDomains.ProductDomain.domain()"
+      assert result =~ ~s(domain_path: "/reports/products")
+      assert result =~ ~s(query_contract_url: "/reports/products/query-contract.json")
+      assert result =~ ~s(query_guide_url: "/reports/products/query-guide.md")
+      assert result =~ ~s(forward "/reports/products/query-guide.md")
+      assert result =~ "SelectoComponents.QueryContract.Guide.Plug"
+      assert result =~ ~s(domain_id: "product")
+      assert result =~ ~s(forward "/reports/products/query-intent/validate")
+      assert result =~ "SelectoComponents.QueryContract.IntentValidator.Plug"
+    end
+
+    test "renders form controller even when initially collapsed" do
+      source = {:db, SelectoDBPostgreSQL.Adapter, :fake_conn, "products", schema: "public"}
+
+      result =
+        LiveViewGenerator.render_live_view_html_template(source,
+          enable_modal: true,
+          saved_views: true
+        )
+
+      refute String.contains?(result, ~S(<div :if={@show_view_configurator}>))
+      assert String.contains?(result, "show_view_configurator={@show_view_configurator}")
+      assert String.contains?(result, "enable_modal_detail={true}\n")
+      assert String.contains?(result, "saved_view_module={@saved_view_module}")
+      assert String.contains?(result, "choice_source_domain={@choice_source_domain}")
+      assert String.contains?(result, "choice_source_context={@choice_source_context}")
+      assert String.contains?(result, "choice_source_transport={@choice_source_transport}")
     end
   end
 
@@ -812,12 +929,8 @@ defmodule SelectoMixTest do
         }
       }
 
-      # Step 1: Merge with existing (none in this case)
-      merged_config = ConfigMerger.merge_with_existing(config, nil)
-      assert merged_config == config
-
-      # Step 2: Generate domain file
-      domain_content = DomainGenerator.generate_domain_file(TestSchema, merged_config)
+      # Generate domain file
+      domain_content = DomainGenerator.generate_domain_file(TestSchema, config)
       assert is_binary(domain_content)
       assert String.contains?(domain_content, "defmodule")
 

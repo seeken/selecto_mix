@@ -4,7 +4,7 @@ defmodule SelectoMix.DomainGenerator do
 
   This module creates complete, functional Selecto domain files that users
   can immediately use in their applications. The generated files include
-  helpful comments, customization markers, and suggested configurations.
+  helpful comments, overlay hooks, and suggested configurations.
   """
 
   @doc """
@@ -14,7 +14,7 @@ defmodule SelectoMix.DomainGenerator do
   - Schema-based field and type definitions
   - Association configurations for joins
   - Suggested default selections and filters
-  - Customization markers for user modifications
+  - Overlay hooks for user modifications
   - Documentation and usage examples
   """
   def generate_domain_file(schema_module, config, opts \\ []) do
@@ -45,20 +45,15 @@ defmodule SelectoMix.DomainGenerator do
       - Customize column display properties (labels, formats, aggregations)
       - Add redaction to sensitive fields
       - Define custom filters
+      - Define write contracts, actions, and capabilities
       - Add domain-specific validations (future)
 
-      Your overlay customizations are preserved when you regenerate this file.
+      Overlay customizations are preserved when you regenerate this file.
 
       ## Usage
 
       #{usage_examples}
 
-      ## Legacy Customization (Deprecated)
-
-      Fields, filters, and joins marked with "# CUSTOM" comments will still be
-      preserved when this file is regenerated, but we recommend using the
-      overlay file instead for a cleaner separation of generated vs. custom code.
-      
       ## Parameterized Joins
       
       This domain supports parameterized joins that accept runtime parameters:
@@ -92,7 +87,7 @@ defmodule SelectoMix.DomainGenerator do
           
       Additional options:
       
-          # Force regenerate (overwrites customizations)
+          # Force regenerate the generated base file
           #{regeneration_command} --force
           
           # Preview changes without writing files
@@ -110,7 +105,8 @@ defmodule SelectoMix.DomainGenerator do
           # Expand specific associated schemas with full columns/associations
           #{regeneration_command} --expand-schemas categories,tags
           
-      Your customizations will be preserved during regeneration (unless --force is used).
+      Keep app-specific customizations in the overlay module so regeneration can
+      replace this generated base file intentionally.
       \"\"\"
     #{saved_views_use}
       @doc \"\"\"
@@ -160,12 +156,15 @@ defmodule SelectoMix.DomainGenerator do
   Generate the core domain configuration map.
   """
   def generate_domain_map(config) do
-    timestamp = DateTime.utc_now() |> DateTime.to_iso8601()
-    custom_metadata = generate_custom_metadata(config)
     generated_from = generated_from_label(config)
 
     "%{\n      # Generated from: #{generated_from}\n" <>
-      "      # Last updated: #{timestamp}\n      \n" <>
+      "      # Canonical Selecto domain schema version\n" <>
+      "      schema_version: 1,\n      \n" <>
+      "      # Authored domain version; update when this domain contract changes meaning\n" <>
+      "      domain_version: \"0.1.0\",\n      \n" <>
+      "      # Optional content fingerprint; populate from a stable artifact hash when available\n" <>
+      "      # domain_fingerprint: \"sha256:...\",\n      \n" <>
       "      source: #{generate_source_config(config)},\n" <>
       "      schemas: #{generate_schemas_config(config)},\n" <>
       "      name: #{generate_domain_name(config)},\n      \n" <>
@@ -187,7 +186,7 @@ defmodule SelectoMix.DomainGenerator do
       "      # Retarget table configuration (Selecto 0.3.0+)\n" <>
       "      retarget: #{generate_retarget_config(config)},\n      \n" <>
       "      # Join configurations\n" <>
-      "      joins: #{generate_joins_config(config)}#{custom_metadata}\n    }"
+      "      joins: #{generate_joins_config(config)}\n    }"
   end
 
   # Private generation functions
@@ -320,6 +319,7 @@ defmodule SelectoMix.DomainGenerator do
     # Format the map with nice indentation
     formatted_columns =
       all_columns
+      |> sorted_pairs()
       |> Enum.map(fn {field, type_map} ->
         "          #{inspect(field)} => #{inspect(type_map)}"
       end)
@@ -391,6 +391,7 @@ defmodule SelectoMix.DomainGenerator do
         # Format with nice indentation and helpful comments
         formatted_columns =
           columns_map
+          |> sorted_pairs()
           |> Enum.map(fn {field, config_map} ->
             comment =
               if field == display_field_atom do
@@ -420,6 +421,7 @@ defmodule SelectoMix.DomainGenerator do
     else
       formatted_assocs =
         associations
+        |> sorted_pairs()
         |> Enum.map(fn {assoc_name, assoc_config} ->
           format_association_config(assoc_name, assoc_config)
         end)
@@ -520,7 +522,9 @@ defmodule SelectoMix.DomainGenerator do
     expanded_schemas = config[:expanded_schemas] || %{}
 
     {schema_order, schema_candidates} =
-      Enum.reduce(associations, {[], %{}}, fn {assoc_name, assoc_config}, {order, candidates} ->
+      associations
+      |> sorted_pairs()
+      |> Enum.reduce({[], %{}}, fn {assoc_name, assoc_config}, {order, candidates} ->
         candidate =
           build_schema_config_candidate(
             assoc_name,
@@ -672,7 +676,9 @@ defmodule SelectoMix.DomainGenerator do
     schema_name_lower = String.downcase(schema_name_str)
 
     # Try multiple matching strategies
-    Enum.find_value(expand_modes, fn {key, value} ->
+    expand_modes
+    |> sorted_pairs()
+    |> Enum.find_value(fn {key, value} ->
       key_lower = String.downcase(key)
 
       cond do
@@ -930,6 +936,7 @@ defmodule SelectoMix.DomainGenerator do
     else
       formatted_assocs =
         associations
+        |> sorted_pairs()
         |> Enum.map(fn {assoc_name, assoc_config} ->
           # Ensure all values are properly inspected for valid Elixir syntax
           queryable_name = assoc_config[:queryable] |> inspect()
@@ -974,55 +981,34 @@ defmodule SelectoMix.DomainGenerator do
   defp guess_table_name(_), do: "unknown_table"
 
   defp generate_domain_name(config) do
-    custom_name = get_in(config, [:preserved_customizations, :custom_metadata, :custom_name])
-
-    case custom_name do
-      nil ->
-        base_name = config[:metadata][:module_name] || "Unknown"
-        inspect("#{base_name} Domain")
-
-      name ->
-        inspect(name) <> " # CUSTOM"
-    end
+    base_name = config[:metadata][:module_name] || "Unknown"
+    inspect("#{base_name} Domain")
   end
 
   defp generate_default_selected(config) do
-    suggested_defaults = config[:suggested_defaults][:default_selected] || []
-
-    custom_defaults =
-      get_in(config, [:preserved_customizations, :custom_metadata, :custom_defaults])
-
-    defaults =
-      case custom_defaults do
-        nil -> suggested_defaults
-        custom -> custom ++ suggested_defaults
-      end
+    defaults = config[:suggested_defaults][:default_selected] || []
 
     formatted_defaults = defaults |> Enum.map(&inspect(to_string(&1))) |> Enum.join(", ")
 
     case defaults do
       [] -> "[]"
       _ -> "[#{formatted_defaults}]"
-    end <> if(custom_defaults, do: " # CUSTOM", else: "")
+    end
   end
 
   defp generate_filters_config(config) do
-    suggested_filters = config[:suggested_defaults][:default_filters] || %{}
-    custom_filters = get_in(config, [:preserved_customizations, :custom_filters]) || %{}
+    filters = config[:suggested_defaults][:default_filters] || %{}
 
-    all_filters = Map.merge(suggested_filters, custom_filters)
-
-    if Enum.empty?(all_filters) do
+    if Enum.empty?(filters) do
       "%{}"
     else
       formatted_filters =
-        all_filters
+        filters
+        |> sorted_pairs()
         |> Enum.map(fn {filter_name, filter_config} ->
-          is_custom = Map.has_key?(custom_filters, filter_name)
-          custom_marker = if is_custom, do: " # CUSTOM", else: ""
           formatted_config = format_filter_config(filter_config)
 
-          "\"#{filter_name}\" => #{formatted_config}#{custom_marker}"
+          "\"#{filter_name}\" => #{formatted_config}"
         end)
         |> Enum.join(",\n      ")
 
@@ -1031,18 +1017,12 @@ defmodule SelectoMix.DomainGenerator do
   end
 
   defp generate_functions_config(config) do
-    preserved_functions = get_in(config, [:preserved_customizations, :custom_functions])
     functions = config[:functions] || %{}
 
-    cond do
-      is_binary(preserved_functions) and String.trim(preserved_functions) != "" ->
-        preserved_functions <> " # CUSTOM"
-
-      is_map(functions) and map_size(functions) > 0 ->
-        inspect(functions, pretty: true, width: 60)
-
-      true ->
-        "%{}"
+    if is_map(functions) and map_size(functions) > 0 do
+      inspect(functions, pretty: true, width: 60)
+    else
+      "%{}"
     end
   end
 
@@ -1073,6 +1053,7 @@ defmodule SelectoMix.DomainGenerator do
     else
       formatted_joins =
         all_joins
+        |> sorted_pairs()
         |> Enum.map(fn {join_name, join_config} ->
           format_single_join(join_name, join_config)
         end)
@@ -1116,16 +1097,6 @@ defmodule SelectoMix.DomainGenerator do
 
   defp generate_retarget_config(_config) do
     "%{}"
-  end
-
-  defp generate_custom_metadata(config) do
-    custom_metadata = get_in(config, [:preserved_customizations, :custom_metadata]) || %{}
-
-    if Enum.empty?(custom_metadata) do
-      ""
-    else
-      "\n      \n      # Custom domain metadata\n      # Add any additional domain configuration here"
-    end
   end
 
   defp generate_helper_functions(schema_module, config) do
@@ -1195,6 +1166,7 @@ defmodule SelectoMix.DomainGenerator do
 
     filter_queries =
       filters
+      |> sorted_pairs()
       # Limit to avoid too many generated functions
       |> Enum.take(2)
       |> Enum.map(fn {filter_name, _filter_config} ->
@@ -1284,24 +1256,10 @@ defmodule SelectoMix.DomainGenerator do
   end
 
   defp format_single_join(join_name, join_config) do
-    is_custom = Map.get(join_config, :is_custom, false)
     is_non_assoc = Map.get(join_config, :non_assoc, false)
     is_parameterized = Map.has_key?(join_config, :parameters)
     is_many_to_many = Map.has_key?(join_config, :join_through)
     is_through = Map.get(join_config, :is_through, false)
-
-    # Note: Custom markers are disabled for now due to Sourceror parsing issues with inline comments
-    # TODO: Re-enable once we find a parser-safe format
-    _custom_marker =
-      cond do
-        is_non_assoc -> " # NON-ASSOCIATION JOIN"
-        is_custom and is_parameterized -> " # CUSTOM PARAMETERIZED JOIN"
-        is_custom -> " # CUSTOM JOIN"
-        is_parameterized -> " # PARAMETERIZED JOIN"
-        is_many_to_many -> " # MANY-TO-MANY"
-        is_through -> " # THROUGH ASSOCIATION"
-        true -> ""
-      end
 
     join_type = inspect(Map.get(join_config, :type, :left))
     join_name_str = Map.get(join_config, :name, humanize_name(join_name))
@@ -1428,8 +1386,7 @@ defmodule SelectoMix.DomainGenerator do
         |> Enum.map(fn param ->
           param_config =
             param
-            |> Map.take([:name, :type, :required, :default, :description])
-            |> Map.to_list()
+            |> ordered_take([:name, :type, :required, :default, :description])
             |> Enum.map(fn {key, value} -> "#{key}: #{inspect(value)}" end)
             |> Enum.join(", ")
 
@@ -1449,13 +1406,14 @@ defmodule SelectoMix.DomainGenerator do
     else
       formatted_fields =
         fields
+        |> sorted_pairs()
         |> Enum.map(fn {field_name, field_config} ->
           config_str =
             case field_config do
               %{} ->
                 config_pairs =
                   field_config
-                  |> Map.to_list()
+                  |> sorted_pairs()
                   |> Enum.map(fn {key, value} -> "#{key}: #{inspect(value)}" end)
                   |> Enum.join(", ")
 
@@ -1474,6 +1432,17 @@ defmodule SelectoMix.DomainGenerator do
   end
 
   defp format_join_fields_config(_), do: "%{}"
+
+  defp sorted_pairs(map_or_keyword) do
+    map_or_keyword
+    |> Enum.sort_by(fn {key, _value} -> {to_string(key), inspect(key)} end)
+  end
+
+  defp ordered_take(map, keys) when is_map(map) do
+    keys
+    |> Enum.filter(&Map.has_key?(map, &1))
+    |> Enum.map(&{&1, Map.fetch!(map, &1)})
+  end
 
   defp humanize_name(atom) when is_atom(atom) do
     atom

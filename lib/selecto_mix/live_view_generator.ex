@@ -6,13 +6,13 @@ defmodule SelectoMix.LiveViewGenerator do
   def live_view_file_path(app_name, source) do
     app_name = app_name |> to_string() |> Macro.underscore()
     schema_name = source_live_name(source) |> Macro.underscore()
-    "lib/#{app_name}_web/live/#{schema_name}_live.ex"
+    "lib/#{app_name}_web/#{schema_name}_live.ex"
   end
 
   def live_view_html_file_path(app_name, source) do
     app_name = app_name |> to_string() |> Macro.underscore()
     schema_name = source_live_name(source) |> Macro.underscore()
-    "lib/#{app_name}_web/live/#{schema_name}_live.html.heex"
+    "lib/#{app_name}_web/#{schema_name}_live.html.heex"
   end
 
   def render_live_view_template(app_name, source, domain_module, opts, components_location) do
@@ -35,10 +35,13 @@ defmodule SelectoMix.LiveViewGenerator do
               show_view_configurator: false,
               views: views,
               my_path: path,
+              path: path,
               saved_view_module: #{domain_module},
               saved_view_context: path,
-              path: path,
-              available_saved_views: saved_views
+              available_saved_views: saved_views,
+              choice_source_domain: domain,
+              choice_source_context: %{surface: :generated_live_view, path: path},
+              choice_source_transport: :live
             )
         """
       else
@@ -47,7 +50,11 @@ defmodule SelectoMix.LiveViewGenerator do
             assign(socket,
               show_view_configurator: false,
               views: views,
-              my_path: path
+              my_path: path,
+              path: path,
+              choice_source_domain: domain,
+              choice_source_context: %{surface: :generated_live_view, path: path},
+              choice_source_transport: :live
             )
         """
       end
@@ -61,8 +68,8 @@ defmodule SelectoMix.LiveViewGenerator do
 
       1. Import hooks in `assets/js/app.js`:
          ```javascript
-         import {hooks as selectoHooks} from "phoenix-colocated/selecto_components"
-         // Add to your liveSocket hooks: { ...selectoHooks }
+         import {hooks as selectoComponentsHooks} from "phoenix-colocated/selecto_components"
+         // Add to your liveSocket hooks: { ...selectoComponentsHooks }
          ```
 
       2. Add to Tailwind in `assets/css/app.css`:
@@ -103,29 +110,6 @@ defmodule SelectoMix.LiveViewGenerator do
 
         {:ok, assign(socket, state), layout: {#{web_module}.Layouts, :root}}
       end
-
-      @impl true
-      def render(assigns) do
-        ~H\"\"\"
-        <div class="container mx-auto px-4 py-8">
-          #{render_inline_header(schema_name, opts)}
-
-          <.live_component
-            module={SelectoComponents.Form}
-            id="#{schema_underscore}-form"
-            #{if opts[:enable_modal], do: "enable_modal_detail={true}", else: ""}
-            {assigns}
-          />
-
-          <.live_component
-            module={SelectoComponents.Results}
-            id="#{schema_underscore}-results"
-            {assigns}
-          />
-        </div>
-        \"\"\"
-      end
-
     end
     """
   end
@@ -165,19 +149,21 @@ defmodule SelectoMix.LiveViewGenerator do
       #{saved_views_dropdown}
     </div>
 
-    <div :if={@show_view_configurator}>
-      <.live_component
-        module={SelectoComponents.Form}
-        id="config"
-        view_config={@view_config}
-        selecto={@selecto}
-        executed={@executed}
-        applied_view={nil}
-        active_tab={@active_tab}
-        views={@views}
-        #{if opts[:enable_modal], do: "enable_modal_detail={true}", else: ""}#{saved_view_assigns}
-      />
-    </div>
+    <.live_component
+      module={SelectoComponents.Form}
+      id="config"
+      view_config={@view_config}
+      selecto={@selecto}
+      executed={@executed}
+      applied_view={nil}
+      active_tab={@active_tab}
+      views={@views}
+      choice_source_domain={@choice_source_domain}
+      choice_source_context={@choice_source_context}
+      choice_source_transport={@choice_source_transport}
+      #{if opts[:enable_modal], do: "enable_modal_detail={true}\n      ", else: ""}show_view_configurator={@show_view_configurator}
+      #{saved_view_assigns}
+    />
 
     <.live_component
       module={SelectoComponents.Results}
@@ -195,13 +181,47 @@ defmodule SelectoMix.LiveViewGenerator do
   def route_suggestion(source, opts) do
     schema_name = source_live_name(source)
     schema_underscore = Macro.underscore(schema_name)
-    route_path = opts[:path] || schema_underscore
-    route_path = String.replace_prefix(route_path, "/", "")
+
+    route_path =
+      (opts[:path] || schema_underscore)
+      |> to_string()
+      |> String.trim("/")
+
+    domain_module = opts[:domain_module] || "#{schema_name}Domain"
+    domain_id = opts[:domain_id] || schema_underscore
+    domain_path = opts[:domain_path] || domain_route_path(route_path)
+    query_contract_url = query_contract_route_path(route_path)
+    query_guide_url = query_guide_route_path(route_path)
+    query_intent_validation_url = query_intent_validation_route_path(route_path)
 
     """
 
-    Add this route to your router.ex:
+    Add these routes to your router.ex:
       live "/#{route_path}", #{schema_name}Live, :index
+
+      forward "#{query_contract_url}",
+              SelectoComponents.QueryContract.Plug,
+              domain: #{domain_module}.domain(),
+              domain_id: "#{domain_id}",
+              domain_path: "#{domain_path}",
+              query_contract_url: "#{query_contract_url}",
+              query_guide_url: "#{query_guide_url}"
+
+      forward "#{query_guide_url}",
+              SelectoComponents.QueryContract.Guide.Plug,
+              domain: #{domain_module}.domain(),
+              domain_id: "#{domain_id}",
+              domain_path: "#{domain_path}",
+              query_contract_url: "#{query_contract_url}",
+              query_guide_url: "#{query_guide_url}"
+
+      forward "#{query_intent_validation_url}",
+              SelectoComponents.QueryContract.IntentValidator.Plug,
+              domain: #{domain_module}.domain(),
+              domain_id: "#{domain_id}",
+              domain_path: "#{domain_path}",
+              query_contract_url: "#{query_contract_url}",
+              query_guide_url: "#{query_guide_url}"
     """
   end
 
@@ -244,28 +264,17 @@ defmodule SelectoMix.LiveViewGenerator do
     end
   end
 
-  defp render_inline_header(schema_name, opts) do
-    if opts[:saved_views] do
-      """
-      <div class="flex items-center gap-4 mb-6">
-            <h1 class="text-3xl font-bold">#{schema_name} Explorer</h1>
+  defp query_contract_route_path(""), do: "/query-contract.json"
+  defp query_contract_route_path(route_path), do: "/#{route_path}/query-contract.json"
 
-            <details :if={@available_saved_views != []} id="saved-views-dropdown" class="dropdown">
-              <summary class="btn btn-sm btn-outline gap-1">Saved Views</summary>
-              <ul class="menu dropdown-content z-[1] mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-2 shadow">
-                <li :for={v <- @available_saved_views}>
-                  <.link href={\"\#{@path}?saved_view=\#{v}\"}>{v}</.link>
-                </li>
-              </ul>
-            </details>
-          </div>
-      """
-    else
-      """
-      <h1 class="text-3xl font-bold mb-6">#{schema_name} Explorer</h1>
-      """
-    end
-  end
+  defp query_guide_route_path(""), do: "/query-guide.md"
+  defp query_guide_route_path(route_path), do: "/#{route_path}/query-guide.md"
+
+  defp query_intent_validation_route_path(""), do: "/query-intent/validate"
+  defp query_intent_validation_route_path(route_path), do: "/#{route_path}/query-intent/validate"
+
+  defp domain_route_path(""), do: "/"
+  defp domain_route_path(route_path), do: "/#{route_path}"
 
   defp singularize_table_name(table_name) do
     cond do

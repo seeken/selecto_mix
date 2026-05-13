@@ -3,17 +3,29 @@ defmodule SelectoMix do
   Mix tasks and tooling for automatic Selecto configuration generation.
 
   SelectoMix provides utilities to automatically generate Selecto domain
-  configurations from Ecto schemas, preserve user customizations across
-  regenerations, and scaffold related SelectoComponents persistence helpers.
+  configurations from Ecto schemas, create overlay modules for app-specific
+  customizations, and scaffold related SelectoComponents persistence helpers.
 
   ## Key Features
 
   - **Automatic Schema Discovery**: Finds and introspects all Ecto schemas in your project
   - **Intelligent Configuration Generation**: Creates comprehensive Selecto domains with suggested defaults
-  - **Customization Preservation**: Maintains user modifications when regenerating files
+  - **Overlay Customization**: Keeps app-specific modifications outside generated base files
   - **Igniter Integration**: Uses modern Elixir project modification tools
   - **Persistence Scaffolds**: Generates saved views, saved view configs,
     exported views, and filter set persistence modules
+  - **Domain Artifacts**: Exports normalized domain JSON artifacts for tools
+    and round-trip checks
+  - **Domain Import Plans**: Checks import/readback plans and can write
+    validated, placeholder-free domain previews from normalized artifacts
+  - **Domain Inspection**: Generates Studio/tooling inspection JSON from
+    normalized domain artifacts
+  - **Domain Diagrams**: Generates Mermaid diagrams from domain inspection
+    artifacts
+  - **Domain Docs**: Generates Markdown references from normalized domain
+    artifacts
+  - **Studio Host Artifacts**: Can generate trusted host-app inspection
+    providers for `SelectoStudio.DomainArtifacts`
 
   ## Main Mix Tasks
 
@@ -23,14 +35,22 @@ defmodule SelectoMix do
   - `mix selecto.gen.saved_view_configs` - Generate per-view-type saved config persistence
   - `mix selecto.gen.exported_views` - Generate exported iframe view persistence
   - `mix selecto.gen.filter_sets` - Generate filter set persistence
+  - `mix selecto.domain.export` - Export normalized domain JSON artifacts
+  - `mix selecto.domain.check` - Check normalized domain JSON artifacts
+  - `mix selecto.domain.import` - Check import plans or write validated previews for normalized artifacts
+  - `mix selecto.domain.inspect` - Inspect normalized domain JSON artifacts
+  - `mix selecto.domain.describe` - Generate Studio/tooling inspection JSON from normalized artifacts
+  - `mix selecto.domain.diagram` - Generate Mermaid diagrams from domain inspection artifacts
+  - `mix selecto.domain.diff` - Diff normalized domain JSON artifacts
+  - `mix selecto.domain.docs` - Generate Markdown docs from normalized domain JSON artifacts
 
   ## Getting Started
 
   1. Add SelectoMix to your project dependencies
   2. Run `mix selecto.install` to setup basic structure
   3. Generate domains with `mix selecto.gen.domain --all`
-  4. Customize the generated domains as needed
-  5. Re-run `mix selecto.gen.domain` after schema changes - customizations will be preserved
+  4. Put app-specific changes in the generated overlay modules
+  5. Re-run `mix selecto.gen.domain --force` after schema changes to refresh generated base files
 
   ## Configuration
 
@@ -38,8 +58,7 @@ defmodule SelectoMix do
 
       config :selecto_mix,
         output_dir: "lib/my_app/selecto_domains",
-        default_associations: true,
-        preserve_customizations: true
+        default_associations: true
 
   ## Example Usage
 
@@ -52,7 +71,7 @@ defmodule SelectoMix do
       # Generate for all schemas with associations
       mix selecto.gen.domain --all --include-associations
       
-      # Force regeneration (overwrites customizations)
+      # Force regeneration of the generated base file
       mix selecto.gen.domain Blog.Post --force
   """
 
