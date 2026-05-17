@@ -26,3 +26,4 @@ selecto_mix-*.tar
 /tmp/
 
 .expert/
+.DS_Store
