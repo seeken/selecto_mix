@@ -77,6 +77,7 @@ defmodule SelectoMix.DomainDocs do
       security_review_section(summary),
       query_members_section(domain),
       capability_usage_section(domain),
+      capability_visibility_section(domain),
       diagnostics_section(summary)
     ]
     |> List.flatten()
@@ -343,6 +344,137 @@ defmodule SelectoMix.DomainDocs do
     end
   end
 
+  defp capability_visibility_section(domain) do
+    capabilities = capability_catalog_ids(domain)
+    usage = capability_usage(domain)
+    referenced = referenced_capability_ids(usage)
+    unreferenced = capabilities -- referenced
+    undeclared = referenced -- capabilities
+
+    if capabilities == [] and usage == [] do
+      []
+    else
+      [
+        "## Capability Visibility",
+        "",
+        "| Metric | Value |",
+        "| --- | --- |",
+        table_row("Catalog", capability_count(length(capabilities))),
+        table_row("Referenced", capability_count(length(referenced))),
+        table_row("Unreferenced", format_list(unreferenced)),
+        table_row("Undeclared references", format_list(undeclared)),
+        table_row("Runtime policy", "not_sampled"),
+        "",
+        "### Capability Defaults",
+        "",
+        "| Default | Value |",
+        "| --- | --- |",
+        table_row("Undeclared capability", "allow"),
+        table_row("Declared without resolver", "inspect_only"),
+        table_row("Runtime decision source", "none"),
+        ""
+      ] ++
+        unreferenced_capabilities_section(unreferenced) ++
+        undeclared_references_section(usage, undeclared) ++
+        capability_references_by_section(usage)
+    end
+  end
+
+  defp unreferenced_capabilities_section([]), do: []
+
+  defp unreferenced_capabilities_section(unreferenced) do
+    [
+      "### Unreferenced Capabilities",
+      "",
+      "| Capability |",
+      "| --- |"
+    ] ++
+      Enum.map(unreferenced, &table_row([&1])) ++
+      [""]
+  end
+
+  defp undeclared_references_section(_usage, []), do: []
+
+  defp undeclared_references_section(usage, undeclared) do
+    rows =
+      usage
+      |> Enum.filter(&(to_string(map_get(&1, "capability")) in undeclared))
+      |> Enum.sort_by(fn entry ->
+        {to_string(map_get(entry, "capability")), format_path(map_get(entry, "path", []))}
+      end)
+
+    [
+      "### Undeclared References",
+      "",
+      "| Capability | Section | Target | Path |",
+      "| --- | --- | --- | --- |"
+    ] ++
+      Enum.map(rows, fn entry ->
+        table_row([
+          map_get(entry, "capability"),
+          map_get(entry, "section"),
+          map_get(entry, "target"),
+          format_path(map_get(entry, "path", []))
+        ])
+      end) ++
+      [""]
+  end
+
+  defp capability_references_by_section([]), do: []
+
+  defp capability_references_by_section(usage) do
+    [
+      "### References By Section",
+      ""
+    ] ++
+      (usage
+       |> Enum.group_by(&to_string(map_get(&1, "section")))
+       |> Enum.sort_by(fn {section, _entries} -> capability_section_label(section) end)
+       |> Enum.flat_map(fn {section, entries} ->
+         [
+           "#### #{capability_section_label(section)}",
+           "",
+           "| Capability | Role | Target | Path |",
+           "| --- | --- | --- | --- |"
+         ] ++
+           (entries
+            |> Enum.sort_by(fn entry ->
+              {to_string(map_get(entry, "capability")), to_string(map_get(entry, "target"))}
+            end)
+            |> Enum.map(fn entry ->
+              table_row([
+                map_get(entry, "capability"),
+                map_get(entry, "role"),
+                map_get(entry, "target"),
+                format_path(map_get(entry, "path", []))
+              ])
+            end)) ++
+           [""]
+       end))
+  end
+
+  defp capability_catalog_ids(domain) do
+    domain
+    |> map_get("capabilities", %{})
+    |> case do
+      capabilities when is_map(capabilities) ->
+        capabilities
+        |> Map.keys()
+        |> Enum.map(&to_string/1)
+        |> Enum.sort()
+
+      _capabilities ->
+        []
+    end
+  end
+
+  defp referenced_capability_ids(usage) do
+    usage
+    |> Enum.map(&(map_get(&1, "capability") |> to_string()))
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
+
   defp capability_usage(domain) do
     []
     |> Kernel.++(relation_capability_usage("source", map_get(domain, "source"), ["source"]))
@@ -601,6 +733,29 @@ defmodule SelectoMix.DomainDocs do
   end
 
   defp format_security_items(items), do: format_list(items)
+
+  defp capability_count(1), do: "1 capability"
+  defp capability_count(count), do: "#{count} capabilities"
+
+  defp capability_section_label("source"), do: "Fields"
+  defp capability_section_label("schemas"), do: "Fields"
+  defp capability_section_label("filters"), do: "Filters"
+  defp capability_section_label("functions"), do: "Functions"
+  defp capability_section_label("query_members"), do: "Query Members"
+  defp capability_section_label("actions"), do: "Actions"
+  defp capability_section_label("detail_actions"), do: "Detail Actions"
+  defp capability_section_label("choice_sources"), do: "Choice Sources"
+  defp capability_section_label("published_views"), do: "Published Views"
+  defp capability_section_label("custom_columns"), do: "Custom Columns"
+
+  defp capability_section_label(section) do
+    section
+    |> to_string()
+    |> String.replace("_", " ")
+    |> String.split()
+    |> Enum.map(&String.capitalize/1)
+    |> Enum.join(" ")
+  end
 
   defp format_path(path) when is_list(path) do
     Enum.map_join(path, ".", &to_string/1)

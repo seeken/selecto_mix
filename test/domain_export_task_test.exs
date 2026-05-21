@@ -275,6 +275,7 @@ defmodule SelectoMix.DomainExportTaskTest do
     def domain do
       PlainDomain.domain()
       |> put_in([:source, :columns, :name, :capability], "item.name")
+      |> put_in([:source, :columns, :id, :capability], "item.missing")
       |> Map.merge(%{
         name: "Capability Items",
         domain_fingerprint: "sha256:capability",
@@ -308,6 +309,7 @@ defmodule SelectoMix.DomainExportTaskTest do
           "item.member" => %{operations: [:query_member]},
           "item.name" => %{operations: [:select]},
           "item.rank" => %{operations: [:select]},
+          "item.unused" => %{operations: [:export]},
           "item.view" => %{operations: [:select, :detail]}
         },
         choice_sources: %{
@@ -768,7 +770,7 @@ defmodule SelectoMix.DomainExportTaskTest do
       assert output =~ "write scope: 1"
       assert output =~ "write hooks: 1"
       assert output =~ "actions: 1"
-      assert output =~ "capabilities: 6"
+      assert output =~ "capabilities: 7"
       assert output =~ "detail actions: profile"
       assert output =~ "write operations: update"
       assert output =~ "write fields: name"
@@ -779,7 +781,7 @@ defmodule SelectoMix.DomainExportTaskTest do
       assert output =~ "actions: archive"
 
       assert output =~
-               "capabilities: item.archive, item.filter, item.member, item.name, item.rank, item.view"
+               "capabilities: item.archive, item.filter, item.member, item.name, item.rank, item.unused, item.view"
 
       assert output =~ "Security Review:"
       assert output =~ "actions: 1 (archive)"
@@ -858,6 +860,7 @@ defmodule SelectoMix.DomainExportTaskTest do
 
       assert docs =~ "## Capability Usage"
       assert docs =~ "| Capability | Role | Section | Target | Path |"
+      assert docs =~ "| item.missing | field | source | id | source.columns.id.capability |"
       assert docs =~ "| item.name | field | source | name | source.columns.name.capability |"
       assert docs =~ "| item.filter | query filter | filters | name | filters.name.capability |"
 
@@ -874,6 +877,25 @@ defmodule SelectoMix.DomainExportTaskTest do
                "| item.view | detail action | detail_actions | profile | detail_actions.profile.capability |"
 
       assert docs =~ "| item.archive | action | actions | archive | actions.archive.capability |"
+      assert docs =~ "## Capability Visibility"
+      assert docs =~ "| Catalog | 7 capabilities |"
+      assert docs =~ "| Referenced | 7 capabilities |"
+      assert docs =~ "| Unreferenced | item.unused |"
+      assert docs =~ "| Undeclared references | item.missing |"
+      assert docs =~ "| Runtime policy | not_sampled |"
+      assert docs =~ "### Capability Defaults"
+      assert docs =~ "| Undeclared capability | allow |"
+      assert docs =~ "| Declared without resolver | inspect_only |"
+      assert docs =~ "| Runtime decision source | none |"
+      assert docs =~ "### Unreferenced Capabilities"
+      assert docs =~ "| item.unused |"
+      assert docs =~ "### Undeclared References"
+      assert docs =~ "| item.missing | source | id | source.columns.id.capability |"
+      assert docs =~ "### References By Section"
+      assert docs =~ "#### Fields"
+      assert docs =~ "| item.name | field | name | source.columns.name.capability |"
+      assert docs =~ "#### Actions"
+      assert docs =~ "| item.archive | action | archive | actions.archive.capability |"
     end)
   end
 
@@ -960,13 +982,14 @@ defmodule SelectoMix.DomainExportTaskTest do
                },
                %{
                  "section" => "capabilities",
-                 "count" => 6,
+                 "count" => 7,
                  "items" => [
                    "item.archive",
                    "item.filter",
                    "item.member",
                    "item.name",
                    "item.rank",
+                   "item.unused",
                    "item.view"
                  ],
                  "reason" => "authorization capability catalog"
@@ -1215,7 +1238,7 @@ defmodule SelectoMix.DomainExportTaskTest do
       assert output =~ "write validations: 1 -> 2 (+1)"
       assert output =~ "write constraints: 1 -> 0 (-1)"
       assert output =~ "actions: 1 -> 2 (+1)"
-      assert output =~ "capabilities: 6 -> 5 (-1)"
+      assert output =~ "capabilities: 7 -> 6 (-1)"
       assert output =~ "detail actions:"
       assert output =~ "- profile"
       assert output =~ "write operations:"
