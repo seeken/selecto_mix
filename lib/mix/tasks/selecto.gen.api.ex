@@ -36,6 +36,11 @@ defmodule Mix.Tasks.Selecto.Gen.Api do
   `constraint_policy: %{domain_of_interest: :fail_closed}` on the choice source
   in the domain overlay and have the resolver return a closed result when a
   trusted filter cannot be enforced.
+
+  For domain-authored actions with capabilities, assign `:capability_resolver`
+  in `api_config/1` and `write_api_config/1`. Set
+  `:require_capability_resolver` to true when capability-declared action
+  preview/apply endpoints should fail closed without a resolver.
   """
 
   use Mix.Task
@@ -233,7 +238,8 @@ defmodule Mix.Tasks.Selecto.Gen.Api do
       end
 
       def preview_domain_action(action, params, config \\\\ @default_config) when is_map(params) do
-        with {:ok, plan} <- build_domain_action_plan(action, params, config) do
+        with {:ok, plan} <- build_domain_action_plan(action, params, config),
+             :ok <- authorize_action_plan(plan, :preview, action_execution_context(params, config), config) do
           {:ok, action_plan_payload(plan)}
         else
           {:error, error} when is_map(error) -> {:error, action_plan_error(error)}
@@ -417,8 +423,11 @@ defmodule Mix.Tasks.Selecto.Gen.Api do
             {:error, reason}
 
           :none ->
+            context = action_execution_context(params, config)
+
             with :ok <- ensure_action_dry_run_supported(params),
                  :ok <- ensure_action_apply_supported(plan),
+                 :ok <- authorize_action_plan(plan, :execute, context, config),
                  {:ok, operation} <- operation_from_action_plan(plan, config) do
               SelectoUpdato.execute(operation, config.repo)
             end
@@ -435,6 +444,41 @@ defmodule Mix.Tasks.Selecto.Gen.Api do
         |> maybe_put(:actor, map_value(config, :actor))
         |> maybe_put(:tenant, map_value(config, :tenant))
         |> maybe_put(:scope, map_value(config, :action_scope))
+        |> maybe_put(:capability_resolver, capability_resolver(config))
+      end
+
+      defp authorize_action_plan(%{capability: nil}, _phase, _context, _config), do: :ok
+
+      defp authorize_action_plan(plan, phase, context, config) do
+        cond do
+          resolver = capability_resolver(config) ->
+            plan
+            |> SelectoUpdato.CapabilityResolver.authorize_action(phase, context,
+              capability_resolver: resolver
+            )
+            |> normalize_action_authorization()
+
+          require_capability_resolver?(config) ->
+            plan
+            |> SelectoUpdato.CapabilityResolver.authorize_action(phase, context)
+            |> normalize_action_authorization()
+
+          true ->
+            :ok
+        end
+      end
+
+      defp normalize_action_authorization({:ok, _decision}), do: :ok
+      defp normalize_action_authorization(:ok), do: :ok
+      defp normalize_action_authorization({:error, reason}), do: {:error, reason}
+
+      defp capability_resolver(config) do
+        map_value(config, :capability_resolver) || map_value(config, :action_capability_resolver)
+      end
+
+      defp require_capability_resolver?(config) do
+        truthy?(map_value(config, :require_capability_resolver)) ||
+          truthy?(map_value(config, :strict_capabilities))
       end
 
       defp ensure_action_dry_run_supported(params) do
@@ -2133,7 +2177,8 @@ defmodule Mix.Tasks.Selecto.Gen.Api do
          Derive actor, tenant, and required filters from socket/session state, not browser parameters.
       4. For security-sensitive choice filters, add constraint_policy: %{domain_of_interest: :fail_closed} in the domain overlay and make resolvers reject unenforced trusted filters.
       5. If the generated controller accepts choice-backed writes, customize api_config/1 with the same server-owned membership resolver and secure scope.
-      6. If you expose action apply endpoints, customize authorize_api_request/2 and api_config/1 so actor, tenant, and trusted action filters come from conn/session state, not browser parameters.
+      6. If you expose action preview/apply endpoints, customize authorize_api_request/2 and api_config/1 so actor, tenant, capability_resolver, and trusted action filters come from conn/session state, not browser parameters.
+         Set require_capability_resolver: true when capability-declared actions must fail closed without a resolver.
     """)
   end
 end

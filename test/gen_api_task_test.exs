@@ -84,6 +84,15 @@ defmodule Mix.Tasks.Selecto.Gen.ApiTest do
       assert api_module =~ "ensure_action_apply_supported(plan)"
       assert api_module =~ "ActionExecutionAdapter.for_config(config)"
       assert api_module =~ "ensure_action_dry_run_supported(params)"
+      assert api_module =~ "authorize_action_plan(plan, :preview"
+      assert api_module =~ "authorize_action_plan(plan, :execute"
+      assert api_module =~ "SelectoUpdato.CapabilityResolver.authorize_action"
+      assert api_module =~ "capability_resolver: resolver"
+      assert api_module =~ "defp capability_resolver(config)"
+      assert api_module =~ "map_value(config, :capability_resolver)"
+      assert api_module =~ "defp require_capability_resolver?(config)"
+      assert api_module =~ "map_value(config, :require_capability_resolver)"
+      assert api_module =~ "|> maybe_put(:capability_resolver, capability_resolver(config))"
       assert api_module =~ "preconditions: plan.preconditions"
       assert api_module =~ "unsupported_action_collection_apply"
       assert api_module =~ "unsupported_action_dry_run"
@@ -126,7 +135,11 @@ defmodule Mix.Tasks.Selecto.Gen.ApiTest do
       assert output =~ "socket/session state, not browser parameters"
       assert output =~ "constraint_policy: %{domain_of_interest: :fail_closed}"
       assert output =~ "reject unenforced trusted filters"
-      assert output =~ "trusted action filters come from conn/session state"
+
+      assert output =~
+               "capability_resolver, and trusted action filters come from conn/session state"
+
+      assert output =~ "require_capability_resolver: true"
     end)
   end
 
