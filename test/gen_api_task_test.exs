@@ -81,6 +81,15 @@ defmodule Mix.Tasks.Selecto.Gen.ApiTest do
       assert controller =~ "def apply_action(conn, %{\"action\" => action} = params)"
       assert controller =~ "OrderApi.apply_domain_action(action, params, api_config(conn))"
       assert controller =~ "defp api_config(_conn)"
+      assert api_module =~ "authorize_query_intent(query_params, config)"
+      assert api_module =~ "validate_query_capabilities(params, config)"
+      assert api_module =~ "Module.concat([SelectoComponents, QueryContract])"
+      assert api_module =~ "function_exported?(query_contract_module, :validate_intent, 3)"
+      assert api_module =~ "query_capability_intent(params)"
+      assert api_module =~ "query_capability_opts(config)"
+      assert api_module =~ "code: :query_capability_denied"
+      assert api_module =~ "code: :missing_query_capability_resolver"
+      assert api_module =~ "code: :query_capability_contract_unavailable"
       assert api_module =~ "ensure_action_apply_supported(plan)"
       assert api_module =~ "ActionExecutionAdapter.for_config(config)"
       assert api_module =~ "ensure_action_dry_run_supported(params)"
@@ -135,11 +144,13 @@ defmodule Mix.Tasks.Selecto.Gen.ApiTest do
       assert output =~ "socket/session state, not browser parameters"
       assert output =~ "constraint_policy: %{domain_of_interest: :fail_closed}"
       assert output =~ "reject unenforced trusted filters"
+      assert output =~ "action preview/apply or query endpoints"
 
       assert output =~
                "capability_resolver, and trusted action filters come from conn/session state"
 
       assert output =~ "require_capability_resolver: true"
+      assert output =~ "capability-declared actions and query requests must fail closed"
     end)
   end
 

@@ -40,7 +40,9 @@ defmodule Mix.Tasks.Selecto.Gen.Api do
   For domain-authored actions with capabilities, assign `:capability_resolver`
   in `api_config/1` and `write_api_config/1`. Set
   `:require_capability_resolver` to true when capability-declared action
-  preview/apply endpoints should fail closed without a resolver.
+  preview/apply and generated query endpoints should fail closed without a
+  resolver. Query capability enforcement uses `SelectoComponents.QueryContract`
+  when that dependency is available in the generated host app.
   """
 
   use Mix.Task
@@ -360,6 +362,7 @@ defmodule Mix.Tasks.Selecto.Gen.Api do
         query_params = apply_execution_limit(params, requested_limit)
 
         with :ok <- validate_query_params(params),
+             :ok <- authorize_query_intent(query_params, config),
              {:ok, selecto} <- build_query(query_params, config),
              {:ok, {rows, columns, aliases}} <- Selecto.execute(selecto) do
           {rows, page_meta} = paginate_rows(rows, requested_limit, Map.get(params, "offset", 0))
@@ -403,6 +406,93 @@ defmodule Mix.Tasks.Selecto.Gen.Api do
       rescue
         error -> {:error, {:invalid_request, Exception.message(error)}}
       end
+
+      defp authorize_query_intent(params, config) do
+        cond do
+          capability_resolver(config) ->
+            validate_query_capabilities(params, config)
+
+          require_capability_resolver?(config) ->
+            {:error,
+             {:validation_error, "Query capability enforcement requires a host capability resolver.",
+              DomainContract.json_safe(%{code: :missing_query_capability_resolver})}}
+
+          true ->
+            :ok
+        end
+      end
+
+      defp validate_query_capabilities(params, config) do
+        query_contract_module = Module.concat([SelectoComponents, QueryContract])
+
+        if Code.ensure_loaded?(query_contract_module) and
+             function_exported?(query_contract_module, :validate_intent, 3) do
+          validation =
+            apply(query_contract_module, :validate_intent, [
+              contract_domain(config),
+              query_capability_intent(params),
+              query_capability_opts(config)
+            ])
+
+          if map_value(validation, :valid?) do
+            :ok
+          else
+            {:error,
+             {:validation_error, "Query capability policy denied the requested query.",
+              DomainContract.json_safe(%{
+                code: :query_capability_denied,
+                errors: map_value(validation, :errors, []),
+                warnings: map_value(validation, :warnings, [])
+              })}}
+          end
+        else
+          {:error,
+           {:validation_error,
+            "Query capability enforcement requires SelectoComponents.QueryContract.",
+            DomainContract.json_safe(%{code: :query_capability_contract_unavailable})}}
+        end
+      end
+
+      defp query_capability_opts(config) do
+        [
+          actor: map_value(config, :actor),
+          tenant: map_value(config, :tenant),
+          domain: map_value(config, :capability_domain, contract_domain(config)),
+          capability_resolver: capability_resolver(config),
+          resolver_context: map_value(config, :capability_resolver_context, %{}),
+          context:
+            %{
+              surface: :generated_query_api,
+              api_path: map_value(config, :api_path),
+              action: :query
+            }
+            |> Map.merge(map_value(config, :capability_context, %{}))
+        ]
+        |> Enum.reject(fn {_key, value} -> value in [nil, %{}, []] end)
+      end
+
+      defp query_capability_intent(params) do
+        %{
+          "view_mode" => "detail",
+          "select" => Map.get(params, "select", []),
+          "filters" =>
+            params
+            |> Map.get("filters", [])
+            |> normalize_filters()
+            |> Enum.map(&query_filter_intent/1),
+          "order_by" => params |> Map.get("order_by", []) |> normalize_order_by()
+        }
+      end
+
+      defp query_filter_intent({field, comparator, value}) do
+        %{"field" => to_string(field), "comparator" => to_string(comparator), "value" => value}
+      end
+
+      defp query_filter_intent({field, value}) do
+        %{"field" => to_string(field), "comparator" => "eq", "value" => value}
+      end
+
+      defp query_filter_intent(filter), do: filter
 
       defp build_domain_action_plan(action, params, config) do
         SelectoUpdato.plan_domain_action(contract_domain(config), domain_action_intent(action, params, config))
@@ -2177,8 +2267,8 @@ defmodule Mix.Tasks.Selecto.Gen.Api do
          Derive actor, tenant, and required filters from socket/session state, not browser parameters.
       4. For security-sensitive choice filters, add constraint_policy: %{domain_of_interest: :fail_closed} in the domain overlay and make resolvers reject unenforced trusted filters.
       5. If the generated controller accepts choice-backed writes, customize api_config/1 with the same server-owned membership resolver and secure scope.
-      6. If you expose action preview/apply endpoints, customize authorize_api_request/2 and api_config/1 so actor, tenant, capability_resolver, and trusted action filters come from conn/session state, not browser parameters.
-         Set require_capability_resolver: true when capability-declared actions must fail closed without a resolver.
+      6. If you expose action preview/apply or query endpoints, customize authorize_api_request/2 and api_config/1 so actor, tenant, capability_resolver, and trusted action filters come from conn/session state, not browser parameters.
+         Set require_capability_resolver: true when capability-declared actions and query requests must fail closed without a resolver.
     """)
   end
 end
