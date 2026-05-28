@@ -515,9 +515,9 @@ defmodule Mix.Tasks.Selecto.Gen.Api do
           :none ->
             context = action_execution_context(params, config)
 
-            with :ok <- ensure_action_dry_run_supported(params),
+            with :ok <- authorize_action_plan(plan, action_phase(params), context, config),
+                 :ok <- ensure_action_dry_run_supported(params),
                  :ok <- ensure_action_apply_supported(plan),
-                 :ok <- authorize_action_plan(plan, :execute, context, config),
                  {:ok, operation} <- operation_from_action_plan(plan, config) do
               SelectoUpdato.execute(operation, config.repo)
             end
@@ -579,6 +579,10 @@ defmodule Mix.Tasks.Selecto.Gen.Api do
         else
           :ok
         end
+      end
+
+      defp action_phase(params) do
+        if truthy?(map_value(params, :dry_run)), do: :preview, else: :execute
       end
 
       defp ensure_action_apply_supported(plan) do

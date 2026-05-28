@@ -94,7 +94,7 @@ defmodule Mix.Tasks.Selecto.Gen.ApiTest do
       assert api_module =~ "ActionExecutionAdapter.for_config(config)"
       assert api_module =~ "ensure_action_dry_run_supported(params)"
       assert api_module =~ "authorize_action_plan(plan, :preview"
-      assert api_module =~ "authorize_action_plan(plan, :execute"
+      assert api_module =~ "authorize_action_plan(plan, action_phase(params)"
       assert api_module =~ "SelectoUpdato.CapabilityResolver.authorize_action"
       assert api_module =~ "capability_resolver: resolver"
       assert api_module =~ "defp capability_resolver(config)"
@@ -105,6 +105,25 @@ defmodule Mix.Tasks.Selecto.Gen.ApiTest do
       assert api_module =~ "preconditions: plan.preconditions"
       assert api_module =~ "unsupported_action_collection_apply"
       assert api_module =~ "unsupported_action_dry_run"
+
+      fallback_authorize_index =
+        output_index(
+          api_module,
+          "with :ok <- authorize_action_plan(plan, action_phase(params), context, config)"
+        )
+
+      fallback_dry_run_index =
+        output_index(api_module, ":ok <- ensure_action_dry_run_supported(params)")
+
+      fallback_apply_index =
+        output_index(api_module, ":ok <- ensure_action_apply_supported(plan)")
+
+      assert is_integer(fallback_authorize_index)
+      assert is_integer(fallback_dry_run_index)
+      assert is_integer(fallback_apply_index)
+      assert fallback_authorize_index < fallback_dry_run_index
+      assert fallback_authorize_index < fallback_apply_index
+      assert api_module =~ "defp action_phase(params)"
 
       assert control_panel =~ ~s(id="updato-write-contract")
       assert control_panel =~ ~s(id="updato-write-templates")
