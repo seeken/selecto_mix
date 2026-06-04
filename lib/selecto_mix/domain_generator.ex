@@ -1515,14 +1515,6 @@ defmodule SelectoMix.DomainGenerator do
     ]
   end
 
-  defp source_specific_helper_functions(_, schema_module, _config) do
-    [
-      "@doc \"Get the source identifier for this domain.\"",
-      "def schema_module, do: #{inspect(schema_module)}",
-      ""
-    ]
-  end
-
   defp source_kind(source, config) do
     cond do
       config[:source_type] == :db -> :db
@@ -1544,7 +1536,6 @@ defmodule SelectoMix.DomainGenerator do
 
   defp generation_description(:db), do: "database introspection"
   defp generation_description(:ecto), do: "the Ecto schema"
-  defp generation_description(_kind), do: "schema introspection"
 
   defp usage_examples(:db, _source, module_name) do
     """

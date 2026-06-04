@@ -17,8 +17,6 @@ defmodule SelectoMix.Introspector.Postgres do
       {:ok, metadata} = SelectoMix.Introspector.Postgres.introspect_table(conn, "users")
   """
 
-  require Logger
-
   @doc """
   List all tables in a schema.
 

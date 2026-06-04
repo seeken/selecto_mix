@@ -91,7 +91,7 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
           if needs_chart do
             # Add missing dependency to existing package.json
             if check_only? do
-              if needs_chart, do: Mix.shell().info("⚠ Chart.js missing from package.json")
+              Mix.shell().info("⚠ Chart.js missing from package.json")
             else
               add_dependencies_to_package_json(package_json_path, content, needs_chart)
             end

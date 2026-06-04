@@ -75,7 +75,7 @@ defmodule SelectoMix.SqlRunner do
     case dollar_quote_delimiter(binary) do
       {:ok, delimiter} ->
         size = byte_size(delimiter)
-        <<prefix::binary-size(size), rest::binary>> = binary
+        <<prefix::binary-size(^size), rest::binary>> = binary
         parse_sql(rest, {:dollar_quote, delimiter}, [prefix | current], statements)
 
       :error ->
@@ -132,7 +132,7 @@ defmodule SelectoMix.SqlRunner do
     size = byte_size(delimiter)
 
     if byte_size(binary) >= size and binary_part(binary, 0, size) == delimiter do
-      <<matched::binary-size(size), rest::binary>> = binary
+      <<matched::binary-size(^size), rest::binary>> = binary
       parse_sql(rest, :normal, [matched | current], statements)
     else
       <<char::utf8, rest::binary>> = binary
