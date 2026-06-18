@@ -174,4 +174,31 @@ defmodule Mix.Tasks.Selecto.Validate.ParameterizedJoinsTest do
 
     File.rm(temp_file)
   end
+
+  test "parameterized join generator emits existing-join filters and decimal types" do
+    output =
+      capture_io(fn ->
+        Mix.Task.reenable("selecto.gen.parameterized_join")
+
+        Mix.Tasks.Selecto.Gen.ParameterizedJoin.run([
+          "customer",
+          "country:string,required",
+          "min_freight:number",
+          "--fields",
+          "company_name:string,freight:numeric"
+        ])
+      end)
+
+    assert output =~ "Generated existing-join parameterization fragment"
+    assert output =~ "Existing join parameterization for :customer"
+    assert output =~ "Keep that generated join's name, type, source, and on keys"
+    assert output =~ "%{name: :country, type: :string, required: true}"
+    assert output =~ "%{name: :min_freight, type: :decimal}"
+    assert output =~ ~s("country" => %{name: "Country", type: :string})
+    assert output =~ ~s("min_freight" => %{name: "Min Freight", type: :decimal})
+    assert output =~ ":freight => %{type: :decimal}"
+    assert output =~ ~s(Selecto.join_parameterize(:customer)
+    refute output =~ "source_table"
+    refute output =~ "freight_band"
+  end
 end

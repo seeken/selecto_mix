@@ -511,8 +511,9 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
 
     test_content = """
     defmodule #{config.context_module}Test do
-      use ExUnit.Case, async: true
-      alias #{config.context_module}
+      use #{config.app_module}.DataCase, async: true
+
+      alias #{config.context_module}, as: FilterSets
       alias #{config.schema_module}
       
       describe "filter sets" do
@@ -524,7 +525,7 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
             user_id: "user123"
           }
           
-          assert {:ok, %FilterSet{} = filter_set} = #{config.context_module}.create_filter_set(attrs)
+          assert {:ok, %FilterSet{} = filter_set} = FilterSets.create_filter_set(attrs)
           assert filter_set.name == "Test Filter"
           assert filter_set.domain == "test_domain"
         end
@@ -568,24 +569,23 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
   end
 
   defp schema_file_path(module, app_name) do
-    path =
-      module
-      |> String.split(".")
-      |> Enum.map(&Macro.underscore/1)
-      |> Path.join()
-
-    "lib/#{app_name}/#{path}.ex"
+    "lib/#{app_name}/#{module_relative_path(module, app_name)}.ex"
   end
 
   defp context_file_path(module, app_name) do
-    path =
-      module
-      |> String.split(".")
-      |> Enum.map(&Macro.underscore/1)
-      |> Path.join()
-
-    "lib/#{app_name}/#{path}.ex"
+    "lib/#{app_name}/#{module_relative_path(module, app_name)}.ex"
   end
+
+  defp module_relative_path(module, app_name) do
+    module
+    |> String.split(".")
+    |> Enum.map(&Macro.underscore/1)
+    |> drop_app_prefix(app_name)
+    |> Path.join()
+  end
+
+  defp drop_app_prefix([app_name | rest], app_name), do: rest
+  defp drop_app_prefix(parts, _app_name), do: parts
 
   defp timestamp do
     {{y, m, d}, {hh, mm, ss}} = :calendar.universal_time()

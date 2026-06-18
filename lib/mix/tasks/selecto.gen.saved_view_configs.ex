@@ -415,7 +415,7 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViewConfigs do
           @doc \"\"\"
           Load a saved view configuration by name, context, and view type.
           \"\"\"
-          def load_view_config(name, context, view_type, opts \\ []) do
+          def load_view_config(name, context, view_type, opts \\\\ []) do
             get_view_config(name, context, view_type, opts)
           end
 

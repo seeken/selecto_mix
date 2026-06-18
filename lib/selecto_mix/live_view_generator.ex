@@ -15,7 +15,7 @@ defmodule SelectoMix.LiveViewGenerator do
     "lib/#{app_name}_web/#{schema_name}_live.html.heex"
   end
 
-  def render_live_view_template(app_name, source, domain_module, opts, components_location) do
+  def render_live_view_template(app_name, source, domain_module, opts, components_source_path) do
     app_name = app_name |> to_string() |> Macro.camelize()
     schema_name = source_live_name(source)
     schema_underscore = Macro.underscore(schema_name)
@@ -74,7 +74,7 @@ defmodule SelectoMix.LiveViewGenerator do
 
       2. Add to Tailwind in `assets/css/app.css`:
          ```css
-         @source "../../#{components_location}/selecto_components/lib/**/*.{ex,heex}";
+         @source "#{components_source_path}";
          ```
 
       3. Run `mix assets.build`
@@ -108,7 +108,7 @@ defmodule SelectoMix.LiveViewGenerator do
 
     #{saved_views_code}
 
-        {:ok, assign(socket, state), layout: {#{web_module}.Layouts, :root}}
+        {:ok, assign(socket, state), layout: {#{web_module}.Layouts, :app}}
       end
     end
     """

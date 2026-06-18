@@ -61,6 +61,23 @@ defmodule SelectoMix.AdapterPersistenceTaskTest do
     assert output =~ "lib/tmp_app/saved_view_config_context.ex"
   end
 
+  test "saved_view_configs task generates syntax-valid context defaults" do
+    in_tmp_dir("selecto_mix_saved_view_configs", fn ->
+      File.write!(".formatter.exs", "[inputs: []]\n")
+      Mix.Task.reenable("selecto.gen.saved_view_configs")
+
+      Mix.Task.run("selecto.gen.saved_view_configs", ["TmpApp", "--yes"])
+
+      context_path = Path.join(["lib", "tmp_app", "saved_view_config_context.ex"])
+      context_source = File.read!(context_path)
+
+      assert context_source =~
+               ~S|def load_view_config(name, context, view_type, opts \\ []) do|
+
+      assert {:ok, _ast} = Code.string_to_quoted(context_source)
+    end)
+  end
+
   test "exported_views task supports dry run" do
     {output, 0} =
       System.cmd(
@@ -114,7 +131,7 @@ defmodule SelectoMix.AdapterPersistenceTaskTest do
       Mix.Tasks.Selecto.Gen.FilterSets.run(["TmpApp", "--adapter", "sqlite", "--no-tests"])
 
       sql_path = Path.join(["priv", "sql", "create_filter_sets.sql"])
-      context_path = Path.join(["lib", "tmp_app", "tmp_app", "filter_sets.ex"])
+      context_path = Path.join(["lib", "tmp_app", "filter_sets.ex"])
 
       sql = File.read!(sql_path)
       context = File.read!(context_path)
@@ -135,7 +152,7 @@ defmodule SelectoMix.AdapterPersistenceTaskTest do
       Mix.Tasks.Selecto.Gen.FilterSets.run(["TmpApp", "--adapter", "postgresql", "--no-tests"])
 
       sql_path = Path.join(["priv", "sql", "create_filter_sets.sql"])
-      context_path = Path.join(["lib", "tmp_app", "tmp_app", "filter_sets.ex"])
+      context_path = Path.join(["lib", "tmp_app", "filter_sets.ex"])
 
       sql = File.read!(sql_path)
       context = File.read!(context_path)
@@ -174,6 +191,28 @@ defmodule SelectoMix.AdapterPersistenceTaskTest do
       ])
 
       assert Path.wildcard("priv/repo/migrations/*_create_filter_sets.exs") == initial_migrations
+    end)
+  end
+
+  test "filter_sets task generates app-relative ecto files and DataCase tests" do
+    in_tmp_dir("selecto_mix_filter_sets_ecto", fn ->
+      Mix.Task.reenable("selecto.gen.filter_sets")
+      Mix.Tasks.Selecto.Gen.FilterSets.run(["TmpApp"])
+
+      context_path = Path.join(["lib", "tmp_app", "filter_sets.ex"])
+      schema_path = Path.join(["lib", "tmp_app", "filter_sets", "filter_set.ex"])
+      test_path = Path.join(["test", "tmp_app", "filter_sets_test.exs"])
+
+      assert File.exists?(context_path)
+      assert File.exists?(schema_path)
+      assert File.exists?(test_path)
+
+      refute File.exists?(Path.join(["lib", "tmp_app", "tmp_app", "filter_sets.ex"]))
+
+      test_source = File.read!(test_path)
+      assert test_source =~ "use TmpApp.DataCase, async: true"
+      assert test_source =~ "alias TmpApp.FilterSets, as: FilterSets"
+      assert test_source =~ "FilterSets.create_filter_set(attrs)"
     end)
   end
 

@@ -826,7 +826,7 @@ defmodule SelectoMixTest do
           source,
           "Shop.SelectoDomains.ProductDomain",
           [connection_name: "Shop.Database"],
-          "deps"
+          "../../deps/selecto_components/lib/**/*.{ex,heex}"
         )
 
       assert String.contains?(result, "defmodule ShopWeb.ProductLive")
@@ -834,6 +834,16 @@ defmodule SelectoMixTest do
       assert String.contains?(result, "alias SelectoComponents.Views")
       assert String.contains?(result, "choice_source_domain: domain")
       assert String.contains?(result, "choice_source_transport: :live")
+
+      assert String.contains?(
+               result,
+               "{:ok, assign(socket, state), layout: {ShopWeb.Layouts, :app}}"
+             )
+
+      assert String.contains?(
+               result,
+               ~s(@source "../../deps/selecto_components/lib/**/*.{ex,heex}";)
+             )
 
       assert String.contains?(
                result,
@@ -852,6 +862,7 @@ defmodule SelectoMixTest do
 
       refute String.contains?(result, "def render(assigns)")
       refute String.contains?(result, ~S(def handle_event("toggle_show_view_configurator"))
+      refute String.contains?(result, "layout: {ShopWeb.Layouts, :root}")
       refute String.contains?(result, "Shop.Repo")
     end
 
@@ -908,7 +919,94 @@ defmodule SelectoMixTest do
     end
   end
 
+  describe "LiveDashboard generator" do
+    test "renders a current PageBuilder module" do
+      source =
+        Mix.Tasks.Selecto.Gen.LiveDashboard.render_page_module_for_test(
+          TmpAppWeb.LiveDashboard.SelectoPage
+        )
+
+      assert source =~ "defmodule TmpAppWeb.LiveDashboard.SelectoPage"
+      assert source =~ "def render(assigns)"
+      assert source =~ "use Phoenix.LiveDashboard.PageBuilder"
+      refute source =~ "def render_page"
+      refute source =~ "nav_bar"
+      assert {:ok, _ast} = Code.string_to_quoted(source)
+    end
+
+    test "adds additional_pages to Phoenix router dashboard route" do
+      router_source = """
+      defmodule TmpAppWeb.Router do
+        use TmpAppWeb, :router
+
+        import Phoenix.LiveDashboard.Router
+
+        scope "/dev" do
+          pipe_through(:browser)
+
+          live_dashboard("/dashboard", metrics: TmpAppWeb.Telemetry)
+        end
+      end
+      """
+
+      updated =
+        Mix.Tasks.Selecto.Gen.LiveDashboard.update_router_content_for_test(
+          router_source,
+          TmpAppWeb,
+          TmpAppWeb.LiveDashboard.SelectoPage
+        )
+
+      assert updated =~ "additional_pages:"
+      assert updated =~ "selecto: TmpAppWeb.LiveDashboard.SelectoPage"
+      assert updated =~ "metrics: TmpAppWeb.Telemetry"
+      assert updated != router_source
+    end
+  end
+
   describe "integration" do
+    test "resolves SelectoComponents Tailwind source from local path dependency" do
+      cwd = Path.join(System.tmp_dir!(), "selecto_mix_cwd_#{System.unique_integer([:positive])}")
+
+      dep_path =
+        Path.join(System.tmp_dir!(), "selecto_components_#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(Path.join(dep_path, "lib"))
+
+      on_exit(fn ->
+        File.rm_rf!(cwd)
+        File.rm_rf!(dep_path)
+      end)
+
+      source_path =
+        Mix.Tasks.Selecto.Components.Integrate.selecto_components_source_path(cwd, [
+          {:selecto_components, path: dep_path, override: true}
+        ])
+
+      assert source_path =~ "selecto_components"
+      assert source_path =~ "lib/**/*.{ex,heex}"
+
+      assert Path.expand(source_path, Path.join(cwd, "assets/css")) ==
+               Path.join([dep_path, "lib", "**", "*.{ex,heex}"])
+    end
+
+    test "adds local path source even when a stale deps source is present" do
+      local_source = "../../../../Users/chris/selecto/selecto_components/lib/**/*.{ex,heex}"
+
+      content = """
+      @import "tailwindcss" source(none);
+      @source "../css";
+      @source "../../deps/selecto_components/lib/**/*.{ex,heex}";
+      """
+
+      updated = Mix.Tasks.Selecto.Components.Integrate.patch_app_css(content, local_source)
+
+      assert updated =~ ~s(@source "../../deps/selecto_components/lib/**/*.{ex,heex}")
+      assert updated =~ ~s(@source "#{local_source}")
+
+      assert Mix.Tasks.Selecto.Components.Integrate.patch_app_css(updated, local_source) ==
+               updated
+    end
+
     test "full workflow without actual file creation" do
       # Test the complete workflow without actually creating files
       config = %{

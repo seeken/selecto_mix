@@ -410,10 +410,10 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
   defp module_uses_ecto_schema?(igniter, module_name) do
     case Igniter.Project.Module.module_exists(igniter, module_name) do
-      {_igniter, true} ->
+      {true, _igniter} ->
         # Check if the module uses Ecto.Schema
         case Igniter.Project.Module.find_module(igniter, module_name) do
-          {_igniter, {:ok, {_zipper, _module_zipper}}} ->
+          {:ok, {_igniter, _zipper, _module_zipper}} ->
             # This is simplified - in real implementation would parse AST
             # to check for `use Ecto.Schema`
             true
@@ -422,7 +422,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
             false
         end
 
-      {_igniter, false} ->
+      {false, _igniter} ->
         false
     end
   end
@@ -1132,7 +1132,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       source,
       domain_module,
       opts,
-      get_selecto_components_location()
+      Mix.Tasks.Selecto.Components.Integrate.selecto_components_source_path()
     )
   end
 
@@ -1232,15 +1232,5 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       1. Import hooks in assets/js/app.js
       2. Add @source directive in assets/css/app.css
     """)
-  end
-
-  defp get_selecto_components_location() do
-    vendor_path = Path.join([File.cwd!(), "vendor", "selecto_components"])
-
-    if File.dir?(vendor_path) do
-      "vendor"
-    else
-      "deps"
-    end
   end
 end

@@ -56,7 +56,7 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
       |> to_string()
       |> Macro.camelize()
 
-    web_module = Module.concat([app_module, "Web"])
+    web_module = Module.concat(["#{app_module}Web"])
 
     # Determine the page module name
     page_module =
@@ -102,14 +102,20 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
   defp generate_page_module(app, _web_module, page_module) do
     path = page_module_path(app, page_module)
 
-    content = """
-    defmodule #{page_module} do
+    content = render_page_module(page_module)
+    create_file(path, content)
+  end
+
+  def render_page_module_for_test(page_module), do: render_page_module(page_module)
+
+  defp render_page_module(page_module) do
+    """
+    defmodule #{inspect(page_module)} do
       @moduledoc \"\"\"
       LiveDashboard page for Selecto query metrics and performance monitoring.
       \"\"\"
 
       use Phoenix.LiveDashboard.PageBuilder
-      import Telemetry.Metrics
 
       @impl true
       def menu_link(_, _) do
@@ -117,313 +123,18 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
       end
 
       @impl true
-      def render_page(assigns) do
-        items = [
-          {:query_metrics, name: "Query Metrics", render: &render_query_metrics/1},
-          {:slow_queries, name: "Slow Queries", render: &render_slow_queries/1},
-          {:cache_stats, name: "Cache Stats", render: &render_cache_stats/1},
-          {:index_usage, name: "Index Usage", render: &render_index_usage/1}
-        ]
-
-        nav_bar(items: items)
-      end
-
-      defp render_query_metrics(assigns) do
-        metrics_collector_data = get_metrics_data()
-
-        assigns = Map.merge(assigns, %{
-          metrics: metrics_collector_data.metrics,
-          timeline: metrics_collector_data.timeline,
-          percentiles: metrics_collector_data.percentiles
-        })
-
+      def render(assigns) do
         ~H\"\"\"
-        <div>
-          <h2 class="text-xl font-bold mb-4">Query Performance Metrics</h2>
-
-          <.live_component
-            module={Phoenix.LiveDashboard.ChartComponent}
-            id="selecto-query-timeline"
-            title="Query Execution Timeline (Last Hour)"
-            kind={:line}
-            label="Execution Time (ms)"
-            prune_threshold={100}
-            metric={summary("selecto.query.complete.duration")}
-          />
-
-          <div class="grid grid-cols-3 gap-4 mt-6">
-            <.metric_card
-              title="Total Queries"
-              value={@metrics.total_queries}
-              icon="heroicons-outline:chart-bar"
-            />
-            <.metric_card
-              title="Avg Response Time"
-              value={\#{@metrics.avg_response_time}ms}
-              icon="heroicons-outline:clock"
-            />
-            <.metric_card
-              title="Error Rate"
-              value={\#{@metrics.error_rate}%}
-              icon="heroicons-outline:exclamation-triangle"
-              color={if @metrics.error_rate > 5, do: "red", else: "green"}
-            />
-          </div>
-
-          <div class="mt-6">
-            <h3 class="text-lg font-semibold mb-2">Response Time Percentiles</h3>
-            <div class="grid grid-cols-3 gap-4">
-              <div class="bg-gray-50 p-3 rounded">
-                <div class="text-sm text-gray-600">P50 (Median)</div>
-                <div class="text-xl font-bold">{@percentiles.p50}ms</div>
-              </div>
-              <div class="bg-gray-50 p-3 rounded">
-                <div class="text-sm text-gray-600">P95</div>
-                <div class="text-xl font-bold">{@percentiles.p95}ms</div>
-              </div>
-              <div class="bg-gray-50 p-3 rounded">
-                <div class="text-sm text-gray-600">P99</div>
-                <div class="text-xl font-bold">{@percentiles.p99}ms</div>
-              </div>
-            </div>
+        <div class="card">
+          <div class="card-body">
+            <h2 class="card-title">Selecto</h2>
+            <p>Selecto telemetry metrics are registered for this application.</p>
           </div>
         </div>
         \"\"\"
       end
-
-      defp render_slow_queries(assigns) do
-        slow_queries = get_slow_queries()
-        assigns = Map.put(assigns, :slow_queries, slow_queries)
-
-        ~H\"\"\"
-        <div>
-          <h2 class="text-xl font-bold mb-4">Slow Queries (>500ms)</h2>
-
-          <div class="space-y-4">
-            <%= for query <- @slow_queries do %>
-              <div class="border rounded-lg p-4 bg-white shadow-sm">
-                <div class="flex justify-between items-start mb-2">
-                  <span class="text-sm text-gray-500">
-                    <%= format_timestamp(query.timestamp) %>
-                  </span>
-                  <span class="px-2 py-1 bg-red-100 text-red-700 text-sm rounded">
-                    <%= query.execution_time %>ms
-                  </span>
-                </div>
-                <pre class="text-xs bg-gray-50 p-2 rounded overflow-x-auto"><%= format_sql(query.query) %></pre>
-                <div class="mt-2 flex gap-4 text-sm text-gray-600">
-                  <span>Rows: <%= query.row_count %></span>
-                  <span>Table Scans: <%= query.table_scans %></span>
-                  <span>Index Scans: <%= query.index_scans %></span>
-                </div>
-              </div>
-            <% end %>
-
-            <%= if @slow_queries == [] do %>
-              <div class="text-center py-8 text-gray-500">
-                <div class="text-4xl mb-2">🎉</div>
-                <p>No slow queries detected</p>
-              </div>
-            <% end %>
-          </div>
-        </div>
-        \"\"\"
-      end
-
-      defp render_cache_stats(assigns) do
-        cache_stats = get_cache_stats()
-        assigns = Map.put(assigns, :cache_stats, cache_stats)
-
-        ~H\"\"\"
-        <div>
-          <h2 class="text-xl font-bold mb-4">Query Cache Statistics</h2>
-
-          <div class="grid grid-cols-2 gap-6">
-            <div>
-              <.live_component
-                module={Phoenix.LiveDashboard.ChartComponent}
-                id="selecto-cache-ratio"
-                title="Cache Hit Ratio"
-                kind={:doughnut}
-                label="Cache Performance"
-                prune_threshold={100}
-                metric={
-                  distribution("selecto.cache.ratio",
-                    buckets: [0, 0.25, 0.5, 0.75, 1.0],
-                    unit: :percent
-                  )
-                }
-              />
-            </div>
-
-            <div class="space-y-4">
-              <.metric_card
-                title="Cache Hit Rate"
-                value={\#{@cache_stats.hit_rate}%}
-                icon="heroicons-outline:lightning-bolt"
-                color={if @cache_stats.hit_rate > 80, do: "green", else: "yellow"}
-              />
-              <.metric_card
-                title="Total Hits"
-                value={@cache_stats.hits}
-                icon="heroicons-outline:check-circle"
-              />
-              <.metric_card
-                title="Total Misses"
-                value={@cache_stats.misses}
-                icon="heroicons-outline:x-circle"
-              />
-            </div>
-          </div>
-        </div>
-        \"\"\"
-      end
-
-      defp render_index_usage(assigns) do
-        index_data = get_index_usage()
-        assigns = Map.merge(assigns, %{
-          most_used: index_data.most_used,
-          unused: index_data.unused,
-          recommendations: index_data.recommendations
-        })
-
-        ~H\"\"\"
-        <div>
-          <h2 class="text-xl font-bold mb-4">Index Usage Analysis</h2>
-
-          <div class="grid grid-cols-2 gap-6">
-            <div>
-              <h3 class="text-lg font-semibold mb-3">Most Used Indexes</h3>
-              <div class="space-y-2">
-                <%= for index <- @most_used do %>
-                  <div class="flex justify-between p-2 bg-gray-50 rounded">
-                    <span class="text-sm font-medium"><%= index.name %></span>
-                    <span class="text-sm text-gray-600"><%= index.usage_count %> uses</span>
-                  </div>
-                <% end %>
-              </div>
-            </div>
-
-            <div>
-              <h3 class="text-lg font-semibold mb-3">Unused Indexes</h3>
-              <div class="space-y-2">
-                <%= for index <- @unused do %>
-                  <div class="flex justify-between p-2 bg-yellow-50 rounded">
-                    <span class="text-sm font-medium"><%= index.name %></span>
-                    <span class="text-sm text-yellow-600">Consider removing</span>
-                  </div>
-                <% end %>
-
-                <%= if @unused == [] do %>
-                  <p class="text-sm text-gray-500">All indexes are being used</p>
-                <% end %>
-              </div>
-            </div>
-          </div>
-
-          <%= if @recommendations != [] do %>
-            <div class="mt-6">
-              <h3 class="text-lg font-semibold mb-3">Recommendations</h3>
-              <div class="bg-blue-50 border border-blue-200 rounded p-4">
-                <ul class="space-y-1">
-                  <%= for rec <- @recommendations do %>
-                    <li class="text-sm text-blue-800">• <%= rec %></li>
-                  <% end %>
-                </ul>
-              </div>
-            </div>
-          <% end %>
-        </div>
-        \"\"\"
-      end
-
-      # Helper components
-
-      defp metric_card(assigns) do
-        assigns = Map.put_new(assigns, :color, "blue")
-
-        ~H\"\"\"
-        <div class={"bg-\#{@color}-50 p-4 rounded-lg"}>
-          <div class="text-sm text-gray-600 mb-1"><%= @title %></div>
-          <div class={"text-2xl font-bold text-\#{@color}-700"}><%= @value %></div>
-        </div>
-        \"\"\"
-      end
-
-      # Data fetching functions
-
-      defp get_metrics_data do
-        if Process.whereis(SelectoComponents.Performance.MetricsCollector) do
-          metrics = SelectoComponents.Performance.MetricsCollector.get_metrics("1h")
-          timeline = SelectoComponents.Performance.MetricsCollector.get_timeline("1h")
-
-          %{
-            metrics: metrics,
-            timeline: timeline,
-            percentiles: metrics[:percentiles] || %{p50: 0, p95: 0, p99: 0}
-          }
-        else
-          %{
-            metrics: %{
-              total_queries: 0,
-              avg_response_time: 0,
-              error_rate: 0.0,
-              queries_per_minute: 0
-            },
-            timeline: [],
-            percentiles: %{p50: 0, p95: 0, p99: 0}
-          }
-        end
-      end
-
-      defp get_slow_queries do
-        if Process.whereis(SelectoComponents.Performance.MetricsCollector) do
-          SelectoComponents.Performance.MetricsCollector.get_slow_queries(500, 20)
-        else
-          []
-        end
-      end
-
-      defp get_cache_stats do
-      # Placeholder data - replace with app-specific cache metrics if available.
-        %{
-          hit_rate: 85,
-          hits: 1523,
-          misses: 267
-        }
-      end
-
-      defp get_index_usage do
-      # Placeholder data - replace with app-specific index statistics if available.
-        %{
-          most_used: [
-            %{name: "idx_film_title", usage_count: 1523},
-            %{name: "idx_customer_email", usage_count: 892}
-          ],
-          unused: [
-            %{name: "idx_actor_first_name", usage_count: 0}
-          ],
-          recommendations: [
-            "Consider adding an index on film.rating for frequent filter operations",
-            "The idx_actor_first_name index hasn't been used in 7 days"
-          ]
-        }
-      end
-
-      # Formatting helpers
-
-      defp format_timestamp(datetime) do
-        Calendar.strftime(datetime, "%Y-%m-%d %H:%M:%S")
-      end
-
-      defp format_sql(sql) when byte_size(sql) > 500 do
-        String.slice(sql, 0, 500) <> "..."
-      end
-      defp format_sql(sql), do: sql
     end
     """
-
-    create_file(path, content)
   end
 
   defp add_telemetry_metrics(app, _web_module) do
@@ -494,18 +205,7 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
         Mix.shell().info("Please manually add #{page_module} to the additional_pages list")
       else
         # Add additional_pages to live_dashboard
-        updated_content =
-          String.replace(
-            content,
-            ~r/live_dashboard\s+"\/(?:dev\/)?dashboard",\s*\n\s*metrics:\s*#{web_module}\.Telemetry/,
-            """
-            live_dashboard "/dashboard",
-              metrics: #{web_module}.Telemetry,
-              additional_pages: [
-                selecto: #{page_module}
-              ]
-            """
-          )
+        updated_content = update_router_content(content, web_module, page_module)
 
         if updated_content != content do
           File.write!(router_path, updated_content)
@@ -517,17 +217,41 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
 
           Please manually update your router.ex:
 
-              live_dashboard "/dashboard",
-                metrics: #{web_module}.Telemetry,
+              live_dashboard("/dashboard",
+                metrics: #{inspect(web_module)}.Telemetry,
                 additional_pages: [
-                  selecto: #{page_module}
+                  selecto: #{inspect(page_module)}
                 ]
+              )
           """)
         end
       end
     else
       Mix.shell().error("Router file not found at #{router_path}")
     end
+  end
+
+  def update_router_content_for_test(content, web_module, page_module) do
+    update_router_content(content, web_module, page_module)
+  end
+
+  defp update_router_content(content, web_module, page_module) do
+    web_module_name = inspect(web_module)
+    page_module_name = inspect(page_module)
+
+    pattern =
+      ~r/live_dashboard\s*\(?\s*"\/dashboard"\s*,\s*\n?\s*metrics:\s*#{Regex.escape(web_module_name)}\.Telemetry\s*\)?/
+
+    replacement = """
+    live_dashboard("/dashboard",
+      metrics: #{web_module_name}.Telemetry,
+      additional_pages: [
+        selecto: #{page_module_name}
+      ]
+    )
+    """
+
+    String.replace(content, pattern, replacement)
   end
 
   defp page_module_path(app, module_name) when is_atom(module_name) do

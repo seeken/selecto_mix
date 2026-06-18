@@ -1,67 +1,75 @@
 defmodule Mix.Tasks.Selecto.Gen.ParameterizedJoin do
-  @shortdoc "Generate parameterized join configuration templates"
+  @shortdoc "Generate existing-join parameterization fragments"
   @moduledoc """
-  Generate parameterized join configuration templates for Selecto domains.
+  Generate existing-join parameterization fragments for Selecto domains.
 
-  This task helps create parameterized joins that accept runtime parameters,
-  enabling dynamic query behavior based on user input or application state.
+  This task helps add runtime parameters to an existing Selecto join. The join
+  name must already be present in the domain's `joins` map, usually because it
+  was generated from an Ecto association.
 
   ## Examples
 
-      # Generate a basic parameterized join template
-      mix selecto.gen.parameterized_join products category:string active:boolean
+      # Generate a basic existing-join parameterization fragment
+      mix selecto.gen.parameterized_join customer country:string,required
 
       # Generate with field specifications
-      mix selecto.gen.parameterized_join products category:string,required active:boolean,default=true --fields name:string,price:decimal
+      mix selecto.gen.parameterized_join customer country:string,required --fields company_name:string,country:string
 
       # Generate with join condition template
-      mix selecto.gen.parameterized_join discounts category:string --condition "discounts.category = :category AND discounts.active = :active"
+      mix selecto.gen.parameterized_join customer country:string --condition "customers.country = :country"
 
   ## Syntax
 
   Parameter format: `name:type[,options]`
 
-  Types: string, integer, float, boolean, date, datetime
+  Types: string, integer, number, numeric, decimal, float, boolean, date, datetime
   Options: required, default=value, description="text"
 
   ## Options
 
     * `--fields` - Comma-separated list of fields available from this join (field:type format)
     * `--condition` - SQL join condition template with parameter placeholders
-    * `--source-table` - Override the source table name (defaults to join name)
+    * `--source-table` - Deprecated; existing joins already define their source
     * `--output` - Output file path (defaults to stdout)
 
   ## Generated Configuration
 
-  Outputs a parameterized join configuration that you can copy into your domain:
+  Outputs a fragment that you copy into an existing join entry:
 
-      products: %{
-        name: "Products",
-        type: :left,
-        source_table: "products",
-        parameters: [
-          %{name: :category, type: :string, required: true},
-          %{name: :active, type: :boolean, required: false, default: true}
-        ],
-        fields: %{
-          name: %{type: :string},
-          price: %{type: :decimal}
-        },
-        join_condition: "products.category = :category AND products.active = :active"
+      # Add these keys to the existing :customer join.
+      # Keep the generated join's name, type, source, and on keys.
+      parameters: [
+        %{name: :country, type: :string, required: true}
+      ],
+      filters: %{
+        "country" => %{name: "Country", type: :string}
+      },
+      fields: %{
+        company_name: %{type: :string},
+        country: %{type: :string}
       }
+
+  For runtime queries, call `Selecto.join_parameterize/4`:
+
+      selecto
+      |> Selecto.join_parameterize(:customer, "usa", country: "USA")
+      |> Selecto.select(["customer:usa.company_name"])
+
+  Do not add a brand-new top-level join only for parameterization. Selecto
+  validates top-level joins against the parent schema's associations.
 
   ## Usage in Queries
 
   Use dot notation to reference parameterized fields:
 
       # Basic parameterized field reference
-      "products:electronics.name"
+      "customer:USA.company_name"
 
       # Multiple parameters
-      "products:electronics:true.price"
+      "customer:USA:true.company_name"
 
       # String parameters with spaces (quoted)
-      "products:'consumer electronics':true.price"
+      "customer:'United States'.company_name"
   """
 
   use Mix.Task
@@ -83,8 +91,8 @@ defmodule Mix.Tasks.Selecto.Gen.ParameterizedJoin do
       Usage: mix selecto.gen.parameterized_join JOIN_NAME PARAM1:TYPE PARAM2:TYPE [options]
 
       Examples:
-        mix selecto.gen.parameterized_join products category:string active:boolean
-        mix selecto.gen.parameterized_join discounts type:string amount:float,required --fields discount_percent:float
+        mix selecto.gen.parameterized_join customer country:string,required
+        mix selecto.gen.parameterized_join customer country:string,required --fields company_name:string,country:string
       """)
 
       exit({:shutdown, 1})
@@ -94,7 +102,7 @@ defmodule Mix.Tasks.Selecto.Gen.ParameterizedJoin do
       {:ok, config_text} ->
         case opts[:output] do
           nil ->
-            Mix.shell().info("Generated parameterized join configuration:")
+            Mix.shell().info("Generated existing-join parameterization fragment:")
             Mix.shell().info("")
             Mix.shell().info(config_text)
 
@@ -176,6 +184,8 @@ defmodule Mix.Tasks.Selecto.Gen.ParameterizedJoin do
       "string" -> :string
       "integer" -> :integer
       "int" -> :integer
+      "number" -> :decimal
+      "numeric" -> :decimal
       "float" -> :float
       "decimal" -> :decimal
       "boolean" -> :boolean
@@ -270,8 +280,8 @@ defmodule Mix.Tasks.Selecto.Gen.ParameterizedJoin do
     config = %{
       name: humanize_name(join_name),
       type: :left,
-      source_table: opts[:source_table] || join_name,
       parameters: parameters,
+      filters: build_filters(parameters),
       fields: fields
     }
 
@@ -286,19 +296,23 @@ defmodule Mix.Tasks.Selecto.Gen.ParameterizedJoin do
 
   defp format_join_config(join_name, config) do
     formatted_parameters = format_parameters_list(config.parameters)
+    formatted_filters = format_filters_map(config.filters)
     formatted_fields = format_fields_map(config.fields)
 
     base_config = """
-    #{join_name}: %{
-      name: "#{config.name}",
-      type: #{inspect(config.type)},
-      source_table: "#{config.source_table}",
-      
-      # Runtime parameters - these values will be provided when using the join
-      parameters: #{formatted_parameters},
-      
-      # Available fields from this parameterized join
-      fields: #{formatted_fields}
+    # Existing join parameterization for :#{join_name}
+    #
+    # Copy the keys below into the existing :#{join_name} entry in your domain's
+    # joins map. Keep that generated join's name, type, source, and on keys.
+
+    # Static parameter metadata for validation and join:param.field references.
+    parameters: #{formatted_parameters},
+
+    # Runtime filters used by Selecto.join_parameterize/4.
+    filters: #{formatted_filters},
+
+    # Fields exposed by this parameterized join.
+    fields: #{formatted_fields}
     """
 
     condition_config =
@@ -307,12 +321,19 @@ defmodule Mix.Tasks.Selecto.Gen.ParameterizedJoin do
           ""
 
         condition ->
-          ",\n      \n      # Join condition template (use :parameter_name for substitution)\n      join_condition: \"#{condition}\""
+          ",\n\n    # Optional join condition template for validators that inspect parameter placeholders.\n    join_condition: \"#{condition}\""
       end
 
-    usage_examples = generate_usage_examples(join_name, config.parameters)
+    usage_examples =
+      generate_usage_examples(join_name, config.parameters, Map.keys(config.fields))
 
-    base_config <> condition_config <> "\n    }" <> usage_examples
+    base_config <> condition_config <> usage_examples
+  end
+
+  defp build_filters(parameters) do
+    Enum.into(parameters, %{}, fn param ->
+      {to_string(param.name), %{name: humanize_name(param.name), type: param.type}}
+    end)
   end
 
   defp format_parameters_list(parameters) do
@@ -361,7 +382,22 @@ defmodule Mix.Tasks.Selecto.Gen.ParameterizedJoin do
     end
   end
 
-  defp generate_usage_examples(join_name, parameters) do
+  defp format_filters_map(filters) do
+    if Enum.empty?(filters) do
+      "%{}"
+    else
+      formatted_filters =
+        filters
+        |> Enum.map(fn {filter_name, filter_config} ->
+          "        #{inspect(filter_name)} => #{inspect(filter_config, pretty: true, width: 80)}"
+        end)
+        |> Enum.join(",\n")
+
+      "%{\n#{formatted_filters}\n      }"
+    end
+  end
+
+  defp generate_usage_examples(join_name, parameters, fields) do
     if Enum.empty?(parameters) do
       ""
     else
@@ -369,37 +405,61 @@ defmodule Mix.Tasks.Selecto.Gen.ParameterizedJoin do
       example_values =
         parameters
         |> Enum.map(fn param ->
-          example_value =
-            case param.type do
-              :string -> "electronics"
-              :integer -> "100"
-              :float -> "25.5"
-              :boolean -> "true"
-              :date -> "2023-01-01"
-              _ -> "value"
-            end
-
-          {param.name, example_value}
+          {param.name, example_value(param)}
         end)
 
       # Generate dot notation examples
       param_signature = example_values |> Enum.map(fn {_, value} -> value end) |> Enum.join(":")
+      example_fields = example_fields(fields)
 
       examples = [
-        "#{join_name}:#{param_signature}.field_name",
-        "#{join_name}:#{param_signature}.another_field"
+        "#{join_name}:#{param_signature}.#{Enum.at(example_fields, 0)}",
+        "#{join_name}:#{param_signature}.#{Enum.at(example_fields, 1)}"
       ]
 
       "\n\n    # Usage Examples:\n" <>
-        "    # \n" <>
-        "    # Use dot notation with parameters to reference fields:\n" <>
+        "    #\n" <>
+        "    # Runtime query usage:\n" <>
+        "    #   selecto\n" <>
+        "    #   |> Selecto.join_parameterize(:#{join_name}, \"#{List.first(example_values) |> elem(1)}\", #{runtime_options_example(example_values)})\n" <>
+        "    #   |> Selecto.select([\"#{List.first(examples)}\"])\n" <>
+        "    #\n" <>
+        "    # Static field reference validation:\n" <>
         (examples |> Enum.map(fn ex -> "    #   \"#{ex}\"" end) |> Enum.join("\n")) <>
         "\n    #\n" <>
-        "    # Parameter format: join:param1:param2:...param_n.field\n" <>
+        "    # Parameter format: existing_join:param1:param2:...param_n.field\n" <>
         "    # String parameters with special characters should be quoted:\n" <>
-        "    #   \"#{join_name}:'consumer electronics':true.name\"\n"
+        "    #   \"#{join_name}:'United States'.#{List.first(example_fields)}\"\n"
     end
   end
+
+  defp example_fields([]), do: ["field_name", "another_field"]
+
+  defp example_fields(fields) do
+    field_names = Enum.map(fields, &to_string/1)
+
+    case field_names do
+      [single] -> [single, single]
+      [first, second | _] -> [first, second]
+    end
+  end
+
+  defp runtime_options_example(example_values) do
+    example_values
+    |> Enum.map(fn {name, value} -> "#{name}: #{inspect(value)}" end)
+    |> Enum.join(", ")
+  end
+
+  defp example_value(%{name: name, type: :string}) do
+    if String.contains?(to_string(name), "country"), do: "USA", else: "example"
+  end
+
+  defp example_value(%{type: :integer}), do: "100"
+  defp example_value(%{type: :decimal}), do: "25.5"
+  defp example_value(%{type: :float}), do: "25.5"
+  defp example_value(%{type: :boolean}), do: "true"
+  defp example_value(%{type: :date}), do: "2023-01-01"
+  defp example_value(_param), do: "value"
 
   defp humanize_name(name) do
     name

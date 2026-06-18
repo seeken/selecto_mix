@@ -12,7 +12,7 @@ defmodule SelectoMix.TenantGenerationTest do
       Mix.Task.reenable("selecto.gen.filter_sets")
       Mix.Tasks.Selecto.Gen.FilterSets.run(["TmpApp", "--no-migration", "--no-tests"])
 
-      context_path = Path.join(["lib", "tmp_app", "tmp_app", "filter_sets.ex"])
+      context_path = Path.join(["lib", "tmp_app", "filter_sets.ex"])
       context_source = File.read!(context_path)
 
       assert context_source =~ "defp scoped_domain(domain)"

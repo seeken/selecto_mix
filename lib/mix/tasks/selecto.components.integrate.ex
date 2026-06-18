@@ -221,11 +221,12 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
 
   defp integrate_app_css(opts) do
     app_css_path = "assets/css/app.css"
+    selecto_path = get_selecto_components_path()
 
     case File.read(app_css_path) do
       {:ok, content} ->
         cond do
-          String.contains?(content, "selecto_components/lib") && !opts[:force] ->
+          selecto_source_configured?(content, selecto_path) && !opts[:force] ->
             if opts[:check] do
               :already_configured
             else
@@ -237,7 +238,7 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
             :needs_update
 
           true ->
-            updated_content = patch_app_css(content)
+            updated_content = patch_app_css(content, selecto_path)
 
             if updated_content != content do
               File.write!(app_css_path, updated_content)
@@ -434,20 +435,46 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
   end
 
   defp get_selecto_components_path() do
-    vendor_path = Path.join([File.cwd!(), "vendor", "selecto_components"])
-    deps_path = Path.join([File.cwd!(), "deps", "selecto_components"])
+    selecto_components_source_path()
+  end
+
+  @doc false
+  def selecto_components_source_path(cwd \\ File.cwd!(), deps \\ nil) do
+    deps = deps || Keyword.get(Mix.Project.config(), :deps, [])
+    vendor_path = Path.join([cwd, "vendor", "selecto_components"])
+    deps_path = Path.join([cwd, "deps", "selecto_components"])
 
     cond do
-      File.dir?(vendor_path) -> "../../vendor/selecto_components/lib/**/*.{ex,heex}"
-      File.dir?(deps_path) -> "../../deps/selecto_components/lib/**/*.{ex,heex}"
-      # default to deps
-      true -> "../../deps/selecto_components/lib/**/*.{ex,heex}"
+      File.dir?(vendor_path) ->
+        source_glob_from_css(cwd, vendor_path)
+
+      path_dep = selecto_components_path_dep(cwd, deps) ->
+        source_glob_from_css(cwd, path_dep)
+
+      File.dir?(deps_path) ->
+        source_glob_from_css(cwd, deps_path)
+
+      true ->
+        source_glob_from_css(cwd, deps_path)
     end
   end
 
-  defp patch_app_css(content) do
-    selecto_path = get_selecto_components_path()
+  @doc false
+  def patch_app_css(content, selecto_path \\ get_selecto_components_path()) do
+    if selecto_source_configured?(content, selecto_path) do
+      content
+    else
+      insert_app_css_source(content, selecto_path)
+    end
+  end
 
+  defp selecto_source_configured?(content, selecto_path) do
+    String.contains?(content, ~s(@source "#{selecto_path}")) ||
+      String.contains?(content, ~s(@source '#{selecto_path}')) ||
+      String.contains?(content, selecto_path)
+  end
+
+  defp insert_app_css_source(content, selecto_path) do
     cond do
       # If there are already @source directives, add after the last one
       String.contains?(content, "@source") ->
@@ -481,6 +508,57 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
         content <> "\n\n/* SelectoComponents styles */\n@source \"#{selecto_path}\";\n"
     end
   end
+
+  defp selecto_components_path_dep(cwd, deps) do
+    Enum.find_value(deps, fn
+      {:selecto_components, opts} when is_list(opts) ->
+        dep_path_from_opts(cwd, opts)
+
+      {:selecto_components, _requirement, opts} when is_list(opts) ->
+        dep_path_from_opts(cwd, opts)
+
+      _ ->
+        nil
+    end)
+  end
+
+  defp dep_path_from_opts(cwd, opts) do
+    case Keyword.get(opts, :path) do
+      nil ->
+        nil
+
+      path ->
+        path = Path.expand(path, cwd)
+
+        if File.dir?(path) do
+          path
+        end
+    end
+  end
+
+  defp source_glob_from_css(cwd, component_root) do
+    css_dir = Path.expand("assets/css", cwd)
+    source_glob = Path.join([Path.expand(component_root, cwd), "lib", "**", "*.{ex,heex}"])
+
+    source_glob
+    |> relative_path(css_dir)
+    |> String.replace("\\", "/")
+  end
+
+  defp relative_path(path, from_dir) do
+    path_segments = Path.expand(path) |> Path.split()
+    from_segments = Path.expand(from_dir) |> Path.split()
+    {_common, from_rest, path_rest} = split_common_prefix(from_segments, path_segments)
+
+    Path.join(List.duplicate("..", length(from_rest)) ++ path_rest)
+  end
+
+  defp split_common_prefix([same | from_rest], [same | path_rest]) do
+    {common, from_rest, path_rest} = split_common_prefix(from_rest, path_rest)
+    {[same | common], from_rest, path_rest}
+  end
+
+  defp split_common_prefix(from_rest, path_rest), do: {[], from_rest, path_rest}
 
   defp report_check_status(js_status, css_status) do
     Mix.shell().info("\nIntegration Status Check:")
