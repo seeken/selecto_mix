@@ -85,7 +85,7 @@ defmodule Mix.Tasks.Selecto.Install do
 
         Next steps:
           1. Run `mix deps.get`
-          2. Run `cd assets && npm install`
+          2. Run `(cd assets && npm install)`
           3. Run `mix assets.build`
         """
       )

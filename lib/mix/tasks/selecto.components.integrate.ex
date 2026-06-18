@@ -73,7 +73,7 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
     Mix.shell().info("""
 
     Next steps:
-      1. Run `cd assets && npm install`
+      1. Run `(cd assets && npm install)`
       2. Run `mix assets.build`
     """)
   end
@@ -126,7 +126,7 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
 
     File.write!(path, content)
     Mix.shell().info("✓ Created package.json with Chart.js dependency")
-    Mix.shell().info("  Run `cd assets && npm install` to install dependencies")
+    Mix.shell().info("  Run `(cd assets && npm install)` to install dependencies")
   end
 
   defp add_dependencies_to_package_json(path, content, needs_chart) do
@@ -147,7 +147,7 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
             File.write!(path, new_content)
             if needs_chart, do: Mix.shell().info("✓ Added Chart.js to package.json dependencies")
 
-            Mix.shell().info("  Run `cd assets && npm install` to install dependencies")
+            Mix.shell().info("  Run `(cd assets && npm install)` to install dependencies")
 
           _ ->
             Mix.shell().info("""
@@ -157,7 +157,7 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
                 "chart.js": "^4.4.0"
 
             Then run:
-                cd assets && npm install
+                (cd assets && npm install)
             """)
         end
 
@@ -169,7 +169,7 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
             "chart.js": "^4.4.0"
 
         Then run:
-            cd assets && npm install
+            (cd assets && npm install)
         """)
     end
   end
