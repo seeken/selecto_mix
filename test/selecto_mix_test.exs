@@ -448,6 +448,52 @@ defmodule SelectoMixTest do
       assert String.contains?(result, "tag_foreign_key: \"tag_id\"")
     end
 
+    test "generate_domain_map/1 does not map tag display drill-down to the source row id" do
+      config = %{
+        schema_module: TestSchema,
+        table_name: "products",
+        primary_key: :id,
+        fields: [:id],
+        field_types: %{id: :integer},
+        associations: %{
+          tags: %{
+            association_type: :many_to_many,
+            related_schema: TestTag,
+            queryable: :tags,
+            owner_key: :id,
+            related_key: :id,
+            join_type: :left,
+            join_through: "product_tags",
+            join_keys: [product_id: :id, tag_id: :id]
+          }
+        },
+        expanded_schemas: %{
+          test_tag: %{
+            source_table: "tags",
+            primary_key: :id,
+            fields: [:id, :name],
+            field_types: %{id: :integer, name: :string},
+            associations: %{}
+          }
+        },
+        expand_schemas_list: ["test_tag"],
+        expand_modes: %{"test_tag" => {:tag, "name"}},
+        suggested_defaults: %{
+          default_selected: [],
+          default_filters: %{},
+          default_order: []
+        },
+        metadata: %{module_name: "Product"}
+      }
+
+      result = DomainGenerator.generate_domain_map(config)
+
+      assert result =~ "# tag mode: displays name, filters by tag ID"
+      assert result =~ ":name => %{"
+      assert result =~ "join_mode: :tag"
+      refute result =~ "group_by_filter: \"id\""
+    end
+
     test "generate_domain_map/1 deduplicates schema entries for self-referential associations" do
       config = %{
         schema_module: TestSchema,

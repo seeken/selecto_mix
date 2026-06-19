@@ -364,9 +364,11 @@ defmodule SelectoMix.DomainGenerator do
           filter_type: :multi_select_id
         }
 
-        # Add group_by_filter if we have a foreign key to filter on
+        # Add group_by_filter when the association has a local foreign key.
+        # Many-to-many tag associations use owner_key for the source row id,
+        # so tag display fields should fall back to their qualified tag id.
         metadata =
-          if foreign_key_field do
+          if foreign_key_field && mode_type != :tag do
             Map.put(metadata, :group_by_filter, foreign_key_field)
           else
             metadata
@@ -394,10 +396,10 @@ defmodule SelectoMix.DomainGenerator do
           |> sorted_pairs()
           |> Enum.map(fn {field, config_map} ->
             comment =
-              if field == display_field_atom do
-                "# #{mode_type} mode: displays name, filters by ID"
-              else
-                ""
+              case {field == display_field_atom, mode_type} do
+                {true, :tag} -> "# tag mode: displays #{display_field}, filters by tag ID"
+                {true, mode} -> "# #{mode} mode: displays #{display_field}, filters by ID"
+                _ -> ""
               end
 
             comment_line = if comment != "", do: "          #{comment}\n", else: ""
