@@ -1,11 +1,15 @@
 CHANGES
 =======
 
-Unreleased
+V 0.4.6
 ----------
 
 - Relaxed generated installer and README dependency ranges to allow the
   coordinated 0.5 Selecto release line while preserving current lower bounds.
+- Updated generated installer and README dependency baselines for the
+  coordinated point release: `selecto >= 0.4.6`,
+  `selecto_db_postgresql >= 0.4.4`, and `selecto_components >= 0.4.8`.
+- Bump package version to `0.4.6`.
 
 V 0.4.5
 ----------
