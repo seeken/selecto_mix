@@ -207,6 +207,143 @@ unless Code.ensure_loaded?(Selecto.Domain) do
   end
 end
 
+unless Code.ensure_loaded?(Selecto.Domain.ContractVerification) do
+  defmodule Selecto.Domain.ContractVerification do
+    @snapshot_format "selecto.domain_contract_snapshot"
+    @snapshot_format_version 1
+
+    def verify(%{domain: provider}, %{domain: consumer}, _opts) do
+      provider_name = map_get(provider, "name")
+
+      surface_ids =
+        provider |> map_get("published_views", %{}) |> Map.keys() |> Enum.map(&to_string/1)
+
+      dependencies =
+        consumer
+        |> map_get("domain_dependencies", [])
+        |> Enum.map(fn dependency ->
+          contract = dependency |> map_get("contract") |> to_string()
+
+          errors =
+            if contract in surface_ids do
+              []
+            else
+              [
+                %{
+                  code: :missing_provider_contract,
+                  message: "provider does not publish contract #{contract}"
+                }
+              ]
+            end
+
+          %{provider: provider_name, contract: contract, errors: errors, warnings: []}
+        end)
+
+      errors = Enum.flat_map(dependencies, & &1.errors)
+
+      report = %{
+        provider: %{name: provider_name},
+        consumer: %{name: map_get(consumer, "name")},
+        dependencies: dependencies,
+        errors: errors,
+        warnings: []
+      }
+
+      if errors == [], do: {:ok, report}, else: {:error, report}
+    end
+
+    def snapshot(%{domain: domain}, opts) do
+      surfaces =
+        domain
+        |> map_get("published_views", %{})
+        |> Enum.map(fn {id, view} ->
+          %{
+            id: to_string(id),
+            kind: :query_surface,
+            result_shape: view |> map_get("columns", %{}) |> result_shape()
+          }
+        end)
+
+      {:ok,
+       %{
+         format: @snapshot_format,
+         format_version: @snapshot_format_version,
+         generated_at: Keyword.get(opts, :generated_at, "stable"),
+         provider: %{name: map_get(domain, "name")},
+         surfaces: surfaces
+       }}
+    end
+
+    def diff_snapshots(left, right) do
+      left_surfaces = index_surfaces(map_get(left, "surfaces", []))
+      right_surfaces = index_surfaces(map_get(right, "surfaces", []))
+      left_ids = left_surfaces |> Map.keys() |> Enum.sort()
+      right_ids = right_surfaces |> Map.keys() |> Enum.sort()
+
+      changed =
+        (left_ids -- (left_ids -- right_ids))
+        |> Enum.filter(&(Map.get(left_surfaces, &1) != Map.get(right_surfaces, &1)))
+        |> Enum.map(
+          &%{contract: &1, classification: :breaking, changes: [%{kind: :result_type_changed}]}
+        )
+
+      %{
+        changed?: changed != [] or left_ids != right_ids,
+        breaking?: changed != [] or left_ids -- right_ids != [],
+        surfaces: %{
+          added: right_ids -- left_ids,
+          removed: left_ids -- right_ids,
+          changed: changed
+        },
+        changes: changed
+      }
+    end
+
+    def snapshot_format, do: @snapshot_format
+    def snapshot_format_version, do: @snapshot_format_version
+
+    defp result_shape(columns) when is_map(columns) do
+      Map.new(columns, fn {id, column} -> {to_string(id), to_string(map_get(column, "type"))} end)
+    end
+
+    defp result_shape(_columns), do: %{}
+
+    defp index_surfaces(surfaces) do
+      Map.new(surfaces, fn surface -> {map_get(surface, "id"), surface} end)
+    end
+
+    defp map_get(map, key, default \\ nil)
+
+    defp map_get(map, key, default) when is_map(map) and is_binary(key) do
+      atom_key = existing_atom(key)
+
+      cond do
+        Map.has_key?(map, key) -> Map.get(map, key)
+        atom_key && Map.has_key?(map, atom_key) -> Map.get(map, atom_key)
+        true -> default
+      end
+    end
+
+    defp map_get(map, key, default) when is_map(map) and is_atom(key) do
+      string_key = Atom.to_string(key)
+
+      cond do
+        Map.has_key?(map, key) -> Map.get(map, key)
+        Map.has_key?(map, string_key) -> Map.get(map, string_key)
+        true -> default
+      end
+    end
+
+    defp map_get(_map, _key, default), do: default
+
+    defp existing_atom(value) do
+      String.to_existing_atom(value)
+    rescue
+      ArgumentError -> nil
+    end
+  end
+end
+
 defmodule SelectoMix.DomainExportTaskTest do
   use ExUnit.Case, async: false
 
@@ -268,6 +405,40 @@ defmodule SelectoMix.DomainExportTaskTest do
         filters: %{name: %{type: :string}},
         functions: %{}
       }
+    end
+  end
+
+  defmodule ContractProviderDomain do
+    def domain do
+      PlainDomain.domain()
+      |> Map.merge(%{
+        name: "Billing",
+        published_views: %{
+          invoice_summary_v1: %{
+            kind: :view,
+            columns: %{
+              invoice_id: %{type: :integer},
+              status: %{type: :string}
+            }
+          }
+        }
+      })
+    end
+  end
+
+  defmodule ContractConsumerDomain do
+    def domain do
+      PlainDomain.domain()
+      |> Map.merge(%{
+        name: "Registration",
+        domain_dependencies: [
+          %{
+            provider: :billing,
+            contract: :invoice_summary_v1,
+            uses: %{fields: [:invoice_id]}
+          }
+        ]
+      })
     end
   end
 
@@ -1255,6 +1426,84 @@ defmodule SelectoMix.DomainExportTaskTest do
 
       assert output =~
                "owner_choices: domain_of_interest=fail_closed -> domain_of_interest=best_effort"
+    end)
+  end
+
+  test "verifies consumer dependencies against a provider artifact" do
+    in_tmp_dir("selecto_mix_domain_verify", fn ->
+      Mix.Task.reenable("selecto.domain.verify")
+      assert {:ok, provider} = SelectoMix.DomainExport.export(ContractProviderDomain)
+      assert {:ok, consumer} = SelectoMix.DomainExport.export(ContractConsumerDomain)
+      File.write!("provider.normalized.json", SelectoMix.DomainExport.encode!(provider))
+      File.write!("consumer.normalized.json", SelectoMix.DomainExport.encode!(consumer))
+
+      output =
+        capture_io(fn ->
+          Mix.Tasks.Selecto.Domain.Verify.run([
+            "provider.normalized.json",
+            "consumer.normalized.json"
+          ])
+        end)
+
+      assert output =~ "Domain contract verification"
+      assert output =~ "Provider: Billing"
+      assert output =~ "Consumer: Registration"
+      assert output =~ "invoice_summary_v1: ok"
+      assert output =~ "Errors: 0"
+    end)
+  end
+
+  test "writes and diffs domain contract snapshots" do
+    in_tmp_dir("selecto_mix_domain_contract_snapshot", fn ->
+      Mix.Task.reenable("selecto.domain.contract.snapshot")
+      Mix.Task.reenable("selecto.domain.contract.diff")
+      assert {:ok, provider} = SelectoMix.DomainExport.export(ContractProviderDomain)
+
+      changed_provider =
+        put_in(
+          provider,
+          ["domain", "published_views", "invoice_summary_v1", "columns", "status", "type"],
+          "integer"
+        )
+
+      File.write!("provider.normalized.json", SelectoMix.DomainExport.encode!(provider))
+
+      File.write!(
+        "provider.changed.normalized.json",
+        SelectoMix.DomainExport.encode!(changed_provider)
+      )
+
+      snapshot_output =
+        capture_io(fn ->
+          Mix.Tasks.Selecto.Domain.Contract.Snapshot.run([
+            "provider.normalized.json",
+            "--output",
+            "provider.snapshot.json"
+          ])
+        end)
+
+      assert snapshot_output =~ "Wrote domain contract snapshot: provider.snapshot.json"
+      assert snapshot_output =~ "Surfaces: 1"
+
+      capture_io(fn ->
+        Mix.Tasks.Selecto.Domain.Contract.Snapshot.run([
+          "provider.changed.normalized.json",
+          "--output",
+          "provider.changed.snapshot.json"
+        ])
+      end)
+
+      diff_output =
+        capture_io(fn ->
+          Mix.Tasks.Selecto.Domain.Contract.Diff.run([
+            "provider.snapshot.json",
+            "provider.changed.snapshot.json"
+          ])
+        end)
+
+      assert diff_output =~ "Domain contract snapshot diff"
+      assert diff_output =~ "Breaking: true"
+      assert diff_output =~ "invoice_summary_v1: breaking"
     end)
   end
 

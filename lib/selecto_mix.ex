@@ -24,6 +24,8 @@ defmodule SelectoMix do
     artifacts
   - **Domain Docs**: Generates Markdown references from normalized domain
     artifacts
+  - **Domain Contract Verification**: Verifies consumer domain dependencies
+    against provider published surfaces and snapshots published contracts
   - **Studio Host Artifacts**: Can generate trusted host-app inspection
     providers for `SelectoStudio.DomainArtifacts`
 
@@ -43,6 +45,9 @@ defmodule SelectoMix do
   - `mix selecto.domain.diagram` - Generate Mermaid diagrams from domain inspection artifacts
   - `mix selecto.domain.diff` - Diff normalized domain JSON artifacts
   - `mix selecto.domain.docs` - Generate Markdown docs from normalized domain JSON artifacts
+  - `mix selecto.domain.verify` - Verify consumer dependencies against a provider artifact
+  - `mix selecto.domain.contract.snapshot` - Write published domain contract snapshots
+  - `mix selecto.domain.contract.diff` - Diff published domain contract snapshots
 
   ## Getting Started
 
