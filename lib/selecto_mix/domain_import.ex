@@ -7,7 +7,7 @@ defmodule SelectoMix.DomainImport do
   `domain/0`, and contain no runtime placeholders.
   """
 
-  alias SelectoMix.DomainExport
+  alias SelectoMix.{ArtifactJSON, DomainExport}
 
   @format "selecto.domain_import_plan"
   @format_version 1
@@ -554,39 +554,11 @@ defmodule SelectoMix.DomainImport do
     end)
   end
 
-  defp map_get(map, key, default \\ nil)
-
-  defp map_get(map, key, default) when is_map(map) and is_binary(key) do
-    atom_key = existing_atom(key)
-
-    cond do
-      Map.has_key?(map, key) -> Map.get(map, key)
-      atom_key && Map.has_key?(map, atom_key) -> Map.get(map, atom_key)
-      true -> default
-    end
-  end
-
-  defp map_get(map, key, default) when is_map(map) and is_atom(key) do
-    string_key = Atom.to_string(key)
-
-    cond do
-      Map.has_key?(map, key) -> Map.get(map, key)
-      Map.has_key?(map, string_key) -> Map.get(map, string_key)
-      true -> default
-    end
-  end
-
-  defp map_get(_map, _key, default), do: default
+  defp map_get(map, key, default \\ nil), do: ArtifactJSON.map_get(map, key, default)
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp list_or_empty(value) when is_list(value), do: value
   defp list_or_empty(_value), do: []
-
-  defp existing_atom(value) do
-    String.to_existing_atom(value)
-  rescue
-    ArgumentError -> nil
-  end
 end

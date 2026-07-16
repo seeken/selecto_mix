@@ -4,7 +4,8 @@ defmodule SelectoMix.SchemaIntrospector do
 
   Supports both Ecto schemas and direct database connections via Postgrex.
   This module provides backward compatibility with the original Ecto-only
-  interface while delegating to the new protocol-based introspector system.
+  interface while delegating to `SelectoMix.Introspector` (and its backends,
+  e.g. `SelectoMix.Introspector.Ecto`) under the hood.
 
   ## Usage
 
@@ -39,17 +40,36 @@ defmodule SelectoMix.SchemaIntrospector do
 
   ## Returns
 
-  A map containing:
-  - `:schema_module` - The source module or table name
-  - `:table_name` - Database table name
-  - `:primary_key` - Primary key field name
-  - `:fields` - List of all available fields
-  - `:field_types` - Map of field names to their Selecto types
-  - `:associations` - Association metadata for joins
-  - `:suggested_defaults` - Recommended default configuration
-  - `:redacted_fields` - Fields that should be excluded from queries
+  A configuration map containing:
+    - `:schema_module` - The source module or table name
+    - `:table_name` - Database table name
+    - `:primary_key` - Primary key field name
+    - `:fields` - List of all available fields
+    - `:field_types` - Map of field names to their Selecto types
+    - `:associations` - Association metadata for joins
+    - `:suggested_defaults` - Recommended default configuration
+    - `:redacted_fields` - Fields that should be excluded from queries
+  On failure, the map contains `:error` and `:schema_module`, matching the
+  original public API. Use `introspect_schema_result/2` when tagged tuples are
+  preferable.
   """
+  @spec introspect_schema(term(), keyword()) :: map()
   def introspect_schema(source, opts \\ []) do
+    case introspect_schema_result(source, opts) do
+      {:ok, config} -> config
+      {:error, reason} -> %{error: reason, schema_module: source}
+    end
+  end
+
+  @doc """
+  Introspects a schema while preserving success and failure as tagged tuples.
+
+  Use this at task boundaries that need to stop generation on an introspection
+  failure. `introspect_schema/2` retains the package's original map-returning
+  API for backward compatibility.
+  """
+  @spec introspect_schema_result(term(), keyword()) :: {:ok, map()} | {:error, String.t()}
+  def introspect_schema_result(source, opts \\ []) do
     include_associations = Keyword.get(opts, :include_associations, true)
     redact_fields = Keyword.get(opts, :redact_fields, [])
 
@@ -70,80 +90,89 @@ defmodule SelectoMix.SchemaIntrospector do
         # Extract additional metadata
         extra_metadata = extract_metadata_from_source(source, metadata)
 
-        %{
-          schema_module: Map.get(metadata, :schema_module, source),
-          table_name: metadata.table_name,
-          primary_key: metadata.primary_key,
-          fields: metadata.fields,
-          field_types: metadata.field_types,
-          associations: associations,
-          suggested_defaults: suggested_defaults,
-          redacted_fields: redact_fields,
-          metadata: extra_metadata,
-          columns: Map.get(metadata, :columns, %{}),
-          source: Map.get(metadata, :source),
-          source_kind: Map.get(metadata, :source_kind),
-          readonly: Map.get(metadata, :readonly),
-          source_type: Map.get(metadata, :source_type, source_type_for(source)),
-          adapter: Map.get(metadata, :adapter)
-        }
+        {:ok,
+         %{
+           schema_module: Map.get(metadata, :schema_module, source),
+           table_name: metadata.table_name,
+           primary_key: metadata.primary_key,
+           fields: metadata.fields,
+           field_types: metadata.field_types,
+           associations: associations,
+           suggested_defaults: suggested_defaults,
+           redacted_fields: redact_fields,
+           metadata: extra_metadata,
+           columns: Map.get(metadata, :columns, %{}),
+           source: Map.get(metadata, :source),
+           source_kind: Map.get(metadata, :source_kind),
+           readonly: Map.get(metadata, :readonly),
+           source_type: Map.get(metadata, :source_type, source_type_for(source)),
+           adapter: Map.get(metadata, :adapter)
+         }}
 
       {:error, reason} ->
-        %{
-          error: "Failed to introspect schema #{inspect(source)}: #{inspect(reason)}",
-          schema_module: source
-        }
+        {:error, "Failed to introspect schema #{inspect(source)}: #{inspect(reason)}"}
+    end
+  end
+
+  @doc """
+  Same as `introspect_schema/2`, but raises `Mix.Error` on failure and
+  returns the config map directly. Intended for use at Mix task boundaries.
+  """
+  @spec introspect_schema!(term(), keyword()) :: map()
+  def introspect_schema!(source, opts \\ []) do
+    case introspect_schema_result(source, opts) do
+      {:ok, config} -> config
+      {:error, reason} -> Mix.raise(to_string(reason))
     end
   end
 
   @doc """
   Get the database table name for an Ecto schema.
+
+  Delegates to `SelectoMix.Introspector.Ecto.get_table_name/1`.
   """
   def get_table_name(schema_module) do
-    schema_module.__schema__(:source)
+    SelectoMix.Introspector.Ecto.get_table_name(schema_module)
   end
 
   @doc """
   Get the primary key field(s) for an Ecto schema.
+
+  Delegates to `SelectoMix.Introspector.Ecto.get_primary_key/1`, which
+  returns the full list of keys for composite primary keys and `nil` when
+  the schema has none (rather than collapsing to a single field or `:id`).
   """
   def get_primary_key(schema_module) do
-    case schema_module.__schema__(:primary_key) do
-      [single_key] -> single_key
-      multiple_keys when is_list(multiple_keys) -> List.first(multiple_keys)
-      nil -> :id
-    end
+    SelectoMix.Introspector.Ecto.get_primary_key(schema_module)
   end
 
   @doc """
   Get all fields defined in an Ecto schema.
+
+  Delegates to `SelectoMix.Introspector.Ecto.get_schema_fields/1`.
   """
   def get_schema_fields(schema_module) do
-    schema_module.__schema__(:fields)
+    SelectoMix.Introspector.Ecto.get_schema_fields(schema_module)
   end
 
   @doc """
   Map Ecto field types to Selecto types.
+
+  Delegates to `SelectoMix.Introspector.Ecto.get_field_types/1`.
   """
   def get_field_types(schema_module) do
-    fields = get_schema_fields(schema_module)
-
-    Enum.into(fields, %{}, fn field ->
-      ecto_type = schema_module.__schema__(:type, field)
-      selecto_type = map_ecto_type_to_selecto(ecto_type)
-      {field, selecto_type}
-    end)
+    SelectoMix.Introspector.Ecto.get_field_types(schema_module)
   end
 
   @doc """
   Extract association information for join configuration.
-  """
-  def get_associations(schema_module) do
-    associations = schema_module.__schema__(:associations)
 
-    Enum.into(associations, %{}, fn assoc_name ->
-      assoc = schema_module.__schema__(:association, assoc_name)
-      {assoc_name, analyze_association(assoc)}
-    end)
+  Delegates to `SelectoMix.Introspector.Ecto.get_associations/2`, which
+  additionally covers `:many_to_many` associations (with `join_through` /
+  `join_keys`) that this module's earlier standalone implementation did not.
+  """
+  def get_associations(schema_module, opts \\ []) do
+    SelectoMix.Introspector.Ecto.get_associations(schema_module, opts)
   end
 
   @doc """
@@ -264,65 +293,6 @@ defmodule SelectoMix.SchemaIntrospector do
   end
 
   # Private helper functions
-
-  defp map_ecto_type_to_selecto(ecto_type) do
-    case ecto_type do
-      :id -> :integer
-      :binary_id -> :binary_id
-      :uuid -> :uuid
-      Ecto.UUID -> :uuid
-      :integer -> :integer
-      :string -> :string
-      :binary -> :string
-      :boolean -> :boolean
-      :decimal -> :decimal
-      :float -> :float
-      :date -> :date
-      :time -> :time
-      :utc_datetime -> :utc_datetime
-      :naive_datetime -> :naive_datetime
-      :map -> :jsonb
-      {:array, inner_type} -> {:array, map_ecto_type_to_selecto(inner_type)}
-      {Ecto.Enum, _values} -> :string
-      # Default fallback
-      _ -> :string
-    end
-  end
-
-  defp analyze_association(assoc) do
-    %{
-      type: get_association_type(assoc),
-      related_schema: get_related_schema(assoc),
-      owner_key: get_owner_key(assoc),
-      related_key: get_related_key(assoc),
-      join_type: suggest_join_type(assoc),
-      is_through: is_through_association?(assoc)
-    }
-  end
-
-  defp get_association_type(%{__struct__: struct}) do
-    case struct do
-      Ecto.Association.Has -> :has_many
-      Ecto.Association.BelongsTo -> :belongs_to
-      Ecto.Association.HasThrough -> :has_many_through
-      _ -> :unknown
-    end
-  end
-
-  defp get_related_schema(%{related: related}), do: related
-  defp get_related_schema(%{through: [through_assoc, _]}), do: through_assoc
-
-  defp get_owner_key(%{owner_key: owner_key}), do: owner_key
-  defp get_owner_key(%{through: _}), do: :id
-
-  defp get_related_key(%{related_key: related_key}), do: related_key
-  defp get_related_key(%{through: _}), do: :id
-
-  defp suggest_join_type(%{__struct__: Ecto.Association.BelongsTo}), do: :inner
-  defp suggest_join_type(_), do: :left
-
-  defp is_through_association?(%{through: _}), do: true
-  defp is_through_association?(_), do: false
 
   defp suggest_default_selected_fields(fields, field_types, include_timestamps) do
     # Start with common display fields
@@ -502,7 +472,7 @@ defmodule SelectoMix.SchemaIntrospector do
     |> to_string()
     |> String.trim()
     |> String.trim_leading("public.")
-    |> singularize_table_name()
+    |> SelectoMix.Inflect.singularize()
     |> Macro.camelize()
   end
 
@@ -515,23 +485,4 @@ defmodule SelectoMix.SchemaIntrospector do
   end
 
   defp adapter_context_name(_adapter), do: "Database"
-
-  defp singularize_table_name(table_name) do
-    cond do
-      String.ends_with?(table_name, "ies") ->
-        String.replace_suffix(table_name, "ies", "y")
-
-      String.ends_with?(table_name, "sses") ->
-        String.replace_suffix(table_name, "sses", "ss")
-
-      String.ends_with?(table_name, "ses") ->
-        String.replace_suffix(table_name, "ses", "s")
-
-      String.ends_with?(table_name, "s") and not String.ends_with?(table_name, "ss") ->
-        String.replace_suffix(table_name, "s", "")
-
-      true ->
-        table_name
-    end
-  end
 end

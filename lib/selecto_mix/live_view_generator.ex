@@ -227,13 +227,13 @@ defmodule SelectoMix.LiveViewGenerator do
 
   def source_live_name({:db, _adapter, _conn, table, _opts}) do
     table
-    |> singularize_table_name()
+    |> SelectoMix.Inflect.singularize()
     |> Macro.camelize()
   end
 
   def source_live_name({:db, _adapter, _conn, table}) do
     table
-    |> singularize_table_name()
+    |> SelectoMix.Inflect.singularize()
     |> Macro.camelize()
   end
 
@@ -243,12 +243,12 @@ defmodule SelectoMix.LiveViewGenerator do
 
   def source_live_name(source) when is_binary(source) do
     source
-    |> singularize_table_name()
+    |> SelectoMix.Inflect.singularize()
     |> Macro.camelize()
   end
 
   def source_live_name(source) do
-    source |> to_string() |> singularize_table_name() |> Macro.camelize()
+    source |> to_string() |> SelectoMix.Inflect.singularize() |> Macro.camelize()
   end
 
   defp live_view_connection_ref(source, app_name, opts) do
@@ -275,23 +275,4 @@ defmodule SelectoMix.LiveViewGenerator do
 
   defp domain_route_path(""), do: "/"
   defp domain_route_path(route_path), do: "/#{route_path}"
-
-  defp singularize_table_name(table_name) do
-    cond do
-      String.ends_with?(table_name, "ies") ->
-        String.replace_suffix(table_name, "ies", "y")
-
-      String.ends_with?(table_name, "sses") ->
-        String.replace_suffix(table_name, "sses", "ss")
-
-      String.ends_with?(table_name, "ses") ->
-        String.replace_suffix(table_name, "ses", "s")
-
-      String.ends_with?(table_name, "s") and not String.ends_with?(table_name, "ss") ->
-        String.replace_suffix(table_name, "s", "")
-
-      true ->
-        table_name
-    end
-  end
 end

@@ -38,14 +38,11 @@ defmodule Mix.Tasks.Selecto.Domain.Import do
 
   @impl Mix.Task
   def run(args) do
-    {opts, positional, invalid} = OptionParser.parse(args, strict: @switches, aliases: @aliases)
+    {opts, positional} = SelectoMix.CLI.parse!(args, strict: @switches, aliases: @aliases)
     check? = Keyword.get(opts, :check, false)
     write? = Keyword.get(opts, :write, false)
 
     cond do
-      invalid != [] ->
-        Mix.raise("Invalid option(s): #{format_invalid_options(invalid)}")
-
       positional == [] ->
         Mix.raise(import_usage())
 
@@ -279,15 +276,6 @@ defmodule Mix.Tasks.Selecto.Domain.Import do
     sections
     |> Enum.map(fn section ->
       "#{Map.fetch!(section, "name")} (#{Map.fetch!(section, "status")})"
-    end)
-    |> Enum.join(", ")
-  end
-
-  defp format_invalid_options(invalid) do
-    invalid
-    |> Enum.map(fn
-      {switch, nil} -> switch
-      {switch, value} -> "#{switch} #{value}"
     end)
     |> Enum.join(", ")
   end

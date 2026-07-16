@@ -1,13 +1,27 @@
 defmodule SelectoMix.Introspector do
   @moduledoc """
-  Protocol for introspecting different schema sources.
+  Facade for introspecting different schema sources.
 
-  This protocol provides a unified interface for discovering database schema
-  information from different sources:
+  This is a plain dispatch facade (not an Elixir `defprotocol`/`@behaviour`
+  pair) that provides a single `introspect/2` entry point over several
+  explicit backends, dispatching on the shape of `source`:
 
-  - Ecto schema modules (via `__schema__/1` callbacks)
-  - Direct PostgreSQL connections (via Postgrex and system catalogs)
+  - Ecto schema modules (atoms) - delegates to `SelectoMix.Introspector.Ecto`,
+    which reads Ecto's `__schema__/1` callbacks
+  - `{:db, adapter, connection, table_name, opts}` tuples - delegates to the
+    given `adapter` module's `introspect_table/3` (any `selecto_db_*` adapter
+    satisfying that contract; see `AdapterResolver`), then normalizes the
+    result (table/schema/source/primary-key defaults)
+  - `{:postgrex, connection, table_name}` / `{:postgrex, connection,
+    table_name, schema}` tuples - delegates to
+    `SelectoMix.Introspector.Postgres`, which queries Postgrex/PostgreSQL
+    system catalogs directly
   - Future: Other database types (MySQL, SQLite, etc.)
+
+  The `@callback` below documents the standardized `introspect/2` contract
+  that this facade's own dispatch honors; no module is required to declare
+  `@behaviour SelectoMix.Introspector` since dispatch here is a plain `case`
+  on the shape of `source`, not dynamic behaviour invocation.
 
   ## Usage
 
@@ -92,7 +106,8 @@ defmodule SelectoMix.Introspector do
   @callback introspect(source, opts) :: {:ok, metadata} | {:error, term()}
 
   @doc """
-  Convenience function that delegates to protocol implementation.
+  Introspects `source`, dispatching to the appropriate backend based on its
+  shape (Ecto module, `{:db, ...}` adapter tuple, or `{:postgrex, ...}` tuple).
   """
   def introspect(source, opts \\ []) do
     case source do

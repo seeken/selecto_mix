@@ -91,8 +91,11 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     Connection,
     ConnectionOpts,
     LiveViewGenerator,
+    SchemaDiscovery,
     StudioArtifactsGenerator
   }
+
+  alias SelectoMix.Gen.DomainPaths
 
   @impl Igniter.Mix.Task
   def info(_argv, _composing_task) do
@@ -151,10 +154,10 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     schemas_arg = Map.get(positional, :schemas, "")
 
     # Parse expand-schemas parameter
-    expand_schemas = parse_expand_schemas(parsed_args[:expand_schemas] || "")
+    expand_schemas = SchemaDiscovery.parse_expand_schemas(parsed_args[:expand_schemas] || "")
 
     # Parse special join mode parameters
-    expand_modes = parse_expand_modes(parsed_args)
+    expand_modes = SchemaDiscovery.parse_expand_modes(parsed_args)
 
     # Auto-add schemas with join modes to expand list
     schemas_from_modes = Map.keys(expand_modes)
@@ -173,13 +176,15 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     else
       schemas =
         cond do
-          updated_args[:all] -> discover_all_schemas(igniter)
-          schemas_arg != "" -> parse_schema_patterns(schemas_arg)
+          updated_args[:all] -> SchemaDiscovery.discover_all_schemas(igniter)
+          schemas_arg != "" -> SchemaDiscovery.parse_schema_patterns(igniter, schemas_arg)
           true -> []
         end
 
-      exclude_patterns = parse_exclude_patterns(updated_args[:exclude] || "")
-      schemas = Enum.reject(schemas, &schema_matches_exclude?(&1, exclude_patterns))
+      exclude_patterns = SchemaDiscovery.parse_exclude_patterns(updated_args[:exclude] || "")
+
+      schemas =
+        Enum.reject(schemas, &SchemaDiscovery.schema_matches_exclude?(&1, exclude_patterns))
 
       if Enum.empty?(schemas) do
         validated_igniter
@@ -204,9 +209,9 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         inspection_path \\ nil,
         diagram_path \\ nil
       ) do
-    docs_path = docs_path || default_docs_path(artifact_path)
-    inspection_path = inspection_path || default_inspection_path(artifact_path)
-    diagram_path = diagram_path || default_diagram_path(artifact_path)
+    docs_path = docs_path || DomainPaths.default_docs_path(artifact_path)
+    inspection_path = inspection_path || DomainPaths.default_inspection_path(artifact_path)
+    diagram_path = diagram_path || DomainPaths.default_diagram_path(artifact_path)
 
     """
 
@@ -275,7 +280,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       {:error, reason} ->
         Igniter.add_warning(
           igniter,
-          "Failed to generate from database source: #{inspect(reason)}"
+          "Failed to generate from database source: #{AdapterResolver.format_adapter_error(reason)}"
         )
     end
   end
@@ -283,18 +288,18 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   defp with_db_connection(adapter, conn_opts, igniter, opts) do
     Connection.with_connection(adapter, conn_opts, fn conn ->
       db_schema = opts[:schema] || "public"
-      exclude_patterns = parse_exclude_patterns(opts[:exclude] || "")
+      exclude_patterns = SchemaDiscovery.parse_exclude_patterns(opts[:exclude] || "")
 
       tables =
         cond do
-          opts[:all] -> discover_all_relations(adapter, conn, db_schema, opts)
+          opts[:all] -> SchemaDiscovery.discover_all_relations(adapter, conn, db_schema, opts)
           view = opts[:view] -> [view]
           materialized_view = opts[:materialized_view] -> [materialized_view]
           table = opts[:table] -> [table]
           true -> []
         end
 
-      tables = Enum.reject(tables, &table_matches_exclude?(&1, exclude_patterns))
+      tables = Enum.reject(tables, &SchemaDiscovery.table_matches_exclude?(&1, exclude_patterns))
 
       if Enum.empty?(tables) do
         Igniter.add_warning(
@@ -320,42 +325,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     end
   end
 
-  defp discover_all_relations(adapter, conn, db_schema, opts) do
-    cond do
-      not Code.ensure_loaded?(adapter) ->
-        []
-
-      function_exported?(adapter, :list_relations, 2) ->
-        case adapter.list_relations(conn,
-               schema: db_schema,
-               include_views: opts[:include_views] || false
-             ) do
-          {:ok, relations} ->
-            relations
-            |> Enum.reject(&(&1.name in ConnectionOpts.system_tables()))
-
-          {:error, _reason} ->
-            []
-        end
-
-      not function_exported?(adapter, :list_tables, 2) ->
-        []
-
-      true ->
-        case adapter.list_tables(conn, schema: db_schema) do
-          {:ok, tables} ->
-            tables
-            |> Enum.reject(&(&1 in ConnectionOpts.system_tables()))
-            |> Enum.map(&%{name: &1, source_kind: :table})
-
-          {:error, _reason} ->
-            []
-        end
-    end
-  end
-
   defp process_db_tables(igniter, adapter, conn, relations, opts) do
-    output_dir = get_output_directory(igniter, opts[:output])
+    output_dir = DomainPaths.get_output_directory(igniter, opts[:output])
     opts = Map.put_new(opts, :app_name, Igniter.Project.Application.app_name(igniter))
 
     if opts[:dry_run] do
@@ -395,169 +366,12 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     |> String.trim()
     |> case do
       "" -> nil
-      trimmed -> String.to_atom(trimmed)
+      trimmed -> SelectoMix.Identifier.to_atom!(trimmed)
     end
-  end
-
-  defp discover_all_schemas(igniter) do
-    # Use Igniter to find all Ecto schema modules in the project
-    igniter
-    |> Igniter.Project.Module.find_all_matching_modules(fn module_name ->
-      String.contains?(to_string(module_name), ["Schema", "Store"]) or
-        module_uses_ecto_schema?(igniter, module_name)
-    end)
-  end
-
-  defp module_uses_ecto_schema?(igniter, module_name) do
-    case Igniter.Project.Module.module_exists(igniter, module_name) do
-      {true, _igniter} ->
-        # Check if the module uses Ecto.Schema
-        case Igniter.Project.Module.find_module(igniter, module_name) do
-          {:ok, {_igniter, _zipper, _module_zipper}} ->
-            # This is simplified - in real implementation would parse AST
-            # to check for `use Ecto.Schema`
-            true
-
-          _ ->
-            false
-        end
-
-      {false, _igniter} ->
-        false
-    end
-  end
-
-  defp parse_schema_patterns(schemas_arg) do
-    schemas_arg
-    |> String.split(",")
-    |> Enum.map(&String.trim/1)
-    |> Enum.filter(&(&1 != ""))
-    |> expand_patterns()
-  end
-
-  defp expand_patterns(patterns) do
-    # For now, just return the patterns as module names
-    # In full implementation, would expand wildcards like "Blog.*"
-    Enum.map(patterns, &Module.concat([&1]))
-  end
-
-  defp parse_exclude_patterns(exclude_arg) do
-    exclude_arg
-    |> String.split(",")
-    |> Enum.map(&String.trim/1)
-    |> Enum.filter(&(&1 != ""))
-  end
-
-  defp parse_expand_schemas(expand_arg) when is_list(expand_arg) do
-    # Already a list from :keep option - just return it
-    expand_arg
-    |> Enum.flat_map(fn item ->
-      # Each item might still be comma-separated
-      item
-      |> String.split(",")
-      |> Enum.map(&String.trim/1)
-    end)
-    |> Enum.filter(&(&1 != ""))
-  end
-
-  defp parse_expand_schemas(expand_arg) when is_binary(expand_arg) do
-    # Single string - split by comma
-    expand_arg
-    |> String.split(",")
-    |> Enum.map(&String.trim/1)
-    |> Enum.filter(&(&1 != ""))
-  end
-
-  defp parse_expand_schemas(_), do: []
-
-  # Parse expand mode parameters like --expand-tag Tags:name --expand-star Category:category_name
-  # Returns a map like: %{"Tags" => {:tag, "name"}, "Category" => {:star, "category_name"}}
-  defp parse_expand_modes(parsed_args) do
-    modes = [:expand_tag, :expand_star, :expand_lookup, :expand_polymorphic]
-
-    Enum.reduce(modes, %{}, fn mode, acc ->
-      mode_type = mode |> to_string() |> String.replace("expand_", "") |> String.to_atom()
-
-      case Map.get(parsed_args, mode) do
-        nil ->
-          acc
-
-        specs when is_list(specs) ->
-          # :keep option returns a list of all occurrences
-          Enum.reduce(specs, acc, fn spec, mode_acc ->
-            parse_expand_mode_spec(spec, mode_type, mode_acc)
-          end)
-
-        spec when is_binary(spec) ->
-          parse_expand_mode_spec(spec, mode_type, acc)
-
-        _ ->
-          acc
-      end
-    end)
-  end
-
-  defp parse_expand_mode_spec(spec, mode_type, acc) do
-    cond do
-      # Polymorphic format: field_name:type_field,id_field:Type1,Type2,Type3
-      mode_type == :polymorphic ->
-        case String.split(spec, ":") do
-          [field_name, fields, types] ->
-            case String.split(fields, ",") do
-              [type_field, id_field] ->
-                entity_types = String.split(types, ",") |> Enum.map(&String.trim/1)
-
-                poly_config = %{
-                  field_name: String.trim(field_name),
-                  type_field: String.trim(type_field),
-                  id_field: String.trim(id_field),
-                  entity_types: entity_types
-                }
-
-                # Use field_name as the key
-                Map.put(acc, String.trim(field_name), {:polymorphic, poly_config})
-
-              _ ->
-                acc
-            end
-
-          _ ->
-            acc
-        end
-
-      # Standard format for tag/star/lookup: TableName:display_field
-      true ->
-        case String.split(spec, ":") do
-          [table_name, display_field] ->
-            # Store both singular and plural forms to match flexibly
-            table_key = String.trim(table_name)
-            Map.put(acc, table_key, {mode_type, String.trim(display_field)})
-
-          _ ->
-            # Invalid format, skip
-            acc
-        end
-    end
-  end
-
-  defp schema_matches_exclude?(schema, exclude_patterns) do
-    schema_str = to_string(schema)
-
-    Enum.any?(exclude_patterns, fn pattern ->
-      String.contains?(schema_str, pattern)
-    end)
-  end
-
-  defp table_matches_exclude?(table, exclude_patterns) do
-    table_name = table |> to_string() |> String.downcase()
-
-    Enum.any?(exclude_patterns, fn pattern ->
-      String.contains?(table_name, String.downcase(pattern))
-    end)
   end
 
   defp process_schemas(igniter, schemas, opts) do
-    output_dir = get_output_directory(igniter, opts[:output])
+    output_dir = DomainPaths.get_output_directory(igniter, opts[:output])
 
     if opts[:dry_run] do
       show_dry_run_summary(schemas, output_dir, opts)
@@ -579,17 +393,6 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     end
   end
 
-  defp get_output_directory(igniter, custom_output) do
-    case custom_output do
-      nil ->
-        app_name = Igniter.Project.Application.app_name(igniter)
-        "lib/#{app_name}/selecto_domains"
-
-      custom ->
-        custom
-    end
-  end
-
   defp show_dry_run_summary(schemas, output_dir, opts) do
     IO.puts("""
 
@@ -607,9 +410,9 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     """)
 
     Enum.each(schemas, fn schema ->
-      domain_file = domain_file_path(output_dir, schema)
+      domain_file = DomainPaths.domain_file_path(output_dir, schema)
 
-      IO.puts("  • #{display_source(schema)}")
+      IO.puts("  • #{DomainPaths.display_source(schema)}")
       IO.puts("    → #{domain_file}")
 
       if opts[:live] do
@@ -624,7 +427,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       end
 
       if opts[:studio_artifacts] do
-        IO.puts("    → #{studio_artifacts_file_path(output_dir, schema)}")
+        IO.puts("    → #{DomainPaths.studio_artifacts_file_path(output_dir, schema)}")
       end
     end)
 
@@ -636,69 +439,47 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   end
 
   defp generate_domain_for_source(igniter, source, output_dir, opts) do
-    domain_file = domain_file_path(output_dir, source)
+    domain_file = DomainPaths.domain_file_path(output_dir, source)
+    opts_list = Map.to_list(opts)
 
-    igniter_with_domain =
-      igniter
-      |> ensure_directory_exists(output_dir)
-      |> generate_domain_file(source, domain_file, opts)
-      |> generate_overlay_file(source, domain_file, opts)
-      |> maybe_generate_studio_artifacts_file(source, output_dir, opts)
-      |> add_success_message("Generated Selecto domain for #{display_source(source)}")
-      |> add_artifact_guidance(source, opts)
-
-    # Generate LiveView files if requested
-    if opts[:live] && ecto_source?(source) do
-      igniter_with_domain
-      |> generate_live_view_for_schema(source, opts)
-    else
-      if opts[:live] && !ecto_source?(source) do
-        Igniter.add_warning(
-          igniter_with_domain,
-          "LiveView generation is still Ecto-only in selecto_mix; domain generation completed for #{display_source(source)}"
+    case SelectoMix.SchemaIntrospector.introspect_schema_result(source, opts_list) do
+      {:error, reason} ->
+        Igniter.add_issue(
+          igniter,
+          "Failed to introspect #{DomainPaths.display_source(source)}: #{reason}"
         )
-      else
-        igniter_with_domain
-      end
+
+      {:ok, domain_config} ->
+        igniter_with_domain =
+          igniter
+          |> ensure_directory_exists(output_dir)
+          |> generate_domain_file(source, domain_config, domain_file, opts)
+          |> generate_overlay_file(source, domain_config, domain_file, opts)
+          |> maybe_generate_studio_artifacts_file(source, output_dir, opts)
+          |> add_success_message(
+            "Generated Selecto domain for #{DomainPaths.display_source(source)}"
+          )
+          |> add_artifact_guidance(source, opts)
+
+        # Generate LiveView files if requested
+        if opts[:live] && ecto_source?(source) do
+          igniter_with_domain
+          |> generate_live_view_for_schema(source, opts)
+        else
+          if opts[:live] && !ecto_source?(source) do
+            Igniter.add_warning(
+              igniter_with_domain,
+              "LiveView generation is still Ecto-only in selecto_mix; domain generation completed for #{DomainPaths.display_source(source)}"
+            )
+          else
+            igniter_with_domain
+          end
+        end
     end
   end
 
   defp ecto_source?(source) when is_atom(source), do: true
   defp ecto_source?(_source), do: false
-
-  defp display_source({:db, _adapter, _conn, table, _opts}), do: table
-  defp display_source({:db, _adapter, _conn, table}), do: table
-  defp display_source(source) when is_binary(source), do: source
-  defp display_source(source), do: inspect(source)
-
-  defp source_basename({:db, _adapter, _conn, table, _opts}), do: Macro.underscore(table)
-  defp source_basename({:db, _adapter, _conn, table}), do: Macro.underscore(table)
-  defp source_basename(source) when is_binary(source), do: Macro.underscore(source)
-
-  defp source_basename(source) do
-    source
-    |> to_string()
-    |> String.split(".")
-    |> List.last()
-    |> Macro.underscore()
-  end
-
-  defp source_display_name(source) do
-    source
-    |> LiveViewGenerator.source_live_name()
-    |> Macro.underscore()
-    |> String.replace("_", " ")
-    |> String.split()
-    |> Enum.map_join(" ", &String.capitalize/1)
-  end
-
-  defp domain_file_path(output_dir, source) do
-    Path.join([output_dir, "#{source_basename(source)}_domain.ex"])
-  end
-
-  defp studio_artifacts_file_path(output_dir, source) do
-    Path.join([output_dir, "#{source_basename(source)}_domain_artifacts.ex"])
-  end
 
   defp ensure_directory_exists(igniter, dir_path) do
     # Use Igniter to ensure directory exists
@@ -711,20 +492,25 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     end
   end
 
-  defp generate_domain_file(igniter, source, file_path, opts) do
+  defp generate_domain_file(igniter, source, domain_config, file_path, opts) do
     # Convert map opts to keyword list for SchemaIntrospector
     opts_list = Map.to_list(opts)
-    domain_config = SelectoMix.SchemaIntrospector.introspect_schema(source, opts_list)
 
     # Expand associated schemas if requested
-    expanded_config =
+    {expanded_config, expansion_warnings} =
       if opts[:expand_schemas_list] && is_list(opts[:expand_schemas_list]) do
-        domain_config
-        |> expand_associated_schemas(source, opts[:expand_schemas_list], opts_list)
-        |> Map.put(:expand_schemas_list, opts[:expand_schemas_list])
+        {config, warnings} =
+          expand_associated_schemas(domain_config, source, opts[:expand_schemas_list], opts_list)
+
+        {Map.put(config, :expand_schemas_list, opts[:expand_schemas_list]), warnings}
       else
-        domain_config
+        {domain_config, []}
       end
+
+    igniter =
+      Enum.reduce(expansion_warnings, igniter, fn warning, acc ->
+        Igniter.add_warning(acc, warning)
+      end)
 
     # Add expand_modes to config if present
     config_with_modes =
@@ -781,17 +567,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     end
   end
 
-  # defp generate_queries_file(igniter, schema, file_path, opts) do
-  #   # Only generate queries file if it doesn't exist or if forced
-  #   if opts[:force] || not File.exists?(file_path) do
-  #     content = SelectoMix.QueriesGenerator.generate_queries_file(schema, opts)
-  #     Igniter.create_new_file(igniter, file_path, content)
-  #   else
-  #     igniter
-  #   end
-  # end
-
-  defp generate_overlay_file(igniter, source, domain_file_path, opts) do
+  defp generate_overlay_file(igniter, source, domain_config, domain_file_path, opts) do
     # Only generate overlay file if it doesn't already exist
     # Never overwrite an existing overlay file
     overlay_path = SelectoMix.OverlayGenerator.overlay_file_path(domain_file_path)
@@ -800,10 +576,6 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       # Overlay already exists, don't overwrite it
       igniter
     else
-      # Generate overlay template
-      opts_list = Map.to_list(opts)
-      domain_config = SelectoMix.SchemaIntrospector.introspect_schema(source, opts_list)
-
       # Get the domain module name
       app_name = Igniter.Project.Application.app_name(igniter) |> to_string() |> Macro.camelize()
 
@@ -838,7 +610,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
        do: igniter
 
   defp maybe_generate_studio_artifacts_file(igniter, source, output_dir, opts) do
-    file_path = studio_artifacts_file_path(output_dir, source)
+    file_path = DomainPaths.studio_artifacts_file_path(output_dir, source)
 
     cond do
       File.exists?(file_path) and not opts[:force] ->
@@ -882,8 +654,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   defp expand_ecto_associated_schemas(domain_config, expand_list) do
     associations = domain_config[:associations] || %{}
 
-    expanded_schemas =
-      Enum.reduce(expand_list, %{}, fn schema_name, acc ->
+    {expanded_schemas, warnings} =
+      Enum.reduce(expand_list, {%{}, []}, fn schema_name, {acc, warnings} ->
         # Find matching association by name or by related schema module
         matching_assoc =
           Enum.find(associations, fn {assoc_name, assoc_data} ->
@@ -909,31 +681,43 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
             if related_schema && Code.ensure_loaded?(related_schema) do
               # Introspect the related schema
-              related_config = SelectoMix.SchemaIntrospector.introspect_schema(related_schema, [])
+              case SelectoMix.SchemaIntrospector.introspect_schema_result(related_schema, []) do
+                {:ok, related_config} ->
+                  # Build expanded schema config
+                  # We don't include associations in expanded schemas to avoid complexity
+                  # and circular reference issues
+                  {Map.put(acc, assoc_name, %{
+                     source_table: related_config[:table_name],
+                     primary_key: related_config[:primary_key],
+                     fields: related_config[:fields],
+                     redact_fields: [],
+                     columns: related_config[:field_types] || %{},
+                     # No associations in expanded schemas
+                     associations: %{}
+                   }), warnings}
 
-              # Build expanded schema config
-              # We don't include associations in expanded schemas to avoid complexity
-              # and circular reference issues
-              Map.put(acc, assoc_name, %{
-                source_table: related_config[:table_name],
-                primary_key: related_config[:primary_key],
-                fields: related_config[:fields],
-                redact_fields: [],
-                columns: related_config[:field_types] || %{},
-                # No associations in expanded schemas
-                associations: %{}
-              })
+                {:error, reason} ->
+                  warning =
+                    "Skipping expansion of #{inspect(related_schema)}: #{inspect(reason)}"
+
+                  {acc, [warning | warnings]}
+              end
             else
-              acc
+              warning =
+                "Skipping expansion of #{schema_name}: related schema #{inspect(related_schema)} is not loaded"
+
+              {acc, [warning | warnings]}
             end
 
           nil ->
-            acc
+            warning =
+              "Skipping expansion of #{schema_name}: no matching association found"
+
+            {acc, [warning | warnings]}
         end
       end)
 
-    # Add expanded schemas to the domain config
-    Map.put(domain_config, :expanded_schemas, expanded_schemas)
+    {Map.put(domain_config, :expanded_schemas, expanded_schemas), Enum.reverse(warnings)}
   end
 
   defp expand_db_associated_schemas(
@@ -947,8 +731,8 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     associations = domain_config[:associations] || %{}
     merged_opts = Keyword.merge(source_opts, opts_list)
 
-    expanded_schemas =
-      Enum.reduce(associations, %{}, fn {assoc_name, assoc_data}, acc ->
+    {expanded_schemas, warnings} =
+      Enum.reduce(associations, {%{}, []}, fn {assoc_name, assoc_data}, {acc, warnings} ->
         related_table = assoc_data[:related_table]
         schema_key = related_schema_key(assoc_name, assoc_data)
 
@@ -963,24 +747,27 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
                  introspection_opts
                ) do
             {:ok, related_config} ->
-              Map.put(acc, schema_key, %{
-                source_table: related_config.table_name,
-                table_name: related_config.table_name,
-                primary_key: related_config.primary_key,
-                fields: related_config.fields,
-                field_types: related_config.field_types,
-                associations: %{}
-              })
+              {Map.put(acc, schema_key, %{
+                 source_table: related_config.table_name,
+                 table_name: related_config.table_name,
+                 primary_key: related_config.primary_key,
+                 fields: related_config.fields,
+                 field_types: related_config.field_types,
+                 associations: %{}
+               }), warnings}
 
-            {:error, _reason} ->
-              acc
+            {:error, reason} ->
+              warning =
+                "Skipping expansion of related table #{inspect(related_table)}: #{inspect(reason)}"
+
+              {acc, [warning | warnings]}
           end
         else
-          acc
+          {acc, warnings}
         end
       end)
 
-    Map.put(domain_config, :expanded_schemas, expanded_schemas)
+    {Map.put(domain_config, :expanded_schemas, expanded_schemas), Enum.reverse(warnings)}
   end
 
   defp related_schema_key(assoc_name, assoc_data) do
@@ -989,7 +776,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         module_name
         |> to_string()
         |> Macro.underscore()
-        |> String.to_atom()
+        |> SelectoMix.Identifier.to_atom!()
 
       related_schema = assoc_data[:related_schema] ->
         related_schema
@@ -997,12 +784,12 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         |> String.split(".")
         |> List.last()
         |> Macro.underscore()
-        |> String.to_atom()
+        |> SelectoMix.Identifier.to_atom!()
 
       related_table = assoc_data[:related_table] ->
         related_table
-        |> singularize_table_name()
-        |> String.to_atom()
+        |> SelectoMix.Inflect.singularize()
+        |> SelectoMix.Identifier.to_atom!()
 
       true ->
         assoc_name
@@ -1023,25 +810,6 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     end)
   end
 
-  defp singularize_table_name(table_name) do
-    cond do
-      String.ends_with?(table_name, "ies") ->
-        String.replace_suffix(table_name, "ies", "y")
-
-      String.ends_with?(table_name, "sses") ->
-        String.replace_suffix(table_name, "sses", "ss")
-
-      String.ends_with?(table_name, "ses") ->
-        String.replace_suffix(table_name, "ses", "s")
-
-      String.ends_with?(table_name, "s") and not String.ends_with?(table_name, "ss") ->
-        String.replace_suffix(table_name, "s", "")
-
-      true ->
-        table_name
-    end
-  end
-
   defp generate_live_view_for_schema(igniter, source, opts) do
     app_name = Igniter.Project.Application.app_name(igniter)
 
@@ -1052,7 +820,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     |> ensure_live_directory_exists(app_name)
     |> generate_live_view_file(source, live_file, opts)
     |> generate_live_view_html_file(source, html_file, opts)
-    |> add_success_message("Generated LiveView files for #{display_source(source)}")
+    |> add_success_message("Generated LiveView files for #{DomainPaths.display_source(source)}")
     |> maybe_run_assets_integration()
     |> add_route_suggestion(source, opts)
   end
@@ -1068,29 +836,9 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
           igniter
 
         false ->
-          # Generate saved views implementation before the domain
-          # This must happen in a separate Mix task to avoid circular compilation issues
           app_name_string = to_string(Macro.camelize(to_string(app_name)))
 
-          IO.puts("\nGenerating SavedViews implementation...")
-
-          case System.cmd("mix", ["selecto.gen.saved_views", app_name_string],
-                 stderr_to_stdout: true
-               ) do
-            {output, 0} ->
-              IO.puts(output)
-              igniter
-
-            {output, _exit_code} ->
-              IO.puts(output)
-
-              igniter
-              |> Igniter.add_warning("""
-              Failed to auto-generate saved views. Please run manually:
-
-                  mix selecto.gen.saved_views #{app_name_string}
-              """)
-          end
+          Igniter.compose_task(igniter, "selecto.gen.saved_views", [app_name_string])
       end
     else
       igniter
@@ -1132,7 +880,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       source,
       domain_module,
       opts,
-      Mix.Tasks.Selecto.Components.Integrate.selecto_components_source_path()
+      SelectoMix.ComponentsIntegrate.selecto_components_source_path()
     )
   end
 
@@ -1144,17 +892,17 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
   defp domain_module_for_source(igniter, source, opts) do
     app_name = Igniter.Project.Application.app_name(igniter) |> to_string() |> Macro.camelize()
-    domain_config = SelectoMix.SchemaIntrospector.introspect_schema(source, Map.to_list(opts))
+    domain_config = SelectoMix.SchemaIntrospector.introspect_schema!(source, Map.to_list(opts))
 
     SelectoMix.DomainGenerator.domain_module_name(source, domain_config, app_name: app_name)
   end
 
   defp add_artifact_guidance(igniter, source, opts) do
     domain_module = domain_module_for_source(igniter, source, opts)
-    artifact_path = domain_artifact_path(source)
-    docs_path = domain_docs_path(source)
-    inspection_path = domain_inspection_path(source)
-    diagram_path = domain_diagram_path(source)
+    artifact_path = DomainPaths.domain_artifact_path(source)
+    docs_path = DomainPaths.domain_docs_path(source)
+    inspection_path = DomainPaths.domain_inspection_path(source)
+    diagram_path = DomainPaths.domain_diagram_path(source)
 
     Igniter.add_notice(
       igniter,
@@ -1169,42 +917,11 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     Igniter.add_notice(
       igniter,
       StudioArtifactsGenerator.integration_guidance(
-        domain_id: source_basename(source),
-        domain_name: source_display_name(source),
+        domain_id: DomainPaths.source_basename(source),
+        domain_name: DomainPaths.source_display_name(source),
         artifact_module: artifact_module
       )
     )
-  end
-
-  defp domain_artifact_path(source) do
-    Path.join(["priv", "selecto", "#{source_basename(source)}.normalized.json"])
-  end
-
-  defp domain_docs_path(source) do
-    Path.join(["docs", "selecto", "#{source_basename(source)}.md"])
-  end
-
-  defp domain_inspection_path(source) do
-    Path.join(["priv", "selecto", "#{source_basename(source)}.inspection.json"])
-  end
-
-  defp domain_diagram_path(source) do
-    Path.join(["docs", "selecto", "#{source_basename(source)}.diagram.mmd"])
-  end
-
-  defp default_docs_path(artifact_path) do
-    artifact_name = Path.basename(artifact_path, ".normalized.json")
-    Path.join(["docs", "selecto", "#{artifact_name}.md"])
-  end
-
-  defp default_inspection_path(artifact_path) do
-    artifact_name = Path.basename(artifact_path, ".normalized.json")
-    Path.join(["priv", "selecto", "#{artifact_name}.inspection.json"])
-  end
-
-  defp default_diagram_path(artifact_path) do
-    artifact_name = Path.basename(artifact_path, ".normalized.json")
-    Path.join(["docs", "selecto", "#{artifact_name}.diagram.mmd"])
   end
 
   defp add_route_suggestion(igniter, source, opts) do

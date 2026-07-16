@@ -97,4 +97,22 @@ defmodule SelectoMix.RawPersistenceTest do
       assert context =~ "Base.url_encode64"
     end
   end
+
+  describe "SQL identifier validation" do
+    test "rejects invalid table names before interpolating DDL" do
+      config = %{adapter_mode: :postgresql, table_name: "saved; drop table users"}
+
+      assert_raise ArgumentError, ~r/invalid SQL identifier/, fn ->
+        RawPersistence.saved_views_sql(config)
+      end
+    end
+
+    test "rejects empty table names" do
+      config = %{adapter_mode: :sqlite, table: ""}
+
+      assert_raise ArgumentError, ~r/invalid SQL identifier/, fn ->
+        RawPersistence.filter_sets_sql(config)
+      end
+    end
+  end
 end

@@ -17,8 +17,8 @@ defmodule Mix.Tasks.Selecto.Validate.ParameterizedJoins do
 
   @impl Mix.Task
   def run(args) do
-    {opts, files, _} =
-      OptionParser.parse(args,
+    {opts, files} =
+      SelectoMix.CLI.parse!(args,
         strict: [
           path: :string,
           test_references: :string,

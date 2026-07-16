@@ -25,12 +25,9 @@ defmodule Mix.Tasks.Selecto.Domain.Describe do
 
   @impl Mix.Task
   def run(args) do
-    {opts, positional, invalid} = OptionParser.parse(args, strict: @switches, aliases: @aliases)
+    {opts, positional} = SelectoMix.CLI.parse!(args, strict: @switches, aliases: @aliases)
 
     cond do
-      invalid != [] ->
-        Mix.raise("Invalid option(s): #{format_invalid_options(invalid)}")
-
       positional == [] ->
         Mix.raise("Usage: mix selecto.domain.describe priv/selecto/product.normalized.json")
 
@@ -67,14 +64,5 @@ defmodule Mix.Tasks.Selecto.Domain.Describe do
         File.write!(output_path, json <> "\n")
         Mix.shell().info("Wrote normalized domain inspection JSON: #{output_path}")
     end
-  end
-
-  defp format_invalid_options(invalid) do
-    invalid
-    |> Enum.map(fn
-      {switch, nil} -> switch
-      {switch, value} -> "#{switch} #{value}"
-    end)
-    |> Enum.join(", ")
   end
 end

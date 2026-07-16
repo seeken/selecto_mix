@@ -53,8 +53,7 @@ defmodule Mix.Tasks.Selecto.Gen.View do
          true <- function_exported?(domain_module, :domain, 0),
          domain <- domain_module.domain(),
          published_views when is_map(published_views) <- Map.get(domain, :published_views, %{}),
-         spec when is_map(spec) <-
-           published_views[view_name] || published_views[String.to_atom(view_name)],
+         spec when is_map(spec) <- published_view_spec(published_views, view_name),
          {:ok, result} <- build_view_sql(domain, spec) do
       if dry_run? do
         IO.puts("""
@@ -116,6 +115,18 @@ defmodule Mix.Tasks.Selecto.Gen.View do
     else
       {:error, ["Selecto.ViewPublisher.build_sql/2 is unavailable in the current project"]}
     end
+  end
+
+  defp published_view_spec(published_views, view_name) when is_binary(view_name) do
+    Map.get(published_views, view_name) ||
+      case SelectoMix.Identifier.to_atom(view_name) do
+        {:ok, atom} -> Map.get(published_views, atom)
+        {:error, _} -> nil
+      end
+  end
+
+  defp published_view_spec(published_views, view_name) do
+    Map.get(published_views, view_name)
   end
 
   defp build_generation_config(domain_module, view_name, result, repo_module) do

@@ -16,12 +16,9 @@ defmodule Mix.Tasks.Selecto.Domain.Contract.Snapshot do
 
   @impl Mix.Task
   def run(args) do
-    {opts, positional, invalid} = OptionParser.parse(args, strict: [output: :string])
+    {opts, positional} = SelectoMix.CLI.parse!(args, strict: [output: :string])
 
     cond do
-      invalid != [] ->
-        Mix.raise("Invalid option(s): #{format_invalid_options(invalid)}")
-
       length(positional) != 1 ->
         Mix.raise(
           "Usage: mix selecto.domain.contract.snapshot provider.normalized.json --output provider.snapshot.json"
@@ -45,14 +42,5 @@ defmodule Mix.Tasks.Selecto.Domain.Contract.Snapshot do
       {:error, reason} ->
         Mix.raise(DomainContractVerification.format_error(reason))
     end
-  end
-
-  defp format_invalid_options(invalid) do
-    invalid
-    |> Enum.map(fn
-      {switch, nil} -> switch
-      {switch, value} -> "#{switch} #{value}"
-    end)
-    |> Enum.join(", ")
   end
 end

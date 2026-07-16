@@ -385,7 +385,7 @@ defmodule SelectoMix.ParameterizedJoinsValidator do
 
     placeholders =
       Regex.scan(~r/:([a-zA-Z_][a-zA-Z0-9_]*)/, condition)
-      |> Enum.map(fn [_full, placeholder] -> String.to_atom(placeholder) end)
+      |> Enum.map(fn [_full, placeholder] -> SelectoMix.Identifier.to_atom!(placeholder) end)
       |> Enum.uniq()
 
     Enum.reduce(placeholders, issues, fn placeholder, acc ->

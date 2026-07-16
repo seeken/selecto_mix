@@ -70,8 +70,8 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
   @requirements ["app.config"]
 
   def run(args) do
-    {opts, [app_module | _], _} =
-      OptionParser.parse(args,
+    {opts, positional} =
+      SelectoMix.CLI.parse!(args,
         switches: [
           context_module: :string,
           schema_module: :string,
@@ -85,13 +85,17 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
         aliases: []
       )
 
+    app_module = List.first(positional)
+
     if is_nil(app_module) do
       Mix.raise("Expected the base module name, got: #{inspect(args)}")
     end
 
     app_name = Macro.underscore(app_module)
 
-    with {:ok, adapter_mode} <- RawPersistence.parse_adapter(opts[:adapter]) do
+    with {:ok, adapter_mode} <- RawPersistence.parse_adapter(opts[:adapter]),
+         {:ok, _table} <-
+           SelectoMix.Identifier.validate_sql_identifier(opts[:table] || "filter_sets") do
       config = %{
         app_module: app_module,
         app_name: app_name,
@@ -113,6 +117,7 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
       Mix.shell().info("Generating filter sets implementation for #{app_module}...")
 
       if RawPersistence.raw_mode?(adapter_mode) do
+        RawPersistence.check_adapter_available(adapter_mode)
         maybe_warn_compatibility_options(config)
 
         if config.migration do
@@ -587,11 +592,5 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
   defp drop_app_prefix([app_name | rest], app_name), do: rest
   defp drop_app_prefix(parts, _app_name), do: parts
 
-  defp timestamp do
-    {{y, m, d}, {hh, mm, ss}} = :calendar.universal_time()
-    "#{y}#{pad(m)}#{pad(d)}#{pad(hh)}#{pad(mm)}#{pad(ss)}"
-  end
-
-  defp pad(i) when i < 10, do: "0#{i}"
-  defp pad(i), do: to_string(i)
+  defp timestamp, do: SelectoMix.PersistenceGenerator.timestamp()
 end

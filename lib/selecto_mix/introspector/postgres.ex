@@ -183,7 +183,7 @@ defmodule SelectoMix.Introspector.Postgres do
                            _position
                          ] ->
             %{
-              column_name: String.to_atom(col_name),
+              column_name: SelectoMix.Identifier.to_atom!(col_name),
               data_type: data_type,
               udt_name: udt_name,
               is_nullable: is_nullable,
@@ -229,10 +229,10 @@ defmodule SelectoMix.Introspector.Postgres do
         {:ok, nil}
 
       {:ok, %{rows: [[single_key]]}} ->
-        {:ok, String.to_atom(single_key)}
+        {:ok, SelectoMix.Identifier.to_atom!(single_key)}
 
       {:ok, %{rows: multiple_keys}} ->
-        keys = Enum.map(multiple_keys, fn [key] -> String.to_atom(key) end)
+        keys = Enum.map(multiple_keys, fn [key] -> SelectoMix.Identifier.to_atom!(key) end)
         {:ok, keys}
 
       {:error, error} ->
@@ -285,10 +285,10 @@ defmodule SelectoMix.Introspector.Postgres do
           |> Enum.map(fn [constraint_name, col_name, foreign_schema, foreign_table, foreign_col] ->
             %{
               constraint_name: constraint_name,
-              column_name: String.to_atom(col_name),
+              column_name: SelectoMix.Identifier.to_atom!(col_name),
               foreign_table_schema: foreign_schema,
               foreign_table_name: foreign_table,
-              foreign_column_name: String.to_atom(foreign_col)
+              foreign_column_name: SelectoMix.Identifier.to_atom!(foreign_col)
             }
           end)
 
@@ -331,7 +331,7 @@ defmodule SelectoMix.Introspector.Postgres do
           |> Enum.map(fn [index_name, col_name, is_unique, is_primary] ->
             %{
               index_name: index_name,
-              column_name: String.to_atom(col_name),
+              column_name: SelectoMix.Identifier.to_atom!(col_name),
               is_unique: is_unique,
               is_primary: is_primary
             }
@@ -497,14 +497,14 @@ defmodule SelectoMix.Introspector.Postgres do
         fk.column_name
         |> Atom.to_string()
         |> String.replace_suffix("_id", "")
-        |> String.to_atom()
+        |> SelectoMix.Identifier.to_atom!()
 
       # Guess the related schema module name
       related_schema = guess_schema_module(fk.foreign_table_name)
 
       association = %{
         type: :belongs_to,
-        queryable: String.to_atom(fk.foreign_table_name),
+        queryable: SelectoMix.Identifier.to_atom!(fk.foreign_table_name),
         field: assoc_name,
         owner_key: fk.column_name,
         related_key: fk.foreign_column_name,
@@ -524,6 +524,6 @@ defmodule SelectoMix.Introspector.Postgres do
     |> Macro.camelize()
     # Simple pluralization handling
     |> String.replace_suffix("s", "")
-    |> String.to_atom()
+    |> SelectoMix.Identifier.to_atom!()
   end
 end

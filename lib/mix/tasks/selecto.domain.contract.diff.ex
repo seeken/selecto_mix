@@ -16,21 +16,13 @@ defmodule Mix.Tasks.Selecto.Domain.Contract.Diff do
 
   @impl Mix.Task
   def run(args) do
-    {opts, positional, invalid} = OptionParser.parse(args, strict: [])
+    {_opts, positional} = SelectoMix.CLI.parse!(args, strict: [])
 
-    cond do
-      invalid != [] ->
-        Mix.raise("Invalid option(s): #{format_invalid_options(invalid)}")
-
-      opts != [] ->
-        Mix.raise("Invalid option(s): #{format_invalid_options(opts)}")
-
-      length(positional) != 2 ->
-        Mix.raise("Usage: mix selecto.domain.contract.diff old.snapshot.json new.snapshot.json")
-
-      true ->
-        [left_path, right_path] = positional
-        diff(left_path, right_path)
+    if length(positional) != 2 do
+      Mix.raise("Usage: mix selecto.domain.contract.diff old.snapshot.json new.snapshot.json")
+    else
+      [left_path, right_path] = positional
+      diff(left_path, right_path)
     end
   end
 
@@ -93,14 +85,5 @@ defmodule Mix.Tasks.Selecto.Domain.Contract.Diff do
   defp print_list(label, values, prefix) do
     Mix.shell().info("#{label}:")
     Enum.each(values, &Mix.shell().info("  #{prefix} #{&1}"))
-  end
-
-  defp format_invalid_options(invalid) do
-    invalid
-    |> Enum.map(fn
-      {switch, nil} -> switch
-      {switch, value} -> "#{switch} #{value}"
-    end)
-    |> Enum.join(", ")
   end
 end

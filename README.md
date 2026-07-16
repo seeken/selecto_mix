@@ -45,6 +45,25 @@ For local multi-repo workspace development:
 mix selecto.install --development-mode --source your-github-user
 ```
 
+### Database Adapters
+
+Direct-database features (`--adapter` on `gen.domain`/`gen.saved_views`/etc.,
+and `mix selecto.setup`) need the matching `selecto_db_*` adapter package
+added to your deps:
+
+| `--adapter` value            | Hex package               |
+| ----------------------------- | -------------------------- |
+| `postgres` / `postgresql`     | `selecto_db_postgresql`    |
+| `mysql`                       | `selecto_db_mysql`         |
+| `mariadb`                     | `selecto_db_mariadb`       |
+| `sqlite`                      | `selecto_db_sqlite`        |
+| `duckdb`                      | `selecto_db_duckdb`        |
+| `mssql` / `sqlserver`         | `selecto_db_mssql`         |
+
+If the adapter module isn't loaded, SelectoMix's error/warning messages name
+the exact package to add (e.g. `{:selecto_db_postgresql, ">= 0.0.0"}`) so you
+can add it to `mix.exs` and run `mix deps.get`.
+
 ## Quick Start
 
 Generate a domain from one schema:
@@ -57,6 +76,12 @@ Generate domains for all schemas:
 
 ```bash
 mix selecto.gen.domain --all
+```
+
+Generate domains for schemas under a module prefix (wildcard):
+
+```bash
+mix selecto.gen.domain MyApp.Catalog.*
 ```
 
 Generate a domain plus LiveView wiring:

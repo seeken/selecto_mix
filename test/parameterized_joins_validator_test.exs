@@ -201,4 +201,22 @@ defmodule Mix.Tasks.Selecto.Validate.ParameterizedJoinsTest do
     refute output =~ "source_table"
     refute output =~ "freight_band"
   end
+
+  test "parameterized join generator reports an error for an invalid parameter spec" do
+    output =
+      capture_io(:stderr, fn ->
+        Mix.Task.reenable("selecto.gen.parameterized_join")
+
+        catch_exit(
+          Mix.Tasks.Selecto.Gen.ParameterizedJoin.run([
+            "customer",
+            "not_a_valid_spec"
+          ])
+        )
+      end)
+
+    assert output =~ "Error generating parameterized join"
+    assert output =~ "Invalid parameter spec 'not_a_valid_spec'"
+    assert output =~ "Expected format NAME:TYPE[,options]"
+  end
 end

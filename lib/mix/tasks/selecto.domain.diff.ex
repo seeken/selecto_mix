@@ -63,21 +63,13 @@ defmodule Mix.Tasks.Selecto.Domain.Diff do
 
   @impl Mix.Task
   def run(args) do
-    {opts, positional, invalid} = OptionParser.parse(args, strict: [])
+    {_opts, positional} = SelectoMix.CLI.parse!(args, strict: [])
 
-    cond do
-      invalid != [] ->
-        Mix.raise("Invalid option(s): #{format_invalid_options(invalid)}")
-
-      opts != [] ->
-        Mix.raise("Invalid option(s): #{format_invalid_options(opts)}")
-
-      length(positional) != 2 ->
-        Mix.raise("Usage: mix selecto.domain.diff old.normalized.json new.normalized.json")
-
-      true ->
-        [left_path, right_path] = positional
-        diff_artifacts(left_path, right_path)
+    if length(positional) != 2 do
+      Mix.raise("Usage: mix selecto.domain.diff old.normalized.json new.normalized.json")
+    else
+      [left_path, right_path] = positional
+      diff_artifacts(left_path, right_path)
     end
   end
 
@@ -258,14 +250,5 @@ defmodule Mix.Tasks.Selecto.Domain.Diff do
     key
     |> Atom.to_string()
     |> String.replace("_", " ")
-  end
-
-  defp format_invalid_options(invalid) do
-    invalid
-    |> Enum.map(fn
-      {switch, nil} -> switch
-      {switch, value} -> "#{switch} #{value}"
-    end)
-    |> Enum.join(", ")
   end
 end

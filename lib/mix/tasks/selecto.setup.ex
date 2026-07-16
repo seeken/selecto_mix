@@ -118,7 +118,8 @@ defmodule Mix.Tasks.Selecto.Setup do
           {:error, "Error executing #{file_path}: #{inspect(error)}"}
 
         {:error, reason} ->
-          {:error, "Error connecting to database: #{inspect(reason)}"}
+          {:error,
+           "Error connecting to database: #{AdapterResolver.format_adapter_error(reason)}"}
       end
     end
   end
@@ -144,7 +145,8 @@ defmodule Mix.Tasks.Selecto.Setup do
           {:error, "Errors executing SQL files:\n#{Enum.join(error_msgs, "\n")}"}
 
         {:error, reason} ->
-          {:error, "Error connecting to database: #{inspect(reason)}"}
+          {:error,
+           "Error connecting to database: #{AdapterResolver.format_adapter_error(reason)}"}
       end
     end
   end

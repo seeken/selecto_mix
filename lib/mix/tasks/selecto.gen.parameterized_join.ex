@@ -76,8 +76,8 @@ defmodule Mix.Tasks.Selecto.Gen.ParameterizedJoin do
 
   @impl Mix.Task
   def run(args) do
-    {opts, [join_name | parameters], _} =
-      OptionParser.parse(args,
+    {opts, positional} =
+      SelectoMix.CLI.parse!(args,
         strict: [
           fields: :string,
           condition: :string,
@@ -85,6 +85,12 @@ defmodule Mix.Tasks.Selecto.Gen.ParameterizedJoin do
           output: :string
         ]
       )
+
+    {join_name, parameters} =
+      case positional do
+        [name | params] -> {name, params}
+        _ -> {nil, []}
+      end
 
     if join_name == nil or parameters == [] do
       Mix.shell().error("""
@@ -128,17 +134,20 @@ defmodule Mix.Tasks.Selecto.Gen.ParameterizedJoin do
   end
 
   defp parse_parameters(parameter_specs) do
-    parameters =
-      Enum.map(parameter_specs, fn spec ->
-        case parse_parameter_spec(spec) do
-          {:ok, param} -> param
-          {:error, error} -> throw({:error, "Invalid parameter spec '#{spec}': #{error}"})
-        end
-      end)
+    parameter_specs
+    |> Enum.reduce_while({:ok, []}, fn spec, {:ok, acc} ->
+      case parse_parameter_spec(spec) do
+        {:ok, param} ->
+          {:cont, {:ok, [param | acc]}}
 
-    {:ok, parameters}
-  catch
-    {:error, error} -> {:error, error}
+        {:error, error} ->
+          {:halt, {:error, "Invalid parameter spec '#{spec}': #{error}"}}
+      end
+    end)
+    |> case do
+      {:ok, params} -> {:ok, Enum.reverse(params)}
+      {:error, _reason} = error -> error
+    end
   end
 
   defp parse_parameter_spec(spec) do

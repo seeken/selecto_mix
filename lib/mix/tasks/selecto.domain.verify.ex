@@ -16,23 +16,15 @@ defmodule Mix.Tasks.Selecto.Domain.Verify do
 
   @impl Mix.Task
   def run(args) do
-    {opts, positional, invalid} = OptionParser.parse(args, strict: [])
+    {_opts, positional} = SelectoMix.CLI.parse!(args, strict: [])
 
-    cond do
-      invalid != [] ->
-        Mix.raise("Invalid option(s): #{format_invalid_options(invalid)}")
-
-      opts != [] ->
-        Mix.raise("Invalid option(s): #{format_invalid_options(opts)}")
-
-      length(positional) != 2 ->
-        Mix.raise(
-          "Usage: mix selecto.domain.verify provider.normalized.json consumer.normalized.json"
-        )
-
-      true ->
-        [provider_path, consumer_path] = positional
-        verify(provider_path, consumer_path)
+    if length(positional) != 2 do
+      Mix.raise(
+        "Usage: mix selecto.domain.verify provider.normalized.json consumer.normalized.json"
+      )
+    else
+      [provider_path, consumer_path] = positional
+      verify(provider_path, consumer_path)
     end
   end
 
@@ -74,14 +66,5 @@ defmodule Mix.Tasks.Selecto.Domain.Verify do
 
   defp identity_name(identity) do
     Map.get(identity, :name) || Map.get(identity, "name") || "(unnamed)"
-  end
-
-  defp format_invalid_options(invalid) do
-    invalid
-    |> Enum.map(fn
-      {switch, nil} -> switch
-      {switch, value} -> "#{switch} #{value}"
-    end)
-    |> Enum.join(", ")
   end
 end

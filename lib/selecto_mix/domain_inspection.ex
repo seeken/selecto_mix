@@ -7,7 +7,7 @@ defmodule SelectoMix.DomainInspection do
   at runtime.
   """
 
-  alias SelectoMix.DomainExport
+  alias SelectoMix.{ArtifactJSON, DomainExport}
 
   @format "selecto.domain_inspection"
   @format_version 1
@@ -198,33 +198,5 @@ defmodule SelectoMix.DomainInspection do
   defp list_count(value) when is_list(value), do: length(value)
   defp list_count(_value), do: 0
 
-  defp map_get(map, key, default \\ nil)
-
-  defp map_get(map, key, default) when is_map(map) and is_binary(key) do
-    atom_key = existing_atom(key)
-
-    cond do
-      Map.has_key?(map, key) -> Map.get(map, key)
-      atom_key && Map.has_key?(map, atom_key) -> Map.get(map, atom_key)
-      true -> default
-    end
-  end
-
-  defp map_get(map, key, default) when is_map(map) and is_atom(key) do
-    string_key = Atom.to_string(key)
-
-    cond do
-      Map.has_key?(map, key) -> Map.get(map, key)
-      Map.has_key?(map, string_key) -> Map.get(map, string_key)
-      true -> default
-    end
-  end
-
-  defp map_get(_map, _key, default), do: default
-
-  defp existing_atom(value) do
-    String.to_existing_atom(value)
-  rescue
-    ArgumentError -> nil
-  end
+  defp map_get(map, key, default \\ nil), do: ArtifactJSON.map_get(map, key, default)
 end

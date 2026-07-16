@@ -546,7 +546,7 @@ defmodule SelectoMix.OverlayGenerator do
       "" -> "related"
       value -> value
     end
-    |> String.to_atom()
+    |> SelectoMix.Identifier.to_atom!()
   end
 
   defp writable_example_field(columns) do

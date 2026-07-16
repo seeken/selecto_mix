@@ -7,6 +7,8 @@ defmodule SelectoMix.DomainExport do
   Selecto version they are using.
   """
 
+  alias SelectoMix.ArtifactJSON
+
   @format "selecto.normalized_domain"
   @format_version 1
   @security_sensitive_sections %{
@@ -769,35 +771,7 @@ defmodule SelectoMix.DomainExport do
   defp json_key(key) when is_binary(key), do: key
   defp json_key(key), do: inspect(key)
 
-  defp map_get(map, key, default \\ nil)
-
-  defp map_get(map, key, default) when is_map(map) and is_binary(key) do
-    atom_key = existing_atom(key)
-
-    cond do
-      Map.has_key?(map, key) -> Map.get(map, key)
-      atom_key && Map.has_key?(map, atom_key) -> Map.get(map, atom_key)
-      true -> default
-    end
-  end
-
-  defp map_get(map, key, default) when is_map(map) and is_atom(key) do
-    string_key = Atom.to_string(key)
-
-    cond do
-      Map.has_key?(map, key) -> Map.get(map, key)
-      Map.has_key?(map, string_key) -> Map.get(map, string_key)
-      true -> default
-    end
-  end
-
-  defp map_get(_map, _key, default), do: default
-
-  defp existing_atom(value) do
-    String.to_existing_atom(value)
-  rescue
-    ArgumentError -> nil
-  end
+  defp map_get(map, key, default \\ nil), do: ArtifactJSON.map_get(map, key, default)
 
   defp term_type(value) when is_pid(value), do: :pid
   defp term_type(value) when is_port(value), do: :port

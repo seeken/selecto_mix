@@ -73,10 +73,10 @@ defmodule Mix.Tasks.Selecto.Install do
       end
 
     if check? do
-      Mix.Task.run("selecto.components.integrate", ["--check"])
+      SelectoMix.ComponentsIntegrate.run(check: true)
       Igniter.add_notice(igniter, "Check complete. No files were modified.")
     else
-      Mix.Task.run("selecto.components.integrate", [])
+      SelectoMix.ComponentsIntegrate.run([])
 
       Igniter.add_notice(
         igniter,

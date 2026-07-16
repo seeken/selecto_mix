@@ -62,20 +62,12 @@ defmodule Mix.Tasks.Selecto.Domain.Inspect do
 
   @impl Mix.Task
   def run(args) do
-    {opts, positional, invalid} = OptionParser.parse(args, strict: [])
+    {_opts, positional} = SelectoMix.CLI.parse!(args, strict: [])
 
-    cond do
-      invalid != [] ->
-        Mix.raise("Invalid option(s): #{format_invalid_options(invalid)}")
-
-      opts != [] ->
-        Mix.raise("Invalid option(s): #{format_invalid_options(opts)}")
-
-      positional == [] ->
-        Mix.raise("Usage: mix selecto.domain.inspect priv/selecto/product.normalized.json")
-
-      true ->
-        inspect_artifact(List.first(positional))
+    if positional == [] do
+      Mix.raise("Usage: mix selecto.domain.inspect priv/selecto/product.normalized.json")
+    else
+      inspect_artifact(List.first(positional))
     end
   end
 
@@ -212,14 +204,5 @@ defmodule Mix.Tasks.Selecto.Domain.Inspect do
     key
     |> Atom.to_string()
     |> String.replace("_", " ")
-  end
-
-  defp format_invalid_options(invalid) do
-    invalid
-    |> Enum.map(fn
-      {switch, nil} -> switch
-      {switch, value} -> "#{switch} #{value}"
-    end)
-    |> Enum.join(", ")
   end
 end

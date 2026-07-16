@@ -143,16 +143,31 @@ defmodule SelectoMix do
   end
 
   @doc """
-  List all available Ecto schemas in the current project.
+  List all available Ecto schemas in the current (host) Mix project.
+
+  Uses `Mix.Project.config()[:app]` to resolve the current host application
+  and inspects its compiled module list. Returns `[]` if there is no Mix
+  project loaded (e.g. when called outside of a Mix task/session) or if the
+  host application has no modules key available yet.
   """
   def discover_schemas do
-    # This is a simplified version - the full implementation would use more sophisticated discovery
-    with {:ok, modules} <- :application.get_key(:selecto_mix, :modules) do
+    with app when not is_nil(app) <- host_app(),
+         {:ok, modules} <- :application.get_key(app, :modules) do
       modules
       |> Enum.filter(&is_ecto_schema?/1)
     else
       _ -> []
     end
+  end
+
+  defp host_app do
+    if Code.ensure_loaded?(Mix.Project) and function_exported?(Mix.Project, :config, 0) do
+      Mix.Project.config()[:app]
+    end
+  rescue
+    _ -> nil
+  catch
+    :exit, _ -> nil
   end
 
   # Private helper functions

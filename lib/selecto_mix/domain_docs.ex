@@ -7,7 +7,7 @@ defmodule SelectoMix.DomainDocs do
   normalized JSON artifact rather than requiring the original domain module.
   """
 
-  alias SelectoMix.DomainExport
+  alias SelectoMix.{ArtifactJSON, DomainExport}
 
   @section_order [:canonical, :projection, :proposed, :unknown]
   @count_order [
@@ -790,33 +790,5 @@ defmodule SelectoMix.DomainDocs do
     |> String.replace("\n", " ")
   end
 
-  defp map_get(map, key, default \\ nil)
-
-  defp map_get(map, key, default) when is_map(map) and is_binary(key) do
-    atom_key = existing_atom(key)
-
-    cond do
-      Map.has_key?(map, key) -> Map.get(map, key)
-      atom_key && Map.has_key?(map, atom_key) -> Map.get(map, atom_key)
-      true -> default
-    end
-  end
-
-  defp map_get(map, key, default) when is_map(map) and is_atom(key) do
-    string_key = Atom.to_string(key)
-
-    cond do
-      Map.has_key?(map, key) -> Map.get(map, key)
-      Map.has_key?(map, string_key) -> Map.get(map, string_key)
-      true -> default
-    end
-  end
-
-  defp map_get(_map, _key, default), do: default
-
-  defp existing_atom(value) do
-    String.to_existing_atom(value)
-  rescue
-    ArgumentError -> nil
-  end
+  defp map_get(map, key, default \\ nil), do: ArtifactJSON.map_get(map, key, default)
 end

@@ -235,7 +235,7 @@ defmodule SelectoMix.Introspector.Ecto do
     |> Macro.underscore()
     # Simple pluralization
     |> Kernel.<>("s")
-    |> String.to_atom()
+    |> SelectoMix.Identifier.to_atom!()
   end
 
   defp get_queryable(_), do: :unknown

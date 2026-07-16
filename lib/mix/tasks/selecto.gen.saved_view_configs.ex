@@ -70,6 +70,7 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViewConfigs do
   use Igniter.Mix.Task
 
   alias SelectoMix.RawPersistence
+  alias SelectoMix.PersistenceGenerator
 
   @impl Igniter.Mix.Task
   def info(_argv, _composing_task) do
@@ -119,7 +120,11 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViewConfigs do
   # Private functions
 
   defp generate_saved_view_configs_implementation(igniter, app_name, opts) do
-    with {:ok, adapter_mode} <- RawPersistence.parse_adapter(opts[:adapter]) do
+    with {:ok, adapter_mode} <- RawPersistence.parse_adapter(opts[:adapter]),
+         {:ok, _table_name} <-
+           SelectoMix.Identifier.validate_sql_identifier(
+             opts[:table_name] || "saved_view_configs"
+           ) do
       config = build_generation_config(app_name, opts, adapter_mode)
 
       cond do
@@ -168,11 +173,7 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViewConfigs do
     }
   end
 
-  defp parse_module_name(module_string) when is_binary(module_string) do
-    Module.concat([module_string])
-  end
-
-  defp parse_module_name(module) when is_atom(module), do: module
+  defp parse_module_name(module), do: PersistenceGenerator.parse_module_name(module)
 
   defp show_dry_run_summary(config) do
     IO.puts("""
@@ -551,13 +552,7 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViewConfigs do
     """
   end
 
-  defp timestamp do
-    {{y, m, d}, {hh, mm, ss}} = :calendar.universal_time()
-    "#{y}#{pad(m)}#{pad(d)}#{pad(hh)}#{pad(mm)}#{pad(ss)}"
-  end
-
-  defp pad(i) when i < 10, do: <<?0, ?0 + i>>
-  defp pad(i), do: to_string(i)
+  defp timestamp, do: PersistenceGenerator.timestamp()
 
   defp add_success_messages(igniter, config) do
     igniter
@@ -619,6 +614,8 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViewConfigs do
   end
 
   defp raw_mode_notice(igniter, config) do
+    RawPersistence.check_adapter_available(config.adapter_mode)
+
     Igniter.add_notice(
       igniter,
       "Adapter-backed saved view configs mode uses generated SQL plus #{config.adapter_mode} adapter contexts instead of Ecto schema/repo modules"

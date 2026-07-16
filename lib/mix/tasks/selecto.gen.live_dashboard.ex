@@ -36,8 +36,8 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
 
   @impl Mix.Task
   def run(args) do
-    {opts, _, _} =
-      OptionParser.parse(args,
+    {opts, _positional} =
+      SelectoMix.CLI.parse!(args,
         switches: [
           no_router: :boolean,
           module: :string
@@ -202,33 +202,37 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
       # Check if additional_pages already exists
       if String.contains?(content, "additional_pages:") do
         Mix.shell().info("Router already has additional_pages configuration")
-        Mix.shell().info("Please manually add #{page_module} to the additional_pages list")
+        print_router_snippet(web_module, page_module)
       else
-        # Add additional_pages to live_dashboard
+        # Only auto-patch high-confidence exact matches; otherwise print a merge snippet.
         updated_content = update_router_content(content, web_module, page_module)
 
         if updated_content != content do
           File.write!(router_path, updated_content)
           Mix.shell().info("✓ Updated router.ex with Selecto LiveDashboard page")
         else
-          Mix.shell().error("Could not automatically update router.ex")
-
-          Mix.shell().info("""
-
-          Please manually update your router.ex:
-
-              live_dashboard("/dashboard",
-                metrics: #{inspect(web_module)}.Telemetry,
-                additional_pages: [
-                  selecto: #{inspect(page_module)}
-                ]
-              )
-          """)
+          Mix.shell().info("Could not safely auto-update router.ex; please merge manually:")
+          print_router_snippet(web_module, page_module)
         end
       end
     else
       Mix.shell().error("Router file not found at #{router_path}")
+      print_router_snippet(web_module, page_module)
     end
+  end
+
+  defp print_router_snippet(web_module, page_module) do
+    Mix.shell().info("""
+
+    Please update your router.ex:
+
+        live_dashboard("/dashboard",
+          metrics: #{inspect(web_module)}.Telemetry,
+          additional_pages: [
+            selecto: #{inspect(page_module)}
+          ]
+        )
+    """)
   end
 
   def update_router_content_for_test(content, web_module, page_module) do
@@ -239,8 +243,9 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
     web_module_name = inspect(web_module)
     page_module_name = inspect(page_module)
 
+    # High-confidence only: single-line live_dashboard with metrics and no additional_pages.
     pattern =
-      ~r/live_dashboard\s*\(?\s*"\/dashboard"\s*,\s*\n?\s*metrics:\s*#{Regex.escape(web_module_name)}\.Telemetry\s*\)?/
+      ~r/live_dashboard\(\s*"\/dashboard"\s*,\s*metrics:\s*#{Regex.escape(web_module_name)}\.Telemetry\s*\)/
 
     replacement = """
     live_dashboard("/dashboard",
@@ -251,7 +256,10 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
     )
     """
 
-    String.replace(content, pattern, replacement)
+    case Regex.run(pattern, content) do
+      [_match] -> String.replace(content, pattern, String.trim(replacement), global: false)
+      nil -> content
+    end
   end
 
   defp page_module_path(app, module_name) when is_atom(module_name) do

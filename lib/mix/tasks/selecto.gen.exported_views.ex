@@ -31,6 +31,8 @@ defmodule Mix.Tasks.Selecto.Gen.ExportedViews do
 
   use Igniter.Mix.Task
 
+  alias SelectoMix.PersistenceGenerator
+
   @impl Igniter.Mix.Task
   def info(_argv, _composing_task) do
     %Igniter.Mix.Task.Info{
@@ -70,17 +72,23 @@ defmodule Mix.Tasks.Selecto.Gen.ExportedViews do
   end
 
   defp generate_exported_views(igniter, app_name, opts) do
-    config = build_generation_config(app_name, opts)
+    case SelectoMix.Identifier.validate_sql_identifier(opts[:table_name] || "exported_views") do
+      {:ok, _table_name} ->
+        config = build_generation_config(app_name, opts)
 
-    if opts[:dry_run] do
-      show_dry_run_summary(config)
-      igniter
-    else
-      igniter
-      |> generate_migration_file(config)
-      |> generate_schema_file(config)
-      |> generate_context_file(config)
-      |> add_success_messages(config)
+        if opts[:dry_run] do
+          show_dry_run_summary(config)
+          igniter
+        else
+          igniter
+          |> generate_migration_file(config)
+          |> generate_schema_file(config)
+          |> generate_context_file(config)
+          |> add_success_messages(config)
+        end
+
+      {:error, reason} ->
+        Igniter.add_issue(igniter, reason)
     end
   end
 
@@ -97,10 +105,7 @@ defmodule Mix.Tasks.Selecto.Gen.ExportedViews do
     }
   end
 
-  defp parse_module_name(module_string) when is_binary(module_string),
-    do: Module.concat([module_string])
-
-  defp parse_module_name(module) when is_atom(module), do: module
+  defp parse_module_name(module), do: PersistenceGenerator.parse_module_name(module)
 
   defp show_dry_run_summary(config) do
     IO.puts("""
@@ -353,13 +358,7 @@ defmodule Mix.Tasks.Selecto.Gen.ExportedViews do
     """
   end
 
-  defp timestamp do
-    {{year, month, day}, {hour, minute, second}} = :calendar.universal_time()
-    "#{year}#{pad(month)}#{pad(day)}#{pad(hour)}#{pad(minute)}#{pad(second)}"
-  end
-
-  defp pad(i) when i < 10, do: <<?0, ?0 + i>>
-  defp pad(i), do: to_string(i)
+  defp timestamp, do: PersistenceGenerator.timestamp()
 
   defp add_success_messages(igniter, config) do
     igniter
