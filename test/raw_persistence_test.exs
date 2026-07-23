@@ -38,6 +38,7 @@ defmodule SelectoMix.RawPersistenceTest do
       assert context =~ "SelectoDBSQLite.Adapter"
       assert context =~ "CURRENT_TIMESTAMP"
       assert context =~ "Jason.decode"
+      assert {:ok, _ast} = Code.string_to_quoted(context)
     end
 
     test "renders PostgreSQL saved views SQL" do
@@ -69,9 +70,10 @@ defmodule SelectoMix.RawPersistenceTest do
 
       assert context =~ "defmodule TmpApp.SavedViewConfigContext"
       assert context =~ "SelectoDBPostgreSQL.Adapter"
-      assert context =~ "def get_view_config(name, context, view_type, opts \\ [])"
-      assert context =~ "def load_view_config(name, context, view_type, opts \\ [])"
+      assert context =~ "def get_view_config(name, context, view_type, opts \\\\ [])"
+      assert context =~ "def load_view_config(name, context, view_type, opts \\\\ [])"
       assert context =~ "def decode_view_config(view_config)"
+      assert {:ok, _ast} = Code.string_to_quoted(context)
     end
   end
 

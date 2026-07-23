@@ -31,7 +31,7 @@ defmodule SelectoMix.MixProject do
   end
 
   defp description do
-    "Alpha: Mix tasks for generating and validating Selecto domains from Ecto schemas"
+    "Alpha: Mix tasks for generating and validating Selecto domains from Ecto schemas or database relations"
   end
 
   defp package do

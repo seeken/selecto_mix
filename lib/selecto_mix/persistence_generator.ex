@@ -20,10 +20,15 @@ defmodule SelectoMix.PersistenceGenerator do
   """
   @spec parse_module_name(String.t() | module()) :: module()
   def parse_module_name(module_string) when is_binary(module_string) do
-    Module.concat([module_string])
+    module_string
+    |> strip_elixir_prefix()
+    |> then(&Module.concat([&1]))
   end
 
   def parse_module_name(module) when is_atom(module), do: module
+
+  defp strip_elixir_prefix("Elixir." <> rest), do: strip_elixir_prefix(rest)
+  defp strip_elixir_prefix(module_name), do: module_name
 
   @doc """
   Validates a persistence table name, raising `Mix.Error` on failure.

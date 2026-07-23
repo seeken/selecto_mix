@@ -3,12 +3,13 @@ defmodule SelectoMix do
   Mix tasks and tooling for automatic Selecto configuration generation.
 
   SelectoMix provides utilities to automatically generate Selecto domain
-  configurations from Ecto schemas, create overlay modules for app-specific
-  customizations, and scaffold related SelectoComponents persistence helpers.
+  configurations from Ecto schemas or database relations, create overlay
+  modules for app-specific customizations, and scaffold related
+  SelectoComponents persistence helpers.
 
   ## Key Features
 
-  - **Automatic Schema Discovery**: Finds and introspects all Ecto schemas in your project
+  - **Schema and Relation Discovery**: Introspects Ecto schemas or direct database relations
   - **Intelligent Configuration Generation**: Creates comprehensive Selecto domains with suggested defaults
   - **Overlay Customization**: Keeps app-specific modifications outside generated base files
   - **Igniter Integration**: Uses modern Elixir project modification tools
@@ -31,7 +32,7 @@ defmodule SelectoMix do
 
   ## Main Mix Tasks
 
-  - `mix selecto.gen.domain` - Generate Selecto domain configurations from Ecto schemas
+  - `mix selecto.gen.domain` - Generate Selecto domains from Ecto schemas or database relations
   - `mix selecto.install` - Install Selecto dependencies and setup project structure
   - `mix selecto.gen.saved_views` - Generate persistent saved views support
   - `mix selecto.gen.saved_view_configs` - Generate per-view-type saved config persistence

@@ -103,13 +103,28 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViews do
         mix selecto.gen.saved_views MyApp
       """)
     else
-      generate_saved_views_implementation(igniter, app_name_arg, parsed_args)
+      generate_saved_views_implementation(igniter, normalize_app_name(app_name_arg), parsed_args)
     end
   end
 
   # Private functions
 
+  defp normalize_app_name(app_name) when is_atom(app_name) do
+    app_name
+    |> Atom.to_string()
+    |> strip_elixir_prefix()
+  end
+
+  defp normalize_app_name(app_name) when is_binary(app_name) do
+    strip_elixir_prefix(app_name)
+  end
+
+  defp strip_elixir_prefix("Elixir." <> rest), do: strip_elixir_prefix(rest)
+  defp strip_elixir_prefix(module_name), do: module_name
+
   defp generate_saved_views_implementation(igniter, app_name, opts) do
+    app_name = normalize_app_name(app_name)
+
     with {:ok, adapter_mode} <- RawPersistence.parse_adapter(opts[:adapter]),
          {:ok, _table_name} <-
            SelectoMix.Identifier.validate_sql_identifier(opts[:table_name] || "saved_views") do

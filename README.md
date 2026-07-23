@@ -6,7 +6,7 @@
 
 Use it when you want to:
 
-- generate domains from Ecto schemas
+- generate domains from Ecto schemas or existing database relations
 - generate overlays for app-specific customizations
 - scaffold saved views, exported views, and filter sets
 - install Selecto-related dependencies and front-end integration
@@ -90,6 +90,49 @@ Generate a domain plus LiveView wiring:
 mix selecto.gen.domain MyApp.Catalog.Product --live
 ```
 
+### Generate a working LiveView without Ecto
+
+Database-backed generation can introspect an existing table and generate the
+domain, overlay, and SelectoComponents LiveView together:
+
+```bash
+mix selecto.gen.domain \
+  --adapter postgresql \
+  --table equipment \
+  --database-url postgres://postgres:postgres@localhost/forge_works_dev \
+  --connection-name ForgeWorks.Database \
+  --live
+```
+
+The generated LiveView includes Aggregate, Detail, and Graph views. Database
+credentials are used only during generation and are never copied into
+generated source. At runtime, supervise a connection under the module name
+passed with `--connection-name`:
+
+```elixir
+# config/dev.exs
+config :forge_works, :database,
+  hostname: "localhost",
+  database: "forge_works_dev",
+  username: "postgres",
+  password: "postgres"
+```
+
+```elixir
+# lib/forge_works/application.ex
+database_options = Application.fetch_env!(:forge_works, :database)
+
+children = [
+  {Postgrex, Keyword.put(database_options, :name, ForgeWorks.Database)},
+  ForgeWorksWeb.Endpoint
+]
+```
+
+If `--connection-name` is omitted, the generator uses
+`<ApplicationModule>.Database` and prints the exact expected runtime name.
+Use `--live --saved-views` to generate adapter-backed saved-view persistence
+alongside the DB-backed LiveView when the selected adapter supports it.
+
 Generate a trusted provider module for Studio's host-app artifact registry:
 
 ```bash
@@ -155,7 +198,7 @@ present and any trusted filter cannot be enforced.
 
 Recommended workflow:
 
-1. Generate the base domain from your Ecto schema.
+1. Generate the base domain from an Ecto schema or database relation.
 2. Keep schema-derived structure in the generated file.
 3. Put custom filters, columns, and named functions in overlays when possible.
 4. Re-run generation when schemas change.

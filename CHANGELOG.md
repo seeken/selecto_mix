@@ -1,6 +1,21 @@
 CHANGES
 =======
 
+V NEXT
+----------
+
+- Enabled `mix selecto.gen.domain --adapter ... --table ... --live` for
+  database-backed domains, generating the SelectoComponents LiveView and
+  template without requiring an Ecto schema.
+- Added explicit runtime connection guidance and validation for DB-backed
+  LiveViews; generation-time database credentials remain outside generated
+  application source.
+- Added DB-backed `--live --saved-views` composition using adapter persistence.
+- Fixed explicit database table normalization in `selecto.gen.domain`.
+- Fixed generated adapter-backed persistence contexts so default arguments,
+  module names, and named runtime connections compile correctly.
+- Added end-to-end Igniter coverage for DB-backed LiveView generation.
+
 V 0.4.6
 ----------
 

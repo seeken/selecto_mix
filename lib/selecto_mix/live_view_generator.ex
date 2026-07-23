@@ -225,6 +225,68 @@ defmodule SelectoMix.LiveViewGenerator do
     """
   end
 
+  @doc """
+  Returns the named runtime connection expected by a DB-backed generated
+  LiveView.
+
+  `--database-url` and the other connection flags are used only by the
+  generator while it introspects the database. The host application must
+  supervise its runtime connection under this name.
+  """
+  def runtime_connection_name(app_name, opts) do
+    opts[:connection_name] ||
+      "#{app_name |> to_string() |> Macro.camelize()}.Database"
+  end
+
+  @doc """
+  Renders setup guidance for the runtime connection used by a DB-backed
+  generated LiveView.
+  """
+  def runtime_connection_guidance(app_name, opts) do
+    connection_name = runtime_connection_name(app_name, opts)
+    otp_app = app_name |> to_string() |> Macro.underscore()
+    adapter_guidance = adapter_runtime_guidance(opts[:adapter], connection_name, otp_app)
+
+    """
+
+    DB-backed LiveView runtime connection:
+      The generated LiveView uses #{connection_name}.
+      Generation-time database flags are not embedded into application code.
+      Supervise your adapter connection under that name before opening the LiveView.
+
+    #{adapter_guidance}
+
+      Use --connection-name MyApp.CustomDatabase to target an existing named
+      connection instead.
+    """
+  end
+
+  defp adapter_runtime_guidance(adapter, connection_name, otp_app)
+       when adapter in ["postgres", "postgresql"] do
+    """
+      PostgreSQL example for your application children:
+
+        database_options = Application.fetch_env!(:#{otp_app}, :database)
+        children = [
+          {Postgrex, Keyword.put(database_options, :name, #{connection_name})}
+        ]
+
+      Configure the runtime options separately, for example:
+
+        config :#{otp_app}, :database,
+          hostname: "localhost",
+          database: "#{otp_app}_dev"
+    """
+  end
+
+  defp adapter_runtime_guidance(adapter, connection_name, _otp_app) do
+    """
+      Configure and supervise your #{adapter || "database"} adapter's runtime
+      connection as #{connection_name}. Consult the adapter package for its
+      child specification and connection options.
+    """
+  end
+
   def source_live_name({:db, _adapter, _conn, table, _opts}) do
     table
     |> SelectoMix.Inflect.singularize()
@@ -254,10 +316,10 @@ defmodule SelectoMix.LiveViewGenerator do
   defp live_view_connection_ref(source, app_name, opts) do
     case source do
       {:db, _adapter, _conn, _table, _source_opts} ->
-        opts[:connection_name] || "#{app_name}.Database"
+        runtime_connection_name(app_name, opts)
 
       {:db, _adapter, _conn, _table} ->
-        opts[:connection_name] || "#{app_name}.Database"
+        runtime_connection_name(app_name, opts)
 
       _ ->
         "#{app_name}.Repo"

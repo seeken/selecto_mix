@@ -619,6 +619,152 @@ defmodule SelectoMixTest do
   end
 
   describe "adapter-backed helpers" do
+    test "gen.domain --live creates a complete DB-backed SelectoComponents surface" do
+      output_dir = "lib/shop/selecto_domains"
+      domain_path = Path.join(output_dir, "orders_domain.ex")
+      overlay_path = Path.join(output_dir, "overlays/orders_domain_overlay.ex")
+      live_path = "lib/shop_web/order_live.ex"
+      html_path = "lib/shop_web/order_live.html.heex"
+
+      Mix.Task.reenable("selecto.gen.domain")
+
+      igniter =
+        Igniter.Test.test_project(app_name: :shop)
+        |> Igniter.compose_task("selecto.gen.domain", [
+          "--adapter",
+          "sqlite",
+          "--table",
+          "orders",
+          "--database",
+          "shop_dev",
+          "--live",
+          "--connection-name",
+          "Shop.ReportingDatabase",
+          "--output",
+          output_dir
+        ])
+
+      assert igniter.issues == []
+      Igniter.Test.assert_creates(igniter, domain_path)
+      Igniter.Test.assert_creates(igniter, overlay_path)
+      Igniter.Test.assert_creates(igniter, live_path)
+      Igniter.Test.assert_creates(igniter, html_path)
+
+      live_source =
+        igniter.rewrite
+        |> Rewrite.source!(live_path)
+        |> Rewrite.Source.get(:content)
+
+      assert live_source =~ "Shop.SelectoDomains.OrderDomain.domain()"
+      assert live_source =~ "Selecto.configure(domain, Shop.ReportingDatabase)"
+      assert live_source =~ "Views.spec(:aggregate"
+      assert live_source =~ "Views.spec(:detail"
+      refute Enum.any?(igniter.warnings, &(&1 =~ "Ecto-only"))
+
+      Igniter.Test.assert_has_notice(igniter, fn notice ->
+        notice =~ "DB-backed LiveView runtime connection" and
+          notice =~ "Shop.ReportingDatabase"
+      end)
+    end
+
+    test "gen.domain DB-backed --live --saved-views uses adapter persistence" do
+      output_dir = "lib/shop/selecto_domains"
+      domain_path = Path.join(output_dir, "orders_domain.ex")
+      context_path = "lib/shop/saved_view_context.ex"
+      sql_path = "priv/sql/create_saved_views.sql"
+
+      Mix.Task.reenable("selecto.gen.domain")
+
+      igniter =
+        Igniter.Test.test_project(app_name: :shop)
+        |> Igniter.compose_task("selecto.gen.domain", [
+          "--adapter",
+          "sqlite",
+          "--table",
+          "orders",
+          "--database",
+          "shop_dev",
+          "--live",
+          "--saved-views",
+          "--connection-name",
+          "Shop.ReportingDatabase",
+          "--output",
+          output_dir
+        ])
+
+      assert igniter.issues == []
+      Igniter.Test.assert_creates(igniter, domain_path)
+      Igniter.Test.assert_creates(igniter, context_path)
+      Igniter.Test.assert_creates(igniter, sql_path)
+
+      domain_source =
+        igniter.rewrite
+        |> Rewrite.source!(domain_path)
+        |> Rewrite.Source.get(:content)
+
+      context_source =
+        igniter.rewrite
+        |> Rewrite.source!(context_path)
+        |> Rewrite.Source.get(:content)
+
+      assert domain_source =~ "use Shop.SavedViewContext"
+      assert context_source =~ "defmodule Shop.SavedViewContext"
+      assert context_source =~ "conn_name = Shop.ReportingDatabase"
+      refute context_source =~ "Ecto.Query"
+    end
+
+    test "gen.domain DB-backed --live rejects an unsafe connection module name" do
+      Mix.Task.reenable("selecto.gen.domain")
+
+      igniter =
+        Igniter.Test.test_project(app_name: :shop)
+        |> Igniter.compose_task("selecto.gen.domain", [
+          "--adapter",
+          "sqlite",
+          "--table",
+          "orders",
+          "--database",
+          "shop_dev",
+          "--live",
+          "--connection-name",
+          "Shop.Database; System.halt()"
+        ])
+
+      assert Enum.any?(igniter.warnings, fn warning ->
+               warning =~ "--connection-name must be an Elixir module name"
+             end)
+
+      refute Enum.any?(igniter.rewrite, fn source ->
+               source.path =~ "selecto_domains"
+             end)
+    end
+
+    test "gen.domain rejects DB-backed saved views for unsupported persistence adapters" do
+      Mix.Task.reenable("selecto.gen.domain")
+
+      igniter =
+        Igniter.Test.test_project(app_name: :shop)
+        |> Igniter.compose_task("selecto.gen.domain", [
+          "--adapter",
+          "mssql",
+          "--table",
+          "orders",
+          "--database",
+          "shop_dev",
+          "--live",
+          "--saved-views"
+        ])
+
+      assert Enum.any?(igniter.warnings, fn warning ->
+               warning =~ "--saved-views cannot be generated" and
+                 warning =~ "unsupported raw persistence adapter"
+             end)
+
+      refute Enum.any?(igniter.rewrite, fn source ->
+               source.path =~ "selecto_domains"
+             end)
+    end
+
     test "gen.domain artifact guidance points to export check and inspect loop" do
       guidance =
         Mix.Tasks.Selecto.Gen.Domain.artifact_guidance(
@@ -1020,6 +1166,19 @@ defmodule SelectoMixTest do
   end
 
   describe "LiveViewGenerator" do
+    test "renders actionable DB runtime connection guidance" do
+      result =
+        LiveViewGenerator.runtime_connection_guidance(:shop,
+          adapter: "postgresql",
+          connection_name: "Shop.ReportingDatabase"
+        )
+
+      assert result =~ "The generated LiveView uses Shop.ReportingDatabase"
+      assert result =~ "Application.fetch_env!(:shop, :database)"
+      assert result =~ "Keyword.put(database_options, :name, Shop.ReportingDatabase)"
+      assert result =~ "--connection-name MyApp.CustomDatabase"
+    end
+
     test "renders DB-backed live view template with database connection" do
       source = {:db, SelectoDBPostgreSQL.Adapter, :fake_conn, "products", schema: "public"}
 

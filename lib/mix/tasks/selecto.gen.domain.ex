@@ -1,5 +1,5 @@
 defmodule Mix.Tasks.Selecto.Gen.Domain do
-  @shortdoc "Generate Selecto domain configuration from Ecto schemas"
+  @shortdoc "Generate Selecto domains from Ecto schemas or database relations"
   @moduledoc """
   Generate Selecto domain configuration from Ecto schemas or database relations with Igniter support.
 
@@ -59,6 +59,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
      * `--materialized-view` - Introspect an existing materialized view as a read-only domain source
      * `--primary-key` - Explicit primary key column for DB views/materialized views
      * `--include-views` - Include views and materialized views when generating DB-backed domains with `--all`
+     * `--connection-name` - Named runtime connection used by DB-backed generated LiveViews
 
   ## File Generation
 
@@ -91,6 +92,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     Connection,
     ConnectionOpts,
     LiveViewGenerator,
+    RawPersistence,
     SchemaDiscovery,
     StudioArtifactsGenerator
   }
@@ -103,7 +105,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       group: :selecto,
       example:
         "mix selecto.gen.domain Blog.Post --include-associations --expand-schemas categories",
-      positional: [:schemas],
+      positional: [schemas: [optional: true]],
       schema:
         [
           all: :boolean,
@@ -266,11 +268,22 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   end
 
   defp process_db_sources(igniter, opts) do
-    with {:ok, adapter} <- resolve_adapter(opts[:adapter]),
+    with :ok <- validate_db_live_options(opts),
+         :ok <- validate_db_saved_views_options(opts),
+         {:ok, adapter} <- resolve_adapter(opts[:adapter]),
          {:ok, conn_opts} <- resolve_db_connection_opts(opts),
          {:ok, updated_igniter} <- with_db_connection(adapter, conn_opts, igniter, opts) do
       updated_igniter
     else
+      {:error, {:invalid_connection_name, connection_name}} ->
+        Igniter.add_warning(
+          igniter,
+          "--connection-name must be an Elixir module name such as MyApp.Database; got #{inspect(connection_name)}"
+        )
+
+      {:error, {:unsupported_saved_views_adapter, reason}} ->
+        Igniter.add_warning(igniter, "--saved-views cannot be generated: #{reason}")
+
       {:error, :missing_adapter} ->
         Igniter.add_warning(
           igniter,
@@ -284,6 +297,25 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         )
     end
   end
+
+  defp validate_db_live_options(%{live: true, connection_name: connection_name})
+       when is_binary(connection_name) do
+    case Code.string_to_quoted(String.trim(connection_name)) do
+      {:ok, {:__aliases__, _, [_ | _]}} -> :ok
+      _ -> {:error, {:invalid_connection_name, connection_name}}
+    end
+  end
+
+  defp validate_db_live_options(_opts), do: :ok
+
+  defp validate_db_saved_views_options(%{saved_views: true, adapter: adapter}) do
+    case RawPersistence.parse_adapter(adapter) do
+      {:ok, _adapter_mode} -> :ok
+      {:error, reason} -> {:error, {:unsupported_saved_views_adapter, reason}}
+    end
+  end
+
+  defp validate_db_saved_views_options(_opts), do: :ok
 
   defp with_db_connection(adapter, conn_opts, igniter, opts) do
     Connection.with_connection(adapter, conn_opts, fn conn ->
@@ -330,14 +362,17 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     opts = Map.put_new(opts, :app_name, Igniter.Project.Application.app_name(igniter))
 
     if opts[:dry_run] do
-      show_dry_run_summary(Enum.map(relations, & &1.name), output_dir, opts)
+      show_dry_run_summary(Enum.map(relations, &relation_name/1), output_dir, opts)
       igniter
     else
-      Enum.reduce(relations, igniter, fn relation, acc_igniter ->
+      igniter_with_saved_views = generate_saved_views_if_needed(igniter, opts)
+
+      Enum.reduce(relations, igniter_with_saved_views, fn relation, acc_igniter ->
         source_kind = relation_source_kind(opts, relation)
+        relation_name = relation_name(relation)
 
         source =
-          {:db, adapter, conn, relation.name,
+          {:db, adapter, conn, relation_name,
            [
              schema: opts[:db_schema],
              expand: opts[:expand] || false,
@@ -354,9 +389,13 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     cond do
       opts[:materialized_view] -> :materialized_view
       opts[:view] -> :view
-      true -> relation[:source_kind] || :table
+      is_map(relation) -> relation[:source_kind] || :table
+      true -> :table
     end
   end
+
+  defp relation_name(%{name: name}), do: name
+  defp relation_name(name) when is_binary(name), do: name
 
   defp parse_primary_key_override(nil), do: nil
   defp parse_primary_key_override(value) when is_atom(value), do: value
@@ -461,25 +500,14 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
           )
           |> add_artifact_guidance(source, opts)
 
-        # Generate LiveView files if requested
-        if opts[:live] && ecto_source?(source) do
+        if opts[:live] do
           igniter_with_domain
           |> generate_live_view_for_schema(source, opts)
         else
-          if opts[:live] && !ecto_source?(source) do
-            Igniter.add_warning(
-              igniter_with_domain,
-              "LiveView generation is still Ecto-only in selecto_mix; domain generation completed for #{DomainPaths.display_source(source)}"
-            )
-          else
-            igniter_with_domain
-          end
+          igniter_with_domain
         end
     end
   end
-
-  defp ecto_source?(source) when is_atom(source), do: true
-  defp ecto_source?(_source), do: false
 
   defp ensure_directory_exists(igniter, dir_path) do
     # Use Igniter to ensure directory exists
@@ -823,6 +851,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     |> add_success_message("Generated LiveView files for #{DomainPaths.display_source(source)}")
     |> maybe_run_assets_integration()
     |> add_route_suggestion(source, opts)
+    |> add_runtime_connection_guidance(source, opts)
   end
 
   defp generate_saved_views_if_needed(igniter, opts) do
@@ -838,12 +867,25 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
         false ->
           app_name_string = to_string(Macro.camelize(to_string(app_name)))
 
-          Igniter.compose_task(igniter, "selecto.gen.saved_views", [app_name_string])
+          Igniter.compose_task(
+            igniter,
+            "selecto.gen.saved_views",
+            saved_views_task_args(app_name_string, opts)
+          )
       end
     else
       igniter
     end
   end
+
+  defp saved_views_task_args(app_name, opts) do
+    [app_name]
+    |> maybe_append_task_option("--adapter", opts[:adapter])
+    |> maybe_append_task_option("--connection-name", opts[:connection_name])
+  end
+
+  defp maybe_append_task_option(args, _flag, nil), do: args
+  defp maybe_append_task_option(args, flag, value), do: args ++ [flag, to_string(value)]
 
   defp ensure_live_directory_exists(igniter, app_name_atom) do
     app_name = app_name_atom |> to_string() |> Macro.underscore()
@@ -931,6 +973,26 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
 
     Igniter.add_notice(igniter, LiveViewGenerator.route_suggestion(source, opts))
   end
+
+  defp add_runtime_connection_guidance(igniter, {:db, _, _, _, _}, opts) do
+    app_name = Igniter.Project.Application.app_name(igniter)
+
+    Igniter.add_notice(
+      igniter,
+      LiveViewGenerator.runtime_connection_guidance(app_name, opts)
+    )
+  end
+
+  defp add_runtime_connection_guidance(igniter, {:db, _, _, _}, opts) do
+    app_name = Igniter.Project.Application.app_name(igniter)
+
+    Igniter.add_notice(
+      igniter,
+      LiveViewGenerator.runtime_connection_guidance(app_name, opts)
+    )
+  end
+
+  defp add_runtime_connection_guidance(igniter, _source, _opts), do: igniter
 
   defp add_success_message(igniter, message) do
     Igniter.add_notice(igniter, message)
