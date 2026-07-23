@@ -27,6 +27,9 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
       # Expand associated schemas with full columns/associations
       mix selecto.gen.domain Blog.Post --expand-schemas categories,tags,authors
 
+      # Generate directly from a database table without an Ecto schema
+      mix selecto.gen.domain --adapter postgresql --table products --database-url "$DATABASE_URL"
+
       # Generate a read-only domain from an existing database view
       mix selecto.gen.domain --adapter postgresql --view reporting.active_customers --primary-key customer_id
 
@@ -55,10 +58,16 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
      * `--parameterized-joins` - Generate example parameterized join configurations
      * `--path` - Custom path for the LiveView route (e.g., /products instead of /product)
      * `--enable-modal` - Enable modal detail view for row clicks in LiveView (requires --live)
+     * `--adapter` - Database adapter for direct introspection (for example, `postgresql`)
+     * `--table` - Database table to introspect
      * `--view` - Introspect an existing database view as a read-only domain source
      * `--materialized-view` - Introspect an existing materialized view as a read-only domain source
      * `--primary-key` - Explicit primary key column for DB views/materialized views
      * `--include-views` - Include views and materialized views when generating DB-backed domains with `--all`
+     * `--database-url` - Generation-time database URL
+     * `--host`, `--port`, `--database`, `--username`, `--password` - Generation-time connection fields when no URL is used
+     * `--schema` - Database schema to introspect (default: `public`)
+     * `--expand` - Discover reverse and many-to-many database relationships
      * `--connection-name` - Named runtime connection used by DB-backed generated LiveViews
 
   ## File Generation

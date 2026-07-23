@@ -580,6 +580,8 @@ defmodule SelectoMixTest do
       result = DomainGenerator.generate_domain_map(config)
 
       assert length(Regex.scan(~r/:employee => %\{/, result)) == 1
+      assert result =~ "queryable: :employee"
+      refute result =~ ~s(queryable: "Employee")
     end
 
     test "generate_domain_file/3 creates DB-backed helper functions" do
@@ -1247,8 +1249,10 @@ defmodule SelectoMixTest do
           domain_module: "Shop.SelectoDomains.ProductDomain"
         )
 
-      assert result =~ "Add these routes to your router.ex:"
+      assert result =~ "Add this LiveView route inside your app's aliased web scope:"
       assert result =~ ~s(live "/reports/products", ProductLive, :index)
+      assert result =~ ~s(scope "/" do)
+      assert result =~ "pipe_through :browser"
       assert result =~ ~s(forward "/reports/products/query-contract.json")
       assert result =~ "SelectoComponents.QueryContract.Plug"
       assert result =~ "domain: Shop.SelectoDomains.ProductDomain.domain()"

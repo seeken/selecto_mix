@@ -350,6 +350,13 @@ defmodule SelectoMix.DomainGenerator.MapBuilder do
         |> Macro.underscore()
         |> SelectoMix.Identifier.to_atom!()
 
+      schema when is_binary(schema) ->
+        schema
+        |> String.split(".")
+        |> List.last()
+        |> Macro.underscore()
+        |> SelectoMix.Identifier.to_atom!()
+
       other ->
         other
     end

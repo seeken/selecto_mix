@@ -196,32 +196,39 @@ defmodule SelectoMix.LiveViewGenerator do
 
     """
 
-    Add these routes to your router.ex:
+    Add this LiveView route inside your app's aliased web scope:
       live "/#{route_path}", #{schema_name}Live, :index
 
-      forward "#{query_contract_url}",
-              SelectoComponents.QueryContract.Plug,
-              domain: #{domain_module}.domain(),
-              domain_id: "#{domain_id}",
-              domain_path: "#{domain_path}",
-              query_contract_url: "#{query_contract_url}",
-              query_guide_url: "#{query_guide_url}"
+    Add the query-contract endpoints in a non-aliased scope so Phoenix does not
+    prefix the SelectoComponents plug modules with your app's web namespace:
 
-      forward "#{query_guide_url}",
-              SelectoComponents.QueryContract.Guide.Plug,
-              domain: #{domain_module}.domain(),
-              domain_id: "#{domain_id}",
-              domain_path: "#{domain_path}",
-              query_contract_url: "#{query_contract_url}",
-              query_guide_url: "#{query_guide_url}"
+      scope "/" do
+        pipe_through :browser
 
-      forward "#{query_intent_validation_url}",
-              SelectoComponents.QueryContract.IntentValidator.Plug,
-              domain: #{domain_module}.domain(),
-              domain_id: "#{domain_id}",
-              domain_path: "#{domain_path}",
-              query_contract_url: "#{query_contract_url}",
-              query_guide_url: "#{query_guide_url}"
+        forward "#{query_contract_url}",
+                SelectoComponents.QueryContract.Plug,
+                domain: #{domain_module}.domain(),
+                domain_id: "#{domain_id}",
+                domain_path: "#{domain_path}",
+                query_contract_url: "#{query_contract_url}",
+                query_guide_url: "#{query_guide_url}"
+
+        forward "#{query_guide_url}",
+                SelectoComponents.QueryContract.Guide.Plug,
+                domain: #{domain_module}.domain(),
+                domain_id: "#{domain_id}",
+                domain_path: "#{domain_path}",
+                query_contract_url: "#{query_contract_url}",
+                query_guide_url: "#{query_guide_url}"
+
+        forward "#{query_intent_validation_url}",
+                SelectoComponents.QueryContract.IntentValidator.Plug,
+                domain: #{domain_module}.domain(),
+                domain_id: "#{domain_id}",
+                domain_path: "#{domain_path}",
+                query_contract_url: "#{query_contract_url}",
+                query_guide_url: "#{query_guide_url}"
+      end
     """
   end
 
