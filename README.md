@@ -17,6 +17,12 @@ Use it when you want to:
 - generate Mermaid diagrams from domain inspection artifacts
 - generate Markdown docs from normalized domain JSON artifacts
 - generate host-app Studio artifact providers for trusted preloaded inspection
+- prove normalized artifact determinism with `mix selecto_mix.verify`
+
+`mix selecto_mix.verify --output PATH` exhaustively checks the built-in finite
+model for atom/string key equivalence, construction-order independence, and
+JSON round-trip preservation. It exits non-zero with reproducible
+counterexamples when an invariant fails.
 
 ## Installation
 

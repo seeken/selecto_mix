@@ -4,6 +4,11 @@ CHANGES
 V NEXT
 ----------
 
+- Added `mix selecto_mix.verify` and bounded-exhaustive verification for
+  deterministic normalized-domain artifact encoding across atom/string keys
+  and construction order.
+- Canonicalized artifact JSON keys recursively so semantically equivalent
+  in-memory artifacts produce identical encoded output.
 - Enabled `mix selecto.gen.domain --adapter ... --table ... --live` for
   database-backed domains, generating the SelectoComponents LiveView and
   template without requiring an Ecto schema.
