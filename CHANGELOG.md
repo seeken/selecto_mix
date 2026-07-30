@@ -4,6 +4,9 @@ CHANGES
 V NEXT
 ----------
 
+V 0.4.7
+----------
+
 - Added `mix selecto_mix.verify` and bounded-exhaustive verification for
   deterministic normalized-domain artifact encoding across atom/string keys
   and construction order.
@@ -20,6 +23,7 @@ V NEXT
 - Fixed generated adapter-backed persistence contexts so default arguments,
   module names, and named runtime connections compile correctly.
 - Added end-to-end Igniter coverage for DB-backed LiveView generation.
+- Bump package version to `0.4.7`.
 
 V 0.4.6
 ----------
