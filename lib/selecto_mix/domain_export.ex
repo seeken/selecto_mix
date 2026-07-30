@@ -166,11 +166,39 @@ defmodule SelectoMix.DomainExport do
   @spec encode!(map(), keyword()) :: String.t()
   def encode!(artifact, opts \\ []) do
     pretty? = Keyword.get(opts, :pretty, true)
-    Jason.encode!(artifact, pretty: pretty?)
+
+    artifact
+    |> canonical_json()
+    |> Jason.encode!(pretty: pretty?)
   end
 
   @spec json_safe(term()) :: term()
   def json_safe(value), do: json_value(value)
+
+  @doc """
+  Canonicalizes JSON objects to string keys recursively.
+
+  If both atom and string forms of one key are present, the explicit string key
+  wins.
+  """
+  @spec canonical_json(term()) :: term()
+  def canonical_json(value) when is_list(value), do: Enum.map(value, &canonical_json/1)
+
+  def canonical_json(value) when is_map(value) do
+    value
+    |> Enum.sort_by(fn {key, _value} -> {to_string(key), if(is_binary(key), do: 1, else: 0)} end)
+    |> Enum.reduce(%{}, fn {key, item}, acc ->
+      string_key = to_string(key)
+
+      if Map.has_key?(acc, string_key) and not is_binary(key) do
+        acc
+      else
+        Map.put(acc, string_key, canonical_json(item))
+      end
+    end)
+  end
+
+  def canonical_json(value), do: value
 
   @spec format_error(artifact_error()) :: String.t()
   def format_error(:selecto_domain_unavailable) do
