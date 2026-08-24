@@ -1246,10 +1246,7 @@ defmodule SelectoMixTest do
       assert String.contains?(result, "choice_source_domain: domain_ref")
       assert String.contains?(result, "choice_source_transport: :live")
 
-      assert String.contains?(
-               result,
-               "{:ok, assign(socket, state), layout: {ShopWeb.Layouts, :app}}"
-             )
+      assert String.contains?(result, "{:ok, assign(socket, state)}")
 
       assert String.contains?(
                result,
@@ -1340,6 +1337,8 @@ defmodule SelectoMixTest do
       assert String.contains?(result, "choice_source_domain={@choice_source_domain}")
       assert String.contains?(result, "choice_source_context={@choice_source_context}")
       assert String.contains?(result, "choice_source_transport={@choice_source_transport}")
+      assert String.contains?(result, "<Layouts.app flash={@flash}>")
+      assert String.contains?(result, "</Layouts.app>")
     end
   end
 

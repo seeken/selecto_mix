@@ -110,7 +110,7 @@ defmodule SelectoMix.LiveViewGenerator do
 
     #{saved_views_code}
 
-        {:ok, assign(socket, state), layout: {#{web_module}.Layouts, :app}}
+        {:ok, assign(socket, state)}
       end
     end
     """
@@ -146,37 +146,39 @@ defmodule SelectoMix.LiveViewGenerator do
       end
 
     """
-    <div class="flex items-center gap-4 mb-6">
-      <h1 class="text-3xl font-bold">#{schema_name} Data View</h1>
-      #{saved_views_dropdown}
-    </div>
+    <Layouts.app flash={@flash}>
+      <div class="flex items-center gap-4 mb-6">
+        <h1 class="text-3xl font-bold">#{schema_name} Data View</h1>
+        #{saved_views_dropdown}
+      </div>
 
-    <.live_component
-      module={SelectoComponents.Form}
-      id="config"
-      view_config={@view_config}
-      selecto={@selecto}
-      executed={@executed}
-      applied_view={nil}
-      active_tab={@active_tab}
-      views={@views}
-      choice_source_domain={@choice_source_domain}
-      choice_source_context={@choice_source_context}
-      choice_source_transport={@choice_source_transport}
-      #{if opts[:enable_modal], do: "enable_modal_detail={true}\n      ", else: ""}show_view_configurator={@show_view_configurator}
-      #{saved_view_assigns}
-    />
+      <.live_component
+        module={SelectoComponents.Form}
+        id="config"
+        view_config={@view_config}
+        selecto={@selecto}
+        executed={@executed}
+        applied_view={nil}
+        active_tab={@active_tab}
+        views={@views}
+        choice_source_domain={@choice_source_domain}
+        choice_source_context={@choice_source_context}
+        choice_source_transport={@choice_source_transport}
+        #{if opts[:enable_modal], do: "enable_modal_detail={true}\n        ", else: ""}show_view_configurator={@show_view_configurator}
+        #{saved_view_assigns}
+      />
 
-    <.live_component
-      module={SelectoComponents.Results}
-      selecto={@selecto}
-      query_results={@query_results}
-      applied_view={@applied_view}
-      executed={@executed}
-      views={@views}
-      view_meta={@view_meta}
-      id="results"
-    />
+      <.live_component
+        module={SelectoComponents.Results}
+        selecto={@selecto}
+        query_results={@query_results}
+        applied_view={@applied_view}
+        executed={@executed}
+        views={@views}
+        view_meta={@view_meta}
+        id="results"
+      />
+    </Layouts.app>
     """
   end
 
