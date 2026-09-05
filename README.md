@@ -1,5 +1,37 @@
 # SelectoMix
 
+## Local document schema artifacts
+
+The document lifecycle uses the Selecto runtime supplied by the host project.
+It reads local JSON fixtures and never starts the host application, opens a
+database connection, or grants write authority from inference. Every output
+must be a new file; existing artifacts are never overwritten.
+
+```sh
+mix selecto.document.inspect fixture.json --output report.json
+mix selecto.document.draft report.json --authoring authored-shape.json --output draft.json
+mix selecto.document.check draft.json
+mix selecto.document.approve draft.json --reviewer reviewer-name --output release.json
+mix selecto.document.diff release.json report.json --output drift.json
+```
+
+`fixture.json` is an array of document objects. Inference emits structural
+evidence without source values. `--max-documents N` can reduce its sample;
+`--excluded-paths exclusions.json` accepts a JSON array of parsed paths such as
+`[["private_payload"]]`. Inputs are regular files capped at 8 MB, and inference
+also enforces its document, byte, depth, field, array, and time limits.
+
+`authored-shape.json` explicitly declares source identity, trusted tenant path,
+version, fields, virtual relations, variants, and access requirements. The draft
+preserves this authored policy and attaches inference evidence. Approval
+validates and fingerprints the draft; it does not alter source validators,
+sample more records, or enable writes. Invalid or mutated artifacts fail checks.
+
+The document CLI integration tests use the real host runtime or an explicitly
+selected sibling checkout through `SELECTO_LIVE_SELECTO`. In a tooling-only
+checkout without that runtime, lifecycle tests are skipped while file/argument
+safety tests still run.
+
 > Alpha software. Generation flows are usable but still evolving.
 
 `selecto_mix` is the tooling package for setting up Selecto in an Elixir project.
