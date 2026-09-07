@@ -134,6 +134,12 @@ defmodule Mix.Tasks.Selecto.Domain.Diff do
       get_in(diff, [:left, :domain_fingerprint]),
       get_in(diff, [:right, :domain_fingerprint])
     )
+
+    print_value_change(
+      "canonical rule fingerprint",
+      get_in(diff, [:left, :rule_fingerprint]),
+      get_in(diff, [:right, :rule_fingerprint])
+    )
   end
 
   defp print_sections(sections) do

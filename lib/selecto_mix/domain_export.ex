@@ -104,6 +104,7 @@ defmodule SelectoMix.DomainExport do
       domain_version: Map.get(artifact, "domain_version") || map_get(domain, "domain_version"),
       domain_fingerprint:
         Map.get(artifact, "domain_fingerprint") || map_get(domain, "domain_fingerprint"),
+      rule_fingerprint: rule_fingerprint(domain),
       name: map_get(domain, "name"),
       sections: sections_summary(artifact_diagnostics, current_diagnostics),
       counts: counts_summary(domain),
@@ -410,6 +411,23 @@ defmodule SelectoMix.DomainExport do
     }
   end
 
+  defp rule_fingerprint(domain) do
+    case map_get(domain, "rules", %{}) do
+      rules when rules in [nil, %{}] ->
+        nil
+
+      _rules ->
+        compiler = Selecto.Rule.Contract
+
+        if Code.ensure_loaded?(compiler) and function_exported?(compiler, :compile, 1) do
+          case apply(compiler, :compile, [domain]) do
+            {:ok, contract} -> contract.fingerprint
+            {:error, _errors} -> nil
+          end
+        end
+    end
+  end
+
   defp registries_summary(domain) do
     writes = map_get(domain, "writes", %{})
 
@@ -620,6 +638,7 @@ defmodule SelectoMix.DomainExport do
       schema_version: Map.get(summary, :schema_version),
       domain_version: Map.get(summary, :domain_version),
       domain_fingerprint: Map.get(summary, :domain_fingerprint),
+      rule_fingerprint: Map.get(summary, :rule_fingerprint),
       name: Map.get(summary, :name)
     }
   end
