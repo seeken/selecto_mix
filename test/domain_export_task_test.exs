@@ -518,6 +518,34 @@ defmodule SelectoMix.DomainExportTaskTest do
     end
   end
 
+  defmodule RuleDocsDomain do
+    def domain do
+      PlainDomain.domain()
+      |> Map.merge(%{
+        name: "Rule Items",
+        rules: %{
+          schema: "selecto.data_rules.v1",
+          definitions: %{
+            positive_quantity: %{version: 1, test: %{op: "number.gt", bound: "0"}}
+          },
+          normalizers: %{
+            reference: %{
+              version: 1,
+              steps: [%{op: "text.trim", profile: "ascii_whitespace_v1"}]
+            }
+          },
+          bindings: %{
+            quantity_on_write: %{
+              subject: %{scope: :candidate, path: [:quantity]},
+              operations: [:insert, :update],
+              rule: %{id: :positive_quantity, version: 1}
+            }
+          }
+        }
+      })
+    end
+  end
+
   test "exports a normalized domain JSON artifact to stdout" do
     Mix.Task.reenable("selecto.domain.export")
 
@@ -1094,6 +1122,31 @@ defmodule SelectoMix.DomainExportTaskTest do
       assert docs =~ "| item.name | field | name | source.columns.name.capability |"
       assert docs =~ "#### Actions"
       assert docs =~ "| item.archive | action | archive | actions.archive.capability |"
+    end)
+  end
+
+  test "documents canonical rule definitions, normalizers, and bindings" do
+    in_tmp_dir("selecto_mix_domain_docs_rules", fn ->
+      Mix.Task.reenable("selecto.domain.docs")
+      assert {:ok, artifact} = SelectoMix.DomainExport.export(RuleDocsDomain)
+      File.write!("rules.normalized.json", SelectoMix.DomainExport.encode!(artifact))
+
+      capture_io(fn ->
+        Mix.Tasks.Selecto.Domain.Docs.run([
+          "rules.normalized.json",
+          "--output",
+          "docs/selecto/rules.md"
+        ])
+      end)
+
+      docs = File.read!("docs/selecto/rules.md")
+      assert docs =~ "## Canonical Data Rules"
+      assert docs =~ "| Schema | selecto.data_rules.v1 |"
+      assert docs =~ "| positive_quantity | 1 | number.gt |"
+      assert docs =~ "| reference | 1 | text.trim |"
+
+      assert docs =~
+               "| quantity_on_write | candidate | quantity | positive_quantity@1 |  | insert, update | required |"
     end)
   end
 

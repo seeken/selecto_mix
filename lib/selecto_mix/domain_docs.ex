@@ -25,6 +25,9 @@ defmodule SelectoMix.DomainDocs do
     :write_transitions,
     :write_validations,
     :write_constraints,
+    :rule_definitions,
+    :rule_normalizers,
+    :rule_bindings,
     :actions,
     :capabilities,
     :source_relationships,
@@ -73,6 +76,7 @@ defmodule SelectoMix.DomainDocs do
       source_section(domain),
       schemas_section(domain),
       registries_section(domain),
+      rules_section(domain),
       choice_source_details_section(domain),
       security_review_section(summary),
       query_members_section(domain),
@@ -256,6 +260,93 @@ defmodule SelectoMix.DomainDocs do
       []
     end
   end
+
+  defp rules_section(domain) do
+    rules = map_get(domain, "rules", %{})
+    definitions = map_get(rules, "definitions", %{})
+    normalizers = map_get(rules, "normalizers", %{})
+    bindings = map_get(rules, "bindings", %{})
+
+    if is_map(rules) and map_size(rules) > 0 do
+      [
+        "## Canonical Data Rules",
+        "",
+        "| Key | Value |",
+        "| --- | --- |",
+        table_row("Schema", map_get(rules, "schema") || "(missing)"),
+        ""
+      ] ++
+        rule_definitions_section(definitions) ++
+        rule_normalizers_section(normalizers) ++
+        rule_bindings_section(bindings)
+    else
+      []
+    end
+  end
+
+  defp rule_definitions_section(definitions)
+       when is_map(definitions) and map_size(definitions) > 0 do
+    ["### Definitions", "", "| Id | Version | Test |", "| --- | ---: | --- |"] ++
+      Enum.map(sorted_entries(definitions), fn {id, definition} ->
+        table_row([
+          id,
+          map_get(definition, "version"),
+          rule_operator(map_get(definition, "test"))
+        ])
+      end) ++ [""]
+  end
+
+  defp rule_definitions_section(_), do: []
+
+  defp rule_normalizers_section(normalizers)
+       when is_map(normalizers) and map_size(normalizers) > 0 do
+    ["### Normalizers", "", "| Id | Version | Steps |", "| --- | ---: | --- |"] ++
+      Enum.map(sorted_entries(normalizers), fn {id, normalizer} ->
+        steps = normalizer |> map_get("steps", []) |> Enum.map(&rule_operator/1) |> format_list()
+        table_row([id, map_get(normalizer, "version"), steps])
+      end) ++ [""]
+  end
+
+  defp rule_normalizers_section(_), do: []
+
+  defp rule_bindings_section(bindings) when is_map(bindings) and map_size(bindings) > 0 do
+    [
+      "### Bindings",
+      "",
+      "| Id | Stage | Subject | Rule | Normalizer | Operations | Enforcement |",
+      "| --- | --- | --- | --- | --- | --- | --- |"
+    ] ++
+      Enum.map(sorted_entries(bindings), fn {id, binding} ->
+        subject = map_get(binding, "subject", %{})
+
+        table_row([
+          id,
+          map_get(subject, "scope"),
+          format_path(map_get(subject, "path", [])),
+          rule_reference(map_get(binding, "rule")),
+          rule_reference(map_get(binding, "normalizer")),
+          format_list(map_get(binding, "operations", [])),
+          map_get(binding, "enforcement", "required")
+        ])
+      end) ++ [""]
+  end
+
+  defp rule_bindings_section(_), do: []
+
+  defp rule_operator(test) when is_map(test), do: map_get(test, "op") || "(missing)"
+  defp rule_operator(_), do: "(missing)"
+
+  defp rule_reference(nil), do: ""
+
+  defp rule_reference(reference) when is_map(reference) do
+    case {map_get(reference, "id"), map_get(reference, "version")} do
+      {nil, _} -> ""
+      {id, nil} -> id
+      {id, version} -> "#{id}@#{version}"
+    end
+  end
+
+  defp rule_reference(_), do: ""
 
   defp query_members_section(domain) do
     query_members = map_get(domain, "query_members", %{})

@@ -398,6 +398,11 @@ defmodule SelectoMix.DomainExport do
       write_constraints: writes |> map_get("constraints", []) |> count_list(),
       write_scope: writes |> map_get("scope", %{}) |> count_map(),
       write_hooks: writes |> map_get("hooks", %{}) |> count_map(),
+      rule_definitions:
+        domain |> map_get("rules", %{}) |> map_get("definitions", %{}) |> count_map(),
+      rule_normalizers:
+        domain |> map_get("rules", %{}) |> map_get("normalizers", %{}) |> count_map(),
+      rule_bindings: domain |> map_get("rules", %{}) |> map_get("bindings", %{}) |> count_map(),
       actions: domain |> map_get("actions", %{}) |> count_map(),
       capabilities: domain |> map_get("capabilities", %{}) |> count_map(),
       source_relationships: domain |> map_get("source_relationships", %{}) |> count_map(),
@@ -421,6 +426,9 @@ defmodule SelectoMix.DomainExport do
       write_transitions: registry_names(writes, "transitions"),
       write_scope: registry_names(writes, "scope"),
       write_hooks: registry_names(writes, "hooks"),
+      rule_definitions: domain |> map_get("rules", %{}) |> registry_names("definitions"),
+      rule_normalizers: domain |> map_get("rules", %{}) |> registry_names("normalizers"),
+      rule_bindings: domain |> map_get("rules", %{}) |> registry_names("bindings"),
       actions: registry_names(domain, "actions"),
       capabilities: registry_names(domain, "capabilities"),
       source_relationships: registry_names(domain, "source_relationships"),
