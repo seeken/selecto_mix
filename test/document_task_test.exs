@@ -4,7 +4,10 @@ document_runtime_path =
   System.get_env("SELECTO_LIVE_SELECTO", Path.expand("../../selecto", __DIR__))
 
 unless Code.ensure_loaded?(Selecto.Document.Draft) do
-  files = ~w(missing canonical path inference_report inference shape_release fixtures draft drift)
+  files = ~w(
+    missing canonical path numeric object_id native_inference_report inference_report
+    inference shape_release fixtures draft drift
+  )
 
   if Enum.all?(
        files,
