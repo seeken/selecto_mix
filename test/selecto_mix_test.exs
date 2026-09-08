@@ -1524,3 +1524,20 @@ defmodule SelectoMixTest do
     end
   end
 end
+
+defmodule SelectoLiveDashboardTelemetryTest do
+  use ExUnit.Case, async: true
+
+  alias Mix.Tasks.Selecto.Gen.LiveDashboard
+
+  test "generates canonical duration and count metrics with native conversion" do
+    generated = LiveDashboard.add_telemetry_metrics_to_content_for_test("# VM Metrics")
+
+    assert generated =~ ~s(selecto.telemetry.operation.stop.duration)
+    assert generated =~ ~s(unit: {:native, :millisecond})
+    assert generated =~ ~s(tags: [:operation_kind, :outcome])
+    assert generated =~ ~s(selecto.telemetry.operation.stop.count)
+    refute generated =~ ~s(selecto.query.complete)
+    refute generated =~ ~s(selecto.cache.ratio)
+  end
+end

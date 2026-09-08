@@ -146,42 +146,11 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
       content = File.read!(telemetry_path)
 
       # Check if Selecto metrics already exist
-      if String.contains?(content, "selecto.query") do
+      if String.contains?(content, "selecto.telemetry.operation.stop") do
         Mix.shell().info("Selecto metrics already present in telemetry.ex")
       else
         # Add Selecto metrics to the metrics/0 function
-        updated_content =
-          String.replace(
-            content,
-            "# VM Metrics",
-            """
-            # Selecto Metrics
-            summary("selecto.query.complete.duration",
-              unit: {:native, :millisecond},
-              description: "Selecto query execution time"
-            ),
-            summary("selecto.query.complete.execution_time",
-              unit: {:native, :millisecond},
-              description: "Time spent executing the query"
-            ),
-            counter("selecto.cache.hit.count",
-              description: "Number of cache hits"
-            ),
-            counter("selecto.cache.miss.count",
-              description: "Number of cache misses"
-            ),
-            counter("selecto.query.error.count",
-              description: "Number of query errors"
-            ),
-            distribution("selecto.cache.ratio",
-              buckets: [0, 0.25, 0.5, 0.75, 1.0],
-              unit: :percent,
-              description: "Cache hit ratio"
-            ),
-
-            # VM Metrics
-            """
-          )
+        updated_content = add_telemetry_metrics_to_content(content)
 
         File.write!(telemetry_path, updated_content)
         Mix.shell().info("✓ Added Selecto telemetry metrics")
@@ -189,6 +158,31 @@ defmodule Mix.Tasks.Selecto.Gen.LiveDashboard do
     else
       Mix.shell().error("Telemetry file not found at #{telemetry_path}")
     end
+  end
+
+  def add_telemetry_metrics_to_content_for_test(content),
+    do: add_telemetry_metrics_to_content(content)
+
+  defp add_telemetry_metrics_to_content(content) do
+    String.replace(
+      content,
+      "# VM Metrics",
+      """
+      # Selecto Metrics
+      distribution("selecto.telemetry.operation.stop.duration",
+        unit: {:native, :millisecond},
+        tags: [:operation_kind, :outcome],
+        reporter_options: [buckets: [5, 10, 25, 50, 100, 250, 500, 1_000, 5_000]],
+        description: "Selecto public operation duration"
+      ),
+      counter("selecto.telemetry.operation.stop.count",
+        tags: [:operation_kind, :outcome],
+        description: "Completed Selecto public operations"
+      ),
+
+      # VM Metrics
+      """
+    )
   end
 
   defp update_router(app, web_module, page_module) do
