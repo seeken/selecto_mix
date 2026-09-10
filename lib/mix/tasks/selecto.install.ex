@@ -15,7 +15,7 @@ defmodule Mix.Tasks.Selecto.Install do
 
   ## Options
 
-    * `--postgis` - Include `selecto_postgis`
+    * `--postgis` - Include `selecto_db_postgresql_postgis`
     * `--development-mode` - Use local `vendor/` path dependencies and clone repos
     * `--source` - GitHub owner for development mode clones (default: `selecto-elixir`)
     * `--check` - Show what would change without writing files
@@ -66,7 +66,7 @@ defmodule Mix.Tasks.Selecto.Install do
 
     igniter =
       if development_mode? do
-        clone_vendor_repos(dep_specs, source, check?)
+        clone_vendor_repos(dep_specs, opts[:source], check?)
         Igniter.add_notice(igniter, "Development mode enabled (source: #{source})")
       else
         igniter
@@ -149,15 +149,18 @@ defmodule Mix.Tasks.Selecto.Install do
       postgis_spec =
         if development_mode? do
           %{
-            app: :selecto_postgis,
-            repo: "selecto_postgis",
-            dep: "{:selecto_postgis, path: \"./vendor/selecto_postgis\", override: true}"
+            app: :selecto_db_postgresql_postgis,
+            repo: "selecto_db_postgresql_postgis",
+            source: "seeken",
+            dep:
+              "{:selecto_db_postgresql_postgis, path: \"./vendor/selecto_db_postgresql_postgis\", override: true}"
           }
         else
           %{
-            app: :selecto_postgis,
+            app: :selecto_db_postgresql_postgis,
             repo: nil,
-            dep: "{:selecto_postgis, \"~> 0.1\", override: true}"
+            dep:
+              "{:selecto_db_postgresql_postgis, github: \"seeken/selecto_db_postgresql_postgis\", ref: \"4f074ef2cb3b6e116b39c36a2613e7384c9eaad4\", override: true}"
           }
         end
 
@@ -272,7 +275,8 @@ defmodule Mix.Tasks.Selecto.Install do
     |> Enum.filter(&(is_binary(&1.repo) and &1.repo != ""))
     |> Enum.each(fn spec ->
       dest = Path.join("vendor", spec.repo)
-      repo_url = "https://github.com/#{source}/#{spec.repo}.git"
+      repo_source = source || Map.get(spec, :source, @default_source)
+      repo_url = "https://github.com/#{repo_source}/#{spec.repo}.git"
 
       cond do
         File.dir?(dest) ->
