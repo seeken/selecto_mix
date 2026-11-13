@@ -15,168 +15,82 @@ defmodule SelectoMix.LiveViewGenerator do
     "lib/#{app_name}_web/#{schema_name}_live.html.heex"
   end
 
-  def render_live_view_template(app_name, source, domain_module, opts, components_source_path) do
+  def render_live_view_template(app_name, source, domain_module, opts) do
     app_name = app_name |> to_string() |> Macro.camelize()
     schema_name = source_live_name(source)
-    schema_underscore = Macro.underscore(schema_name)
     web_module = "#{app_name}Web"
     connection_ref = live_view_connection_ref(source, app_name, opts)
     adapter_ref = live_view_adapter_ref(source, app_name, opts)
 
-    route_path = opts[:path] || "/#{schema_underscore}"
-    route_path = if String.starts_with?(route_path, "/"), do: route_path, else: "/#{route_path}"
-
-    saved_views_code =
-      if opts[:saved_views] do
-        """
-          saved_views = #{domain_module}.get_view_names(path)
-
-          socket =
-            assign(socket,
-              show_view_configurator: false,
-              views: views,
-              my_path: path,
-              path: path,
-              saved_view_module: #{domain_module},
-              saved_view_context: path,
-              available_saved_views: saved_views,
-              choice_source_domain: domain_ref,
-              choice_source_context: %{surface: :generated_live_view, path: path},
-              choice_source_transport: :live
-            )
-        """
-      else
-        """
-          socket =
-            assign(socket,
-              show_view_configurator: false,
-              views: views,
-              my_path: path,
-              path: path,
-              choice_source_domain: domain_ref,
-              choice_source_context: %{surface: :generated_live_view, path: path},
-              choice_source_transport: :live
-            )
-        """
-      end
-
     """
     defmodule #{web_module}.#{schema_name}Live do
       @moduledoc \"\"\"
-      LiveView for #{schema_name} using SelectoComponents.
+      LiveView for #{schema_name} using the SelectoViews Explorer.
 
-      ## Quick Setup (Phoenix 1.7+)
+      ## Quick Setup
 
-      1. Import hooks in `assets/js/app.js`:
-         ```javascript
-         import {hooks as selectoComponentsHooks} from "phoenix-colocated/selecto_components"
-         // Add to your liveSocket hooks: { ...selectoComponentsHooks }
+      1. Serve the packaged stylesheet from your endpoint, before the router:
+         ```elixir
+         plug Plug.Static,
+           at: "/selecto-views",
+           from: :selecto_views,
+           gzip: false,
+           only: ~w(selecto-views.css)
          ```
 
-      2. Add to Tailwind in `assets/css/app.css`:
-         ```css
-         @source "#{components_source_path}";
+      2. Import the hooks in `assets/js/app.js`:
+         ```javascript
+         import {hooks as selectoViewsHooks} from "phoenix-colocated/selecto_views"
+         // Add to your liveSocket hooks: { ...selectoViewsHooks }
          ```
 
       3. Run `mix assets.build`
 
-      The generated base views include `:aggregate`, `:detail`, and `:graph`.
-      Extension-provided views such as `:map` or `:timeseries` are merged in
-      automatically when available for the configured domain.
+      `mix selecto.views.integrate` performs step 2 for you.
 
-      That's it! The drag-and-drop query builder and charts will work automatically.
+      The Explorer provides the Detail, Aggregate, and Graph views. This
+      LiveView only supplies a configured Selecto value and the request params,
+      so reloads and shared links restore the query.
       \"\"\"
 
       use #{web_module}, :live_view
-      use SelectoComponents.Form
-
-      alias SelectoComponents.Views
 
       @impl true
-      def mount(_params, _session, socket) do
+      def mount(params, _session, socket) do
         domain_ref = #{domain_module}.domain_ref()
-        path = "#{route_path}"
 
         selecto =
           Selecto.configure_registered(domain_ref, #{connection_ref}, adapter: #{adapter_ref})
 
-        views = [
-          Views.spec(:aggregate, Views.Aggregate, "Aggregate View", %{drill_down: :detail}),
-          Views.spec(:detail, Views.Detail, "Detail View", %{}),
-          Views.spec(:graph, Views.Graph, "Graph View", %{})
-        ]
-
-        state = get_initial_state(views, selecto)
-
-    #{saved_views_code}
-
-        {:ok, assign(socket, state)}
+        {:ok,
+         socket
+         |> assign(:page_title, "#{schema_name}")
+         |> assign(:params, params)
+         |> assign(:selecto, selecto)}
       end
     end
     """
   end
 
-  def render_live_view_html_template(source, opts) do
+  def render_live_view_html_template(source, _opts) do
     schema_name = source_live_name(source)
-
-    saved_views_dropdown =
-      if opts[:saved_views] do
-        ~S"""
-        <details :if={@available_saved_views != []} id="saved-views-dropdown" class="dropdown">
-          <summary class="btn btn-sm btn-outline gap-1">Saved Views</summary>
-          <ul class="menu dropdown-content z-[1] mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-2 shadow">
-            <li :for={v <- @available_saved_views}>
-              <.link href={"#{@path}?saved_view=#{v}"}>{v}</.link>
-            </li>
-          </ul>
-        </details>
-        """
-      else
-        ""
-      end
-
-    saved_view_assigns =
-      if opts[:saved_views] do
-        """
-            saved_view_module={@saved_view_module}
-            saved_view_context={@saved_view_context}
-        """
-      else
-        ""
-      end
+    explorer_id = "#{schema_name |> Macro.underscore() |> String.replace("_", "-")}-explorer"
 
     """
     <Layouts.app flash={@flash}>
-      <div class="flex items-center gap-4 mb-6">
-        <h1 class="text-3xl font-bold">#{schema_name} Data View</h1>
-        #{saved_views_dropdown}
-      </div>
-
       <.live_component
-        module={SelectoComponents.Form}
-        id="config"
-        view_config={@view_config}
+        module={SelectoViews.Explorer}
+        id="#{explorer_id}"
         selecto={@selecto}
-        executed={@executed}
-        applied_view={nil}
-        active_tab={@active_tab}
-        views={@views}
-        choice_source_domain={@choice_source_domain}
-        choice_source_context={@choice_source_context}
-        choice_source_transport={@choice_source_transport}
-        #{if opts[:enable_modal], do: "enable_modal_detail={true}\n        ", else: ""}show_view_configurator={@show_view_configurator}
-        #{saved_view_assigns}
-      />
-
-      <.live_component
-        module={SelectoComponents.Results}
-        selecto={@selecto}
-        query_results={@query_results}
-        applied_view={@applied_view}
-        executed={@executed}
-        views={@views}
-        view_meta={@view_meta}
-        id="results"
+        params={@params}
+        options={[
+          title: "#{schema_name}",
+          default_limit: 25,
+          max_limit: 100,
+          show_sql: false,
+          query_params: true,
+          stylesheet_href: "/selecto-views/selecto-views.css"
+        ]}
       />
     </Layouts.app>
     """
@@ -191,55 +105,17 @@ defmodule SelectoMix.LiveViewGenerator do
       |> to_string()
       |> String.trim("/")
 
-    domain_module = opts[:domain_module] || "#{schema_name}Domain"
-    domain_registry = opts[:domain_registry] || domain_module
-
-    domain_id =
-      case opts[:domain_id] do
-        nil -> "#{domain_module}.domain_id()"
-        id -> inspect(id)
-      end
-
-    domain_path = opts[:domain_path] || domain_route_path(route_path)
-    query_contract_url = query_contract_route_path(route_path)
-    query_guide_url = query_guide_route_path(route_path)
-    query_intent_validation_url = query_intent_validation_route_path(route_path)
-
     """
 
     Add this LiveView route inside your app's aliased web scope:
       live "/#{route_path}", #{schema_name}Live, :index
 
-    Add the query-contract endpoints in a non-aliased scope so Phoenix does not
-    prefix the SelectoComponents plug modules with your app's web namespace:
-
-      scope "/" do
-        pipe_through :browser
-
-        forward "#{query_contract_url}",
-                SelectoComponents.QueryContract.Plug,
-                registry: #{domain_registry},
-                domain_id: #{domain_id},
-                domain_path: "#{domain_path}",
-                query_contract_url: "#{query_contract_url}",
-                query_guide_url: "#{query_guide_url}"
-
-        forward "#{query_guide_url}",
-                SelectoComponents.QueryContract.Guide.Plug,
-                registry: #{domain_registry},
-                domain_id: #{domain_id},
-                domain_path: "#{domain_path}",
-                query_contract_url: "#{query_contract_url}",
-                query_guide_url: "#{query_guide_url}"
-
-        forward "#{query_intent_validation_url}",
-                SelectoComponents.QueryContract.IntentValidator.Plug,
-                registry: #{domain_registry},
-                domain_id: #{domain_id},
-                domain_path: "#{domain_path}",
-                query_contract_url: "#{query_contract_url}",
-                query_guide_url: "#{query_guide_url}"
-      end
+    Serve the SelectoViews stylesheet from your endpoint, before the router:
+      plug Plug.Static,
+        at: "/selecto-views",
+        from: :selecto_views,
+        gzip: false,
+        only: ~w(selecto-views.css)
     """
   end
 
@@ -370,16 +246,4 @@ defmodule SelectoMix.LiveViewGenerator do
     otp_app = app_name |> to_string() |> Macro.underscore()
     "Application.fetch_env!(:#{otp_app}, :selecto_adapter)"
   end
-
-  defp query_contract_route_path(""), do: "/query-contract.json"
-  defp query_contract_route_path(route_path), do: "/#{route_path}/query-contract.json"
-
-  defp query_guide_route_path(""), do: "/query-guide.md"
-  defp query_guide_route_path(route_path), do: "/#{route_path}/query-guide.md"
-
-  defp query_intent_validation_route_path(""), do: "/query-intent/validate"
-  defp query_intent_validation_route_path(route_path), do: "/#{route_path}/query-intent/validate"
-
-  defp domain_route_path(""), do: "/"
-  defp domain_route_path(route_path), do: "/#{route_path}"
 end

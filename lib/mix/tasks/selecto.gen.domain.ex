@@ -49,7 +49,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
      * `--exclude` - Comma-separated list of schemas to exclude
      * `--live` - Generate LiveView files for the domain
      * `--studio-artifacts` - Generate a host-app Studio inspection provider module
-     * `--saved-views` - Generate saved views implementation (requires --live)
+     * `--saved-views` - Retired; ignored with a warning. See `SelectoViews.SavedQueries`
      * `--expand-schemas` - Comma-separated list of associated schemas to fully expand with columns and associations
     * `--expand-tag` - Many-to-many tag mode: TableName:display_field (uses IDs, prevents denormalization)
     * `--expand-star` - Star schema mode: TableName:display_field (lookup table with ID-based filtering)
@@ -57,7 +57,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     * `--expand-polymorphic` - Polymorphic association: field_name:type_field,id_field:Type1,Type2,Type3
      * `--parameterized-joins` - Generate example parameterized join configurations
      * `--path` - Custom path for the LiveView route (e.g., /products instead of /product)
-     * `--enable-modal` - Enable modal detail view for row clicks in LiveView (requires --live)
+     * `--enable-modal` - Retired; ignored with a warning
      * `--adapter` - Database adapter for direct introspection (for example, `postgresql`)
      * `--table` - Database table to introspect
      * `--view` - Introspect an existing database view as a read-only domain source
@@ -82,10 +82,6 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   With `--studio-artifacts` flag, additionally generates:
   - `schemas/SCHEMA_NAME_domain_artifacts.ex` - trusted inspection provider
     module for `SelectoStudio.DomainArtifacts` host-app registration
-
-  With `--saved-views` flag, additionally generates:
-  - SavedView schema and context modules (if not already present)
-  - Saved views integration in the LiveView
 
   ## Customization
 
@@ -177,8 +173,11 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     # Validate flags
     validated_igniter = validate_flags(igniter, parsed_args)
 
+    # The SelectoViews Explorer has no saved-views or modal wiring to generate,
+    # so both flags are reported by validate_flags/2 and then dropped.
     updated_args =
       parsed_args
+      |> Map.drop([:saved_views, :enable_modal])
       |> Map.put(:expand_schemas_list, expand_schemas)
       |> Map.put(:expand_modes, expand_modes)
 
@@ -240,11 +239,26 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
   # Private functions
 
   defp validate_flags(igniter, parsed_args) do
-    cond do
-      parsed_args[:saved_views] && !parsed_args[:live] ->
-        igniter
-        |> Igniter.add_warning("--saved-views flag requires --live flag to be set")
+    igniter
+    |> warn_retired_flag(
+      parsed_args[:saved_views],
+      "--saved-views is ignored: generated LiveViews now mount SelectoViews.Explorer, " <>
+        "which takes host-provided saved queries (see SelectoViews.SavedQueries). " <>
+        "A generator for that contract is planned for a later release."
+    )
+    |> warn_retired_flag(
+      parsed_args[:enable_modal],
+      "--enable-modal is ignored: SelectoViews.Explorer configures row actions " <>
+        "through its own options."
+    )
+    |> validate_source_flags(parsed_args)
+  end
 
+  defp warn_retired_flag(igniter, true, message), do: Igniter.add_warning(igniter, message)
+  defp warn_retired_flag(igniter, _flag, _message), do: igniter
+
+  defp validate_source_flags(igniter, parsed_args) do
+    cond do
       parsed_args[:view] && parsed_args[:materialized_view] ->
         igniter
         |> Igniter.add_warning("Specify only one of --view or --materialized-view")
@@ -926,13 +940,7 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     app_name = Igniter.Project.Application.app_name(igniter) |> to_string() |> Macro.camelize()
     domain_module = domain_module_for_source(igniter, source, opts)
 
-    LiveViewGenerator.render_live_view_template(
-      app_name,
-      source,
-      domain_module,
-      opts,
-      SelectoMix.ComponentsIntegrate.selecto_components_source_path()
-    )
+    LiveViewGenerator.render_live_view_template(app_name, source, domain_module, opts)
   end
 
   defp output_app_name(opts) do
@@ -1013,12 +1021,12 @@ defmodule Mix.Tasks.Selecto.Gen.Domain do
     igniter
     |> Igniter.add_notice("""
 
-    To integrate SelectoComponents assets (if not already done), run:
-      mix selecto.components.integrate
+    To integrate SelectoViews assets (if not already done), run:
+      mix selecto.views.integrate
 
     Or manually configure:
-      1. Import hooks in assets/js/app.js
-      2. Add @source directive in assets/css/app.css
+      1. Import the selecto_views hooks in assets/js/app.js
+      2. Serve selecto-views.css with Plug.Static from your endpoint
     """)
   end
 end

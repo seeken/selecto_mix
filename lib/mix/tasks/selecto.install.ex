@@ -1,10 +1,10 @@
 defmodule Mix.Tasks.Selecto.Install do
   @shortdoc "Install Selecto dependencies and integrate assets"
   @moduledoc """
-  Install Selecto ecosystem dependencies and run SelectoComponents asset integration.
+  Install Selecto ecosystem dependencies and run SelectoViews asset integration.
 
   This task updates `mix.exs` dependencies, optionally sets up development-mode
-  path dependencies in `vendor/`, and runs `mix selecto.components.integrate`.
+  path dependencies in `vendor/`, and runs `mix selecto.views.integrate`.
 
   ## Examples
 
@@ -73,10 +73,10 @@ defmodule Mix.Tasks.Selecto.Install do
       end
 
     if check? do
-      SelectoMix.ComponentsIntegrate.run(check: true)
+      SelectoMix.ViewsIntegrate.run(check: true)
       Igniter.add_notice(igniter, "Check complete. No files were modified.")
     else
-      SelectoMix.ComponentsIntegrate.run([])
+      SelectoMix.ViewsIntegrate.run([])
 
       Igniter.add_notice(
         igniter,
@@ -114,9 +114,10 @@ defmodule Mix.Tasks.Selecto.Install do
               "{:selecto_db_postgresql, path: \"./vendor/selecto_db_postgresql\", override: true}"
           },
           %{
-            app: :selecto_components,
-            repo: "selecto_components",
-            dep: "{:selecto_components, path: \"./vendor/selecto_components\", override: true}"
+            app: :selecto_views,
+            repo: "selecto_views",
+            source: "seeken",
+            dep: "{:selecto_views, path: \"./vendor/selecto_views\", override: true}"
           }
         ]
       else
@@ -138,9 +139,9 @@ defmodule Mix.Tasks.Selecto.Install do
             dep: "{:selecto_db_postgresql, \">= 0.5.0 and < 0.6.0\", override: true}"
           },
           %{
-            app: :selecto_components,
+            app: :selecto_views,
             repo: nil,
-            dep: "{:selecto_components, \">= 0.5.0 and < 0.6.0\", override: true}"
+            dep: "{:selecto_views, \">= 0.3.0 and < 0.4.0\"}"
           }
         ]
       end

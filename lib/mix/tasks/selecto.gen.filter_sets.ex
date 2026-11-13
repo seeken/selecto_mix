@@ -2,6 +2,12 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
   @shortdoc "Generates filter sets implementation for SelectoComponents"
 
   @moduledoc """
+  > #### Deprecated {: .warning}
+  >
+  > This task generates code for `selecto_components`, which is replaced by
+  > `selecto_views`. It remains for hosts that still depend on
+  > `selecto_components`.
+
   Generates a filter sets implementation for SelectoComponents.
 
   This task creates:
@@ -70,6 +76,8 @@ defmodule Mix.Tasks.Selecto.Gen.FilterSets do
   @requirements ["app.config"]
 
   def run(args) do
+    SelectoMix.ComponentsDeprecation.warn("selecto.gen.filter_sets")
+
     {opts, positional} =
       SelectoMix.CLI.parse!(args,
         switches: [

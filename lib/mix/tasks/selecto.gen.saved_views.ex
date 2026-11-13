@@ -1,6 +1,12 @@
 defmodule Mix.Tasks.Selecto.Gen.SavedViews do
   @shortdoc "Generate SavedViews implementation for SelectoComponents"
   @moduledoc """
+  > #### Deprecated {: .warning}
+  >
+  > This task generates code for `selecto_components`, which is replaced by
+  > `selecto_views`. It remains for hosts that still depend on
+  > `selecto_components`.
+
   Generate SavedViews behavior implementation for SelectoComponents.
 
   This task generates the necessary files to implement persistent saved views
@@ -89,6 +95,8 @@ defmodule Mix.Tasks.Selecto.Gen.SavedViews do
 
   @impl Igniter.Mix.Task
   def igniter(igniter) do
+    SelectoMix.ComponentsDeprecation.warn("selecto.gen.saved_views")
+
     # Get parsed options and positional args from Igniter
     parsed_args = igniter.args.options
     positional = igniter.args.positional

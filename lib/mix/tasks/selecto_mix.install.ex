@@ -2,7 +2,7 @@ defmodule Mix.Tasks.SelectoMix.Install do
   @shortdoc "Install Selecto dependencies"
   @moduledoc """
   Install Selecto ecosystem dependencies (including `:selecto` and
-  `:selecto_components`) and run SelectoComponents integration.
+  `:selecto_views`) and run SelectoViews integration.
 
   This task is a package-scoped alias of `mix selecto.install` and supports
   `mix igniter.install selecto_mix` installer execution.

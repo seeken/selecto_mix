@@ -638,7 +638,7 @@ defmodule SelectoMixTest do
   end
 
   describe "adapter-backed helpers" do
-    test "gen.domain --live creates a complete DB-backed SelectoComponents surface" do
+    test "gen.domain --live creates a complete DB-backed SelectoViews surface" do
       output_dir = "lib/shop/selecto_domains"
       domain_path = Path.join(output_dir, "orders_domain.ex")
       overlay_path = Path.join(output_dir, "overlays/orders_domain_overlay.ex")
@@ -681,9 +681,22 @@ defmodule SelectoMixTest do
 
       assert live_source =~ "adapter: SelectoDBSQLite.Adapter"
 
-      assert live_source =~ "Views.spec(:aggregate"
-      assert live_source =~ "Views.spec(:detail"
+      assert live_source =~ "assign(:params, params)"
+      refute live_source =~ "SelectoComponents"
+
+      html_source =
+        igniter.rewrite
+        |> Rewrite.source!(html_path)
+        |> Rewrite.Source.get(:content)
+
+      assert html_source =~ "module={SelectoViews.Explorer}"
+      assert html_source =~ ~s(id="order-explorer")
+      refute html_source =~ "SelectoComponents"
       refute Enum.any?(igniter.warnings, &(&1 =~ "Ecto-only"))
+
+      Igniter.Test.assert_has_notice(igniter, fn notice ->
+        notice =~ "mix selecto.views.integrate"
+      end)
 
       Igniter.Test.assert_has_notice(igniter, fn notice ->
         notice =~ "DB-backed LiveView runtime connection" and
@@ -691,11 +704,10 @@ defmodule SelectoMixTest do
       end)
     end
 
-    test "gen.domain DB-backed --live --saved-views uses adapter persistence" do
+    test "gen.domain DB-backed --live ignores the retired --saved-views and --enable-modal flags" do
       output_dir = "lib/shop/selecto_domains"
       domain_path = Path.join(output_dir, "orders_domain.ex")
-      context_path = "lib/shop/saved_view_context.ex"
-      sql_path = "priv/sql/create_saved_views.sql"
+      live_path = "lib/shop_web/order_live.ex"
 
       Mix.Task.reenable("selecto.gen.domain")
 
@@ -710,6 +722,7 @@ defmodule SelectoMixTest do
           "shop_dev",
           "--live",
           "--saved-views",
+          "--enable-modal",
           "--connection-name",
           "Shop.ReportingDatabase",
           "--output",
@@ -717,24 +730,22 @@ defmodule SelectoMixTest do
         ])
 
       assert igniter.issues == []
+      assert Enum.any?(igniter.warnings, &(&1 =~ "--saved-views is ignored"))
+      assert Enum.any?(igniter.warnings, &(&1 =~ "--enable-modal is ignored"))
+
       Igniter.Test.assert_creates(igniter, domain_path)
-      Igniter.Test.assert_creates(igniter, context_path)
-      Igniter.Test.assert_creates(igniter, sql_path)
+      Igniter.Test.assert_creates(igniter, live_path)
+
+      refute Enum.any?(igniter.rewrite, fn source ->
+               source.path =~ "saved_view"
+             end)
 
       domain_source =
         igniter.rewrite
         |> Rewrite.source!(domain_path)
         |> Rewrite.Source.get(:content)
 
-      context_source =
-        igniter.rewrite
-        |> Rewrite.source!(context_path)
-        |> Rewrite.Source.get(:content)
-
-      assert domain_source =~ "use Shop.SavedViewContext"
-      assert context_source =~ "defmodule Shop.SavedViewContext"
-      assert context_source =~ "conn_name = Shop.ReportingDatabase"
-      refute context_source =~ "Ecto.Query"
+      refute domain_source =~ "SavedViewContext"
     end
 
     test "gen.domain DB-backed --live rejects an unsafe connection module name" do
@@ -756,32 +767,6 @@ defmodule SelectoMixTest do
 
       assert Enum.any?(igniter.warnings, fn warning ->
                warning =~ "--connection-name must be an Elixir module name"
-             end)
-
-      refute Enum.any?(igniter.rewrite, fn source ->
-               source.path =~ "selecto_domains"
-             end)
-    end
-
-    test "gen.domain rejects DB-backed saved views for unsupported persistence adapters" do
-      Mix.Task.reenable("selecto.gen.domain")
-
-      igniter =
-        Igniter.Test.test_project(app_name: :shop)
-        |> Igniter.compose_task("selecto.gen.domain", [
-          "--adapter",
-          "mssql",
-          "--table",
-          "orders",
-          "--database",
-          "shop_dev",
-          "--live",
-          "--saved-views"
-        ])
-
-      assert Enum.any?(igniter.warnings, fn warning ->
-               warning =~ "--saved-views cannot be generated" and
-                 warning =~ "unsupported raw persistence adapter"
              end)
 
       refute Enum.any?(igniter.rewrite, fn source ->
@@ -1230,8 +1215,7 @@ defmodule SelectoMixTest do
           "Shop",
           source,
           "Shop.SelectoDomains.ProductDomain",
-          [connection_name: "Shop.Database"],
-          "../../deps/selecto_components/lib/**/*.{ex,heex}"
+          connection_name: "Shop.Database"
         )
 
       assert String.contains?(result, "defmodule ShopWeb.ProductLive")
@@ -1242,36 +1226,22 @@ defmodule SelectoMixTest do
              )
 
       assert result =~ "adapter: SelectoDBPostgreSQL.Adapter"
-      assert String.contains?(result, "alias SelectoComponents.Views")
-      assert String.contains?(result, "choice_source_domain: domain_ref")
-      assert String.contains?(result, "choice_source_transport: :live")
+      assert result =~ "def mount(params, _session, socket) do"
+      assert result =~ "|> assign(:params, params)"
+      assert result =~ "|> assign(:selecto, selecto)"
 
-      assert String.contains?(result, "{:ok, assign(socket, state)}")
+      assert result =~
+               ~s(import {hooks as selectoViewsHooks} from "phoenix-colocated/selecto_views")
 
-      assert String.contains?(
-               result,
-               ~s(@source "../../deps/selecto_components/lib/**/*.{ex,heex}";)
-             )
+      assert result =~ "only: ~w(selecto-views.css)"
 
-      assert String.contains?(
-               result,
-               "choice_source_context: %{surface: :generated_live_view, path: path}"
-             )
-
-      assert String.contains?(
-               result,
-               "Views.spec(:aggregate, Views.Aggregate, \"Aggregate View\", %{drill_down: :detail})"
-             )
-
-      assert String.contains?(
-               result,
-               "Extension-provided views such as `:map` or `:timeseries` are merged in"
-             )
-
+      refute result =~ "SelectoComponents"
+      refute result =~ "selecto_components"
       refute String.contains?(result, "def render(assigns)")
-      refute String.contains?(result, ~S(def handle_event("toggle_show_view_configurator"))
       refute String.contains?(result, "layout: {ShopWeb.Layouts, :root}")
       refute String.contains?(result, "Shop.Repo")
+
+      assert {:ok, _quoted} = Code.string_to_quoted(result)
     end
 
     test "builds DB-backed live view file paths from table names" do
@@ -1284,7 +1254,7 @@ defmodule SelectoMixTest do
                "lib/shop_web/order_item_live.html.heex"
     end
 
-    test "renders router snippet with query contract endpoint" do
+    test "renders router snippet with the stylesheet plug" do
       source = {:db, SelectoDBPostgreSQL.Adapter, :fake_conn, "products", schema: "public"}
 
       result =
@@ -1295,34 +1265,18 @@ defmodule SelectoMixTest do
 
       assert result =~ "Add this LiveView route inside your app's aliased web scope:"
       assert result =~ ~s(live "/reports/products", ProductLive, :index)
-      assert result =~ ~s(scope "/" do)
-      assert result =~ "pipe_through :browser"
-      assert result =~ ~s(forward "/reports/products/query-contract.json")
-      assert result =~ "SelectoComponents.QueryContract.Plug"
-      assert result =~ "registry: Shop.SelectoDomains.ProductDomain"
-      refute result =~ "domain: Shop.SelectoDomains.ProductDomain.domain()"
-      assert result =~ ~s(domain_path: "/reports/products")
-      assert result =~ ~s(query_contract_url: "/reports/products/query-contract.json")
-      assert result =~ ~s(query_guide_url: "/reports/products/query-guide.md")
-      assert result =~ ~s(forward "/reports/products/query-guide.md")
-      assert result =~ "SelectoComponents.QueryContract.Guide.Plug"
-      assert result =~ "domain_id: Shop.SelectoDomains.ProductDomain.domain_id()"
-      assert result =~ ~s(forward "/reports/products/query-intent/validate")
-      assert result =~ "SelectoComponents.QueryContract.IntentValidator.Plug"
+      assert result =~ "plug Plug.Static"
+      assert result =~ ~s(at: "/selecto-views")
+      assert result =~ "from: :selecto_views"
+      refute result =~ "SelectoComponents"
+      refute result =~ "query-contract"
 
-      aggregate_registry_result =
-        LiveViewGenerator.route_suggestion(source,
-          domain_module: "Shop.SelectoDomains.ProductDomain",
-          domain_registry: "Shop.SelectoDomains.Registry",
-          domain_id: "catalog-products"
-        )
-
-      assert aggregate_registry_result =~ "registry: Shop.SelectoDomains.Registry"
-      assert aggregate_registry_result =~ ~s(domain_id: "catalog-products")
+      assert LiveViewGenerator.route_suggestion(source, []) =~
+               ~s(live "/product", ProductLive, :index)
     end
 
-    test "renders form controller even when initially collapsed" do
-      source = {:db, SelectoDBPostgreSQL.Adapter, :fake_conn, "products", schema: "public"}
+    test "renders the Explorer component inside the app layout" do
+      source = {:db, SelectoDBPostgreSQL.Adapter, :fake_conn, "order_items", schema: "public"}
 
       result =
         LiveViewGenerator.render_live_view_html_template(source,
@@ -1330,13 +1284,15 @@ defmodule SelectoMixTest do
           saved_views: true
         )
 
-      refute String.contains?(result, ~S(<div :if={@show_view_configurator}>))
-      assert String.contains?(result, "show_view_configurator={@show_view_configurator}")
-      assert String.contains?(result, "enable_modal_detail={true}\n")
-      assert String.contains?(result, "saved_view_module={@saved_view_module}")
-      assert String.contains?(result, "choice_source_domain={@choice_source_domain}")
-      assert String.contains?(result, "choice_source_context={@choice_source_context}")
-      assert String.contains?(result, "choice_source_transport={@choice_source_transport}")
+      assert result =~ "module={SelectoViews.Explorer}"
+      assert result =~ ~s(id="order-item-explorer")
+      assert result =~ "selecto={@selecto}"
+      assert result =~ "params={@params}"
+      assert result =~ ~s(title: "OrderItem")
+      assert result =~ ~s(stylesheet_href: "/selecto-views/selecto-views.css")
+      refute result =~ "SelectoComponents"
+      refute result =~ "enable_modal_detail"
+      refute result =~ "saved_view_module"
       assert String.contains?(result, "<Layouts.app flash={@flash}>")
       assert String.contains?(result, "</Layouts.app>")
     end
@@ -1492,6 +1448,54 @@ defmodule SelectoMixTest do
       [_, original_tail] = String.split(content, "const liveSocket", parts: 2)
       [_, updated_tail] = String.split(updated, "const liveSocket", parts: 2)
       assert updated_tail == original_tail
+    end
+
+    test "ViewsIntegrate.patch_app_js merges selectoViewsHooks into an existing hooks object" do
+      content = """
+      import {Socket} from "phoenix"
+      import {LiveSocket} from "phoenix_live_view"
+      import topbar from "../vendor/topbar"
+
+      const liveSocket = new LiveSocket("/live", Socket, {
+        hooks: {SomeExistingHook},
+        params: {_csrf_token: csrfToken}
+      })
+      """
+
+      updated = SelectoMix.ViewsIntegrate.patch_app_js(content)
+
+      assert updated =~
+               ~s(import {hooks as selectoViewsHooks} from "phoenix-colocated/selecto_views")
+
+      assert updated =~ "hooks: {SomeExistingHook, ...selectoViewsHooks}"
+      assert updated =~ "window.Chart = Chart"
+      refute updated =~ "selecto_components"
+      refute updated =~ "selectoComponentsHooks"
+
+      assert SelectoMix.ViewsIntegrate.patch_app_js(updated) == updated
+    end
+
+    test "ViewsIntegrate.patch_app_js adds a hooks object when the LiveSocket config has none" do
+      content = """
+      import {Socket} from "phoenix"
+      import {LiveSocket} from "phoenix_live_view"
+
+      const liveSocket = new LiveSocket("/live", Socket, {
+        params: {_csrf_token: csrfToken}
+      })
+      """
+
+      updated = SelectoMix.ViewsIntegrate.patch_app_js(content)
+
+      assert updated =~ "hooks: { ...selectoViewsHooks }"
+    end
+
+    test "ViewsIntegrate.stylesheet_plug_snippet serves the packaged stylesheet" do
+      snippet = SelectoMix.ViewsIntegrate.stylesheet_plug_snippet()
+
+      assert snippet =~ "plug Plug.Static"
+      assert snippet =~ "from: :selecto_views"
+      assert snippet =~ "only: ~w(selecto-views.css)"
     end
 
     test "full workflow without actual file creation" do

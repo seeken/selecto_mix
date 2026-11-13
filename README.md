@@ -40,7 +40,7 @@ Use it when you want to:
 
 - generate domains from Ecto schemas or existing database relations
 - generate overlays for app-specific customizations
-- scaffold saved views, exported views, and filter sets
+- scaffold LiveViews that mount the `selecto_views` Explorer
 - install Selecto-related dependencies and front-end integration
 - validate parameterized joins
 - export normalized domain JSON artifacts
@@ -136,7 +136,7 @@ component boundaries.
 ### Generate a working LiveView without Ecto
 
 Database-backed generation can introspect an existing table and generate the
-domain, overlay, and SelectoComponents LiveView together:
+domain, overlay, and SelectoViews Explorer LiveView together:
 
 ```bash
 mix selecto.gen.domain \
@@ -173,8 +173,9 @@ children = [
 
 If `--connection-name` is omitted, the generator uses
 `<ApplicationModule>.Database` and prints the exact expected runtime name.
-Use `--live --saved-views` to generate adapter-backed saved-view persistence
-alongside the DB-backed LiveView when the selected adapter supports it.
+`--saved-views` and `--enable-modal` are retired and ignored with a warning.
+The generated LiveView mounts `SelectoViews.Explorer`, which takes saved
+queries from a host module (see `SelectoViews.SavedQueries`).
 
 Generate a trusted provider module for Studio's host-app artifact registry:
 
@@ -186,12 +187,10 @@ The generated provider uses core `Selecto.Domain` inspection APIs. Register it
 with `config :selecto_studio, :domain_artifacts` in the host app when you want
 `SelectoStudioWeb.DomainInspectionController` to preload that domain.
 
-The generated router notice includes the LiveView route plus optional
-`SelectoComponents.QueryContract.Plug`,
-`SelectoComponents.QueryContract.Guide.Plug`, and
-`SelectoComponents.QueryContract.IntentValidator.Plug` routes for serving
-`query-contract.json`, a compact Markdown `query-guide.md`, and a
-non-executing query intent validator.
+The generated router notice includes the LiveView route and the `Plug.Static`
+snippet that serves the packaged `selecto-views.css` from the host endpoint.
+Run `mix selecto.views.integrate` to add the SelectoViews hooks to
+`assets/js/app.js`.
 
 Generate an Updato API endpoint and control panel:
 
@@ -257,14 +256,22 @@ Recommended workflow:
 
 That keeps generated structure and user-authored behavior separate.
 
-## Common Tasks
+## Deprecated: selecto_components generators
 
-- `mix selecto.gen.domain`
-- `mix selecto.install`
+`selecto_components` is replaced by `selecto_views`. These tasks still run for
+hosts that depend on `selecto_components`, and print a deprecation warning:
+
+- `mix selecto.components.integrate` (use `mix selecto.views.integrate`)
 - `mix selecto.gen.saved_views`
 - `mix selecto.gen.saved_view_configs`
 - `mix selecto.gen.exported_views`
 - `mix selecto.gen.filter_sets`
+
+## Common Tasks
+
+- `mix selecto.gen.domain`
+- `mix selecto.install`
+- `mix selecto.views.integrate`
 - `mix selecto.gen.live_dashboard`
 - `mix selecto.validate.parameterized_joins`
 - `mix selecto.domain.export`

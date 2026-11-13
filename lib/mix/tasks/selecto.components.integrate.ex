@@ -1,6 +1,11 @@
 defmodule Mix.Tasks.Selecto.Components.Integrate do
-  @shortdoc "Integrate SelectoComponents hooks and styles into your Phoenix app"
+  @shortdoc "Deprecated: integrate SelectoComponents hooks and styles"
   @moduledoc """
+  > #### Deprecated {: .warning}
+  >
+  > `selecto_components` is replaced by `selecto_views`. Use
+  > `mix selecto.views.integrate` instead.
+
   Automatically configures SelectoComponents JavaScript hooks and Tailwind styles in your Phoenix application.
 
   This task patches your `app.js` and `app.css` files to include:
@@ -48,6 +53,12 @@ defmodule Mix.Tasks.Selecto.Components.Integrate do
   @impl Mix.Task
   def run(args) do
     {opts, _} = OptionParser.parse!(args, strict: [check: :boolean, force: :boolean])
+
+    Mix.shell().error("""
+    warning: mix selecto.components.integrate is deprecated. selecto_components
+    is replaced by selecto_views; use `mix selecto.views.integrate` instead.
+    """)
+
     ComponentsIntegrate.run(opts)
   end
 

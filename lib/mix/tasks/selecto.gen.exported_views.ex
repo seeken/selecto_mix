@@ -1,6 +1,12 @@
 defmodule Mix.Tasks.Selecto.Gen.ExportedViews do
   @shortdoc "Generate ExportedViews implementation for iframe embeds"
   @moduledoc """
+  > #### Deprecated {: .warning}
+  >
+  > This task generates code for `selecto_components`, which is replaced by
+  > `selecto_views`. It remains for hosts that still depend on
+  > `selecto_components`.
+
   Generate ExportedViews persistence for SelectoComponents iframe embeds.
 
   This task creates the schema, context, and migration needed to back
@@ -58,6 +64,8 @@ defmodule Mix.Tasks.Selecto.Gen.ExportedViews do
 
   @impl Igniter.Mix.Task
   def igniter(igniter) do
+    SelectoMix.ComponentsDeprecation.warn("selecto.gen.exported_views")
+
     opts = igniter.args.options
     app_name = Map.get(igniter.args.positional, :app_name)
 

@@ -4,8 +4,8 @@ defmodule SelectoMix do
 
   SelectoMix provides utilities to automatically generate Selecto domain
   configurations from Ecto schemas or database relations, create overlay
-  modules for app-specific customizations, and scaffold related
-  SelectoComponents persistence helpers.
+  modules for app-specific customizations, and scaffold LiveViews that mount
+  the SelectoViews Explorer.
 
   ## Key Features
 
@@ -13,8 +13,9 @@ defmodule SelectoMix do
   - **Intelligent Configuration Generation**: Creates comprehensive Selecto domains with suggested defaults
   - **Overlay Customization**: Keeps app-specific modifications outside generated base files
   - **Igniter Integration**: Uses modern Elixir project modification tools
-  - **Persistence Scaffolds**: Generates saved views, saved view configs,
-    exported views, and filter set persistence modules
+  - **Persistence Scaffolds (deprecated)**: The saved views, saved view
+    configs, exported views, and filter set generators target
+    `selecto_components`, which is replaced by `selecto_views`
   - **Domain Artifacts**: Exports normalized domain JSON artifacts for tools
     and round-trip checks
   - **Domain Import Plans**: Checks import/readback plans and can write
@@ -34,10 +35,11 @@ defmodule SelectoMix do
 
   - `mix selecto.gen.domain` - Generate Selecto domains from Ecto schemas or database relations
   - `mix selecto.install` - Install Selecto dependencies and setup project structure
-  - `mix selecto.gen.saved_views` - Generate persistent saved views support
-  - `mix selecto.gen.saved_view_configs` - Generate per-view-type saved config persistence
-  - `mix selecto.gen.exported_views` - Generate exported iframe view persistence
-  - `mix selecto.gen.filter_sets` - Generate filter set persistence
+  - `mix selecto.views.integrate` - Integrate SelectoViews hooks into a Phoenix app
+  - `mix selecto.gen.saved_views` - Deprecated: saved views for selecto_components
+  - `mix selecto.gen.saved_view_configs` - Deprecated: saved configs for selecto_components
+  - `mix selecto.gen.exported_views` - Deprecated: iframe exports for selecto_components
+  - `mix selecto.gen.filter_sets` - Deprecated: filter sets for selecto_components
   - `mix selecto.domain.export` - Export normalized domain JSON artifacts
   - `mix selecto.domain.check` - Check normalized domain JSON artifacts
   - `mix selecto.domain.import` - Check import plans or write validated previews for normalized artifacts

@@ -4,6 +4,20 @@ CHANGES
 V 0.5.0
 ----------
 
+- **`selecto_views` replaces `selecto_components`.** `mix selecto.gen.domain
+  --live` now generates a LiveView that mounts `SelectoViews.Explorer`, and its
+  router notice no longer includes the `SelectoComponents.QueryContract` plug
+  routes.
+- `mix selecto.install` installs `selecto_views` instead of
+  `selecto_components` and runs the new `mix selecto.views.integrate`, which
+  adds the SelectoViews hooks to `assets/js/app.js`. No Tailwind `@source` is
+  needed; the host serves the packaged `selecto-views.css` with `Plug.Static`.
+- `mix selecto.gen.domain --saved-views` and `--enable-modal` are retired and
+  ignored with a warning.
+- Deprecated `mix selecto.components.integrate`, `mix selecto.gen.saved_views`,
+  `mix selecto.gen.saved_view_configs`, `mix selecto.gen.exported_views`, and
+  `mix selecto.gen.filter_sets`. They still generate `selecto_components` code
+  and print a deprecation warning.
 - Removed the nonfunctional `mix selecto.add_timeouts` generator.
 - Removed the `SelectoMix.SchemaIntrospector` compatibility API; generators now
   consume tagged `SelectoMix.Introspector.domain_config/2` results.
