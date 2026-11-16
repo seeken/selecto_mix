@@ -10,11 +10,11 @@ defmodule SelectoMix.AdapterResolver do
     "mariadb" => SelectoDBMariaDB.Adapter,
     "sqlite" => SelectoDBSQLite.Adapter,
     "duckdb" => SelectoDBDuckDB.Adapter,
-    "mssql" => SelectoDBMSSQL.Adapter,
-    "sqlserver" => SelectoDBMSSQL.Adapter
+    "mssql" => SelectoDBSQLServer.Adapter,
+    "sqlserver" => SelectoDBSQLServer.Adapter
   }
 
-  # Hex package to add to `mix.exs` for each known adapter module, used to
+  # Package name for each known adapter module (not proof of a Hex release), used to
   # give actionable errors when an adapter module isn't loaded/compiled.
   @adapter_packages %{
     SelectoDBPostgreSQL.Adapter => "selecto_db_postgresql",
@@ -22,7 +22,8 @@ defmodule SelectoMix.AdapterResolver do
     SelectoDBMariaDB.Adapter => "selecto_db_mariadb",
     SelectoDBSQLite.Adapter => "selecto_db_sqlite",
     SelectoDBDuckDB.Adapter => "selecto_db_duckdb",
-    SelectoDBMSSQL.Adapter => "selecto_db_mssql"
+    SelectoDBSQLServer.Adapter => "selecto_db_sqlserver",
+    SelectoDBMSSQL.Adapter => "selecto_db_sqlserver"
   }
 
   @doc """
@@ -70,6 +71,15 @@ defmodule SelectoMix.AdapterResolver do
   A human-friendly, actionable message for a `adapter_module` that failed to
   load, naming the Hex package to add when it's a known Selecto adapter.
   """
+  def describe_missing_adapter(adapter_module)
+      when adapter_module in [SelectoDBSQLServer.Adapter, SelectoDBMSSQL.Adapter] do
+    "Adapter module #{inspect(adapter_module)} is not loaded. " <>
+      "SQL Server requires the separate selecto_db_sqlserver package from " <>
+      "https://github.com/seeken/selecto_db_sqlserver at an authorized exact Git revision. " <>
+      "This private package is unreleased; licence terms are not finalized. " <>
+      "Install it explicitly and inject SelectoDBSQLServer.Adapter; do not install it alongside selecto_db_mssql."
+  end
+
   def describe_missing_adapter(adapter_module) do
     case hex_package_for(adapter_module) do
       nil ->

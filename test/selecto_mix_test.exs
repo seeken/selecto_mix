@@ -802,6 +802,17 @@ defmodule SelectoMixTest do
       assert {:ok, SelectoDBPostgreSQL.Adapter} = AdapterResolver.resolve("postgresql")
     end
 
+    test "SQL Server aliases select the explicit private adapter without a dependency" do
+      assert {:ok, SelectoDBSQLServer.Adapter} = AdapterResolver.resolve("mssql")
+      assert {:ok, SelectoDBSQLServer.Adapter} = AdapterResolver.resolve("sqlserver")
+      assert {:ok, SelectoDBMSSQL.Adapter} = AdapterResolver.resolve("SelectoDBMSSQL.Adapter")
+      message = AdapterResolver.describe_missing_adapter(SelectoDBSQLServer.Adapter)
+      assert message =~ "selecto_db_sqlserver"
+      assert message =~ "exact Git revision"
+      assert message =~ "unreleased"
+      refute message =~ ">= 0.0.0"
+    end
+
     test "adapter resolver names the Hex package for known adapters" do
       assert AdapterResolver.hex_package_for(SelectoDBPostgreSQL.Adapter) ==
                "selecto_db_postgresql"
