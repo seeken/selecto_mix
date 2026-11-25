@@ -161,7 +161,7 @@ defmodule Mix.Tasks.Selecto.Install do
             app: :selecto_db_postgresql_postgis,
             repo: nil,
             dep:
-              "{:selecto_db_postgresql_postgis, github: \"seeken/selecto_db_postgresql_postgis\", ref: \"4de5b4e42e7b645a62a33e0b5523e89a8f773eaf\", override: true}"
+              "{:selecto_db_postgresql_postgis, github: \"seeken/selecto_db_postgresql_postgis\", ref: \"e7982fc2d31ad669e6a3b60c9608a2c33a0b680b\", override: true}"
           }
         end
 
